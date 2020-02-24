@@ -1,3 +1,6 @@
+from warnings import simplefilter
+simplefilter(action='ignore', category=FutureWarning)
+
 import numpy as np
 import pandas as pd
 import statsmodels.api as sm
@@ -15,7 +18,6 @@ from or_classifiers.complete_list import classifier_dict, classifier_conv_dict
 from qr_algorithms.complete_list import classifier_cde_dict as classifier_cde_dict_full
 from qr_algorithms.small_list import classifier_cde_dict as classifier_cde_dict_small
 from utils.qr_functions import train_qr_algo
-
 
 model_dict = {
     'camelus': CamelusSimLoader,

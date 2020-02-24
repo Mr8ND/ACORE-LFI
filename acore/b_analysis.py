@@ -1,3 +1,6 @@
+from warnings import simplefilter
+simplefilter(action='ignore', category=FutureWarning)
+
 import numpy as np
 import pandas as pd
 import argparse
