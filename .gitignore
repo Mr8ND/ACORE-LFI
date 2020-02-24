@@ -154,3 +154,6 @@ data/*
 
 # toy examples
 toy_examples/*
+
+# Pycharm
+.idea/*
