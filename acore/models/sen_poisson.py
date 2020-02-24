@@ -131,3 +131,10 @@ class SenPoissonLoader:
                                          func1d=lambda row: self.sample_sim(sample_size=sample_size, true_param=row))
         return theta_mat, sample_mat
 
+    def make_grid_over_param_space(self, n_grid):
+        return matrix_mesh(np.meshgrid(np.linspace(start=self.low_int_reference_background,
+                                                   stop=self.high_int_reference_background,
+                                                   num=n_grid),
+                                           np.linspace(start=self.low_int_reference_signal,
+                                                       stop=self.high_int_reference_signal,
+                                                       num=n_grid)))

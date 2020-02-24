@@ -118,3 +118,6 @@ class ToyGMMLoader:
         ll_gmm_t0 = np.sum(np.log(self._gmm_likelihood_manual(x=x_obs, mu=t0)))
         ll_gmm_t1 = np.sum(mle.score_samples(x_obs))
         return ll_gmm_t0 - ll_gmm_t1
+
+    def make_grid_over_param_space(self, n_grid):
+        return np.linspace(start=self.low_int, stop=self.high_int, num=n_grid)

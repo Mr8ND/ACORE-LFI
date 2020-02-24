@@ -99,3 +99,6 @@ class ToyPoissonLoader:
         ll_mle = poisson.pmf(k=x_obs.reshape(-1, ), mu=self.background_val + mle)
         return np.sum(np.log(ll_t0) - np.log(ll_mle))
 
+    def make_grid_over_param_space(self, n_grid):
+        return np.linspace(start=self.low_int, stop=self.high_int, num=n_grid)
+

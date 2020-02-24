@@ -93,3 +93,6 @@ class CamelusSimLoader:
 
     def compute_exact_tau_distr(self, t0_val, meshgrid, n_sampled, sample_size_obs):
         raise NotImplementedError('True Likelihood not known for this model.')
+
+    def make_grid_over_param_space(self, n_grid):
+        raise NotImplementedError('Grid is fixed on this model for now.')
