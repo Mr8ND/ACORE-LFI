@@ -129,18 +129,18 @@ dmypy.json
 .pyre/
 
 # images folder
-images/*
-!images/.gitkeep
-!images/classifier_cov_pow_toy/.gitkeep
-!images/classifier_coverage_toy/.gitkeep
-!images/sen_poisson_2d/.gitkeep
+acore/images/*
+!acore/images/.gitkeep
+!acore/images/classifier_cov_pow_toy/.gitkeep
+!acore/images/classifier_coverage_toy/.gitkeep
+!acore/images/sen_poisson_2d/.gitkeep
 
 # sims folder
-sims/*
-!sims/.gitkeep
-!sims/classifier_cov_pow_toy/.gitkeep
-!sims/classifier_coverage_toy/.gitkeep
-!sims/sen_poisson_2d/.gitkeep
+acore/sims/*
+!acore/sims/.gitkeep
+!acore/sims/classifier_cov_pow_toy/.gitkeep
+!acore/sims/classifier_coverage_toy/.gitkeep
+!acore/sims/sen_poisson_2d/.gitkeep
 
 # paper figures
 paper_figures/sims/*
@@ -149,11 +149,11 @@ paper_figures/images/*
 !paper_figures/images/.gitkeep
 
 # data folder
-data/*
-!data/.gitkeep
+acore/data/*
+!acore/data/.gitkeep
 
 # toy examples
-toy_examples/*
+acore/toy_examples/*
 
 # Pycharm
 .idea/*
