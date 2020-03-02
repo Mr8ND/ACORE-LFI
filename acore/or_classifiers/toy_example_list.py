@@ -7,8 +7,8 @@ from sklearn.gaussian_process.kernels import RBF
 from sklearn.linear_model import LogisticRegression
 
 classifier_dict = {
-    # 'NN': KNeighborsClassifier(),
-    # 'MLP': MLPClassifier(alpha=0, max_iter=25000),
+    'NN': KNeighborsClassifier(),
+    'MLP': MLPClassifier(alpha=0, max_iter=25000),
     'QDA': QuadraticDiscriminantAnalysis()
 }
 
