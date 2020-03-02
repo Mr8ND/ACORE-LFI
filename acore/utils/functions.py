@@ -1,5 +1,7 @@
 import numpy as np
 import sys
+import warnings
+import pdb
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.model_selection import GridSearchCV
 
@@ -226,10 +228,18 @@ def matrix_mesh(a_tuple):
 
 
 def or_loss(clf, first_sample, second_sample):
-
     num1, den1, num2, den2 = clf.predict_proba(first_sample[:, (0, 1)]), clf.predict_proba(first_sample[:, (0, 2)]), \
                              clf.predict_proba(second_sample[:, (0, 1)]), clf.predict_proba(second_sample[:, (0, 2)])
-    first_term = np.average((num1[:, 1] / num1[:, 0]).reshape(-1, ) / (den1[:, 1] / den1[:, 0]).reshape(-1, ))
-    second_term = np.average((num2[:, 1] / num2[:, 0]).reshape(-1, ) / (den2[:, 1] / den2[:, 0]).reshape(-1, ))
+
+    # Some of the classifiers might return odds which are infinity -- we filter those out
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        odds_num1, odds_den1 = (num1[:, 1] / num1[:, 0]).reshape(-1, ), (den1[:, 1] / den1[:, 0]).reshape(-1, )
+        odds_num2, odds_den2 = (num2[:, 1] / num2[:, 0]).reshape(-1, ), (den2[:, 1] / den2[:, 0]).reshape(-1, )
+
+    first_term = np.mean([el / odds_den1[ii] for ii, el in enumerate(odds_num1) if el != np.inf
+                          and odds_den1[ii] != np.inf and odds_den1[ii] > 0])
+    second_term = np.mean([el / odds_den2[ii] for ii, el in enumerate(odds_num2) if el != np.inf
+                          and odds_den2[ii] != np.inf and odds_den2[ii] > 0])
 
     return first_term - 2 * second_term
