@@ -10,7 +10,7 @@ from sklearn.metrics import log_loss
 import seaborn as sns
 import matplotlib.pyplot as plt
 
-from utils.functions import train_clf, compute_statistics_single_t0, clf_prob_value
+from utils.functions import train_clf, compute_statistics_single_t0, clf_prob_value, or_loss
 from models.toy_poisson import ToyPoissonLoader
 from models.toy_gmm import ToyGMMLoader
 from utils.qr_functions import train_qr_algo
@@ -23,7 +23,7 @@ model_dict = {
 }
 
 
-def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier_cde,
+def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier_cde, or_loss_samples=1000,
          debug=False, seed=7, size_check=1000, verbose=False, marginal=False, size_marginal=1000):
 
     # Changing values if debugging
@@ -40,6 +40,7 @@ def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier_cde,
     gen_sample_func = model_obj.generate_sample
     t0_grid = model_obj.pred_grid
     tp_func = model_obj.compute_exact_prob
+    or_loss_sample_func = model_obj.create_samples_for_or_loss
 
     # Creating sample to check entropy about
     np.random.seed(seed)
@@ -53,13 +54,17 @@ def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier_cde,
                                else np.log(1 - true_prob_vec[kk])
                                for kk, el in enumerate(bern_vec)])
 
+    # Creating sample to calculate the OR loss
+    first_term_sample, second_term_sample = or_loss_sample_func(or_loss_samples=or_loss_samples)
+
     # Loop over repetitions and classifiers
     # Each time we train the different classifiers, we build the intervals and we record
     # whether the point is in or not.
     out_val = []
     out_cols = ['b_prime', 'b', 'classifier', 'classifier_cde', 'run', 'rep', 'sample_size_obs',
                 'cross_entropy_loss', 't0_true_val', 'theta_0_current', 'on_true_t0',
-                'estimated_tau', 'estimated_cutoff', 'in_confint', 'out_confint', 'size_CI', 'true_entropy']
+                'estimated_tau', 'estimated_cutoff', 'in_confint', 'out_confint', 'size_CI', 'true_entropy',
+                'or_loss']
     pbar = tqdm(total=rep, desc='Toy Example for Simulations, n=%s, b=%s' % (sample_size_obs, b))
     for jj in range(rep):
 
@@ -83,7 +88,9 @@ def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier_cde,
             est_prob_vec = clf_prob_value(clf=clf_odds, x_vec=x_vec, theta_vec=theta_vec, d=model_obj.d,
                                           d_obs=model_obj.d_obs)
             loss_value = log_loss(y_true=bern_vec, y_pred=est_prob_vec)
-            # print(clf_name, loss_value)
+
+            # Calculating or loss
+            or_loss_value = or_loss(clf=clf_odds, first_sample=first_term_sample, second_sample=second_term_sample)
 
             clf_odds_fitted[clf_name] = (tau_obs, loss_value)
 
@@ -118,7 +125,7 @@ def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier_cde,
                         b_prime, b, clf_name, clf_name_qr, run, jj, sample_size_obs, cross_ent_loss,
                         t0_val, theta_0_current, int(t0_val == theta_0_current),
                         tau_obs_val[kk], cutoff_val[kk], int(tau_obs_val[kk] > cutoff_val[kk]),
-                        int(tau_obs_val[kk] <= cutoff_val[kk]), size_temp, entropy_est
+                        int(tau_obs_val[kk] <= cutoff_val[kk]), size_temp, entropy_est, or_loss_value
                     ])
         pbar.update(1)
 
@@ -192,6 +199,8 @@ if __name__ == '__main__':
                         help='Classifier for quantile regression')
     parser.add_argument('--size_marginal', action="store", type=int, default=1000,
                         help='Sample size of the actual marginal distribution, if marginal is True.')
+    parser.add_argument('--or_loss_samples', action="store", type=int, default=1000,
+                        help='Sample size for the calculation of the OR loss.')
     argument_parsed = parser.parse_args()
 
     b_vec = [100, 500, 1000]
@@ -209,5 +218,6 @@ if __name__ == '__main__':
             seed=argument_parsed.seed,
             verbose=argument_parsed.verbose,
             classifier_cde=argument_parsed.class_cde,
-            size_marginal=argument_parsed.size_marginal
+            size_marginal=argument_parsed.size_marginal,
+            or_loss_samples=argument_parsed.or_loss_samples
         )

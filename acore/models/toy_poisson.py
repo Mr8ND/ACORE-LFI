@@ -2,7 +2,7 @@ import numpy as np
 import sys
 sys.path.append('..')
 
-from scipy.stats import norm, poisson
+from scipy.stats import norm, poisson, uniform
 
 
 class ToyPoissonLoader:
@@ -101,4 +101,24 @@ class ToyPoissonLoader:
 
     def make_grid_over_param_space(self, n_grid):
         return np.linspace(start=self.low_int, stop=self.high_int, num=n_grid)
+
+    def create_samples_for_or_loss(self, or_loss_samples):
+        theta_star_distr = uniform(self.low_int, self.high_int)
+        theta_distr = uniform(self.low_int, self.high_int)
+
+        first_term_params = np.hstack((
+            theta_distr.rvs(size=or_loss_samples).reshape(-1, 1),
+            theta_star_distr.rvs(size=or_loss_samples).reshape(-1, 1)))
+        first_term_sims = np.apply_along_axis(arr=first_term_params, axis=1,
+                                              func1d=lambda row: self.sample_sim(sample_size=1, true_param=row[1]))
+        first_term_sample = np.hstack((first_term_params, first_term_sims))
+
+        second_term_params = np.hstack((
+            theta_distr.rvs(size=or_loss_samples).reshape(-1, 1),
+            theta_star_distr.rvs(size=or_loss_samples).reshape(-1, 1)))
+        second_term_sims = np.apply_along_axis(arr=second_term_params, axis=1,
+                                               func1d=lambda row: self.sample_sim(sample_size=1, true_param=row[0]))
+        second_term_sample = np.hstack((second_term_params, second_term_sims))
+
+        return first_term_sample, second_term_sample
 

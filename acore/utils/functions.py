@@ -225,3 +225,11 @@ def matrix_mesh(a_tuple):
     return np.hstack((a_tuple[0].reshape(-1, 1), a_tuple[1].reshape(-1, 1)))
 
 
+def or_loss(clf, first_sample, second_sample):
+
+    num1, den1, num2, den2 = clf.predict_proba(first_sample[:, (0, 1)]), clf.predict_proba(first_sample[:, (0, 2)]), \
+                             clf.predict_proba(second_sample[:, (0, 1)]), clf.predict_proba(second_sample[:, (0, 2)])
+    first_term = np.average((num1[:, 1] / num1[:, 0]).reshape(-1, ) / (den1[:, 1] / den1[:, 0]).reshape(-1, ))
+    second_term = np.average((num2[:, 1] / num2[:, 0]).reshape(-1, ) / (den2[:, 1] / den2[:, 0]).reshape(-1, ))
+
+    return first_term - 2 * second_term
