@@ -92,7 +92,7 @@ def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier_cde, o
             # Calculating or loss
             or_loss_value = or_loss(clf=clf_odds, first_sample=first_term_sample, second_sample=second_term_sample)
 
-            clf_odds_fitted[clf_name] = (tau_obs, loss_value)
+            clf_odds_fitted[clf_name] = (tau_obs, loss_value, or_loss_value)
 
             # Train the quantile regression algorithm for confidence levels
             theta_mat, sample_mat = msnh_sampling_func(b_prime=b_prime, sample_size=sample_size_obs)
@@ -117,7 +117,7 @@ def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier_cde, o
             clf_cde_fitted[clf_name][clf_name_qr] = t0_pred_vec
 
         # At this point all it's left is to record
-        for clf_name, (tau_obs_val, cross_ent_loss) in clf_odds_fitted.items():
+        for clf_name, (tau_obs_val, cross_ent_loss, or_loss_value) in clf_odds_fitted.items():
             for clf_name_qr, cutoff_val in clf_cde_fitted[clf_name].items():
                 size_temp = np.sum((tau_obs_val >= cutoff_val).astype(int))/t0_grid.shape[0]
                 for kk, theta_0_current in enumerate(t0_grid):
