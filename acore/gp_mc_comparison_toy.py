@@ -45,7 +45,7 @@ def main(run, rep, b, b_prime, alpha, sample_size_obs, classifier_cde,
     np.random.seed(seed)
 
     # Adding Gaussian Process as an option in the classifier toy example
-    anchor_points_vec = [5]
+    anchor_points_vec = [5, 10, 25]
     for anchor_points in anchor_points_vec:
         classifier_dict['gaussian_process_' + str(anchor_points)] = anchor_points
 
