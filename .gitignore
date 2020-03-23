@@ -134,6 +134,7 @@ acore/images/*
 !acore/images/classifier_cov_pow_toy/.gitkeep
 !acore/images/classifier_coverage_toy/.gitkeep
 !acore/images/sen_poisson_2d/.gitkeep
+!acore/images/gp_mc_comparison/.gitkeep
 
 # sims folder
 acore/sims/*
@@ -141,6 +142,7 @@ acore/sims/*
 !acore/sims/classifier_cov_pow_toy/.gitkeep
 !acore/sims/classifier_coverage_toy/.gitkeep
 !acore/sims/sen_poisson_2d/.gitkeep
+!acore/sims/gp_mc_comparison/.gitkeep
 
 # paper figures
 paper_figures/sims/*

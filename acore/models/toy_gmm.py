@@ -102,6 +102,9 @@ class ToyGMMLoader:
         g_val = self.g_distribution.pdf(x=x_vec)
         return (f_val * p) / (g_val * (1 - p))
 
+    def compute_exact_likelihood(self, x_obs, true_param):
+        return self._gmm_likelihood_manual(x=x_obs, mu=true_param)
+
     def compute_exact_lr_simplevsimple(self, x_obs, t0, t1):
         ll_gmm_t0 = np.sum(np.log(self._gmm_likelihood_manual(x=x_obs, mu=t0)))
         ll_gmm_t1 = np.sum(np.log(self._gmm_likelihood_manual(x=x_obs, mu=t1)))

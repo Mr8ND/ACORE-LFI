@@ -79,6 +79,9 @@ class ToyPoissonLoader:
         g_val = self.g_distribution.pdf(x=x_vec.reshape(-1, ))
         return (f_val * p) / (g_val * (1 - p))
 
+    def compute_exact_likelihood(self, x_obs, true_param):
+        return poisson.pmf(k=x_obs.reshape(-1, ), mu=self.background_val + true_param)
+
     def compute_exact_lr_simplevsimple(self, x_obs, t0, t1):
         '''
         Compute the exact likelihood ratios for normal case.
