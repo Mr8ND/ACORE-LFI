@@ -4,19 +4,29 @@ from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import DotProduct, WhiteKernel
 
 
-def train_gp(sample_size, n_anchor_points, model_obj, t0_grid):
-    min_val, max_val = np.min(t0_grid), np.max(t0_grid)
-    anchor_points = np.linspace(min_val, max_val, n_anchor_points)
-    anchor_sample_size = int(sample_size/n_anchor_points)
+def train_gp(sample_size, n_anchor_points, model_obj, t0_grid, sample_type='MC'):
 
-    gp_samples = np.array([
-        model_obj.sample_sim(
-            sample_size=anchor_sample_size, true_param=anchor) for anchor in anchor_points]).reshape(
-        -1, model_obj.d_obs)
-    if model_obj.d == 1:
-        theta_mat = np.repeat(anchor_points, repeats=anchor_sample_size).reshape(-1, 1)
+    if sample_type == 'MC':
+        min_val, max_val = np.min(t0_grid), np.max(t0_grid)
+        anchor_points = np.linspace(min_val, max_val, n_anchor_points)
+        anchor_sample_size = int(sample_size/n_anchor_points)
+
+        gp_samples = np.array([
+            model_obj.sample_sim(
+                sample_size=anchor_sample_size, true_param=anchor) for anchor in anchor_points]).reshape(
+            -1, model_obj.d_obs)
+        if model_obj.d == 1:
+            theta_mat = np.repeat(anchor_points, repeats=anchor_sample_size).reshape(-1, 1)
+        else:
+            theta_mat = np.tile(anchor_points, repeats=anchor_sample_size).reshape(-1, model_obj.d)
+    elif sample_type == 'uniform':
+        theta_mat = model_obj.sample_param_values(sample_size=sample_size).reshape(-1, 1)
+        gp_samples = np.array([
+            model_obj.sample_sim(
+                sample_size=1, true_param=theta_val) for theta_val in theta_mat]).reshape(
+            -1, model_obj.d_obs)
     else:
-        theta_mat = np.tile(anchor_points, repeats=anchor_sample_size).reshape(-1, model_obj.d)
+        raise ValueError('Sample type not defined. It can either be "MC" or "uniform".')
 
     gp_model = GaussianProcessRegressor(kernel=DotProduct() + WhiteKernel())
     gp_model.fit(theta_mat, gp_samples)

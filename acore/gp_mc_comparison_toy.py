@@ -24,7 +24,7 @@ model_dict = {
 }
 
 
-def main(run, rep, b, b_prime, alpha, sample_size_obs, classifier_cde,
+def main(run, rep, b, b_prime, alpha, sample_size_obs, classifier_cde, sample_type='MC',
          debug=False, seed=7, size_check=1000, verbose=False, marginal=False, size_marginal=1000):
 
     # Changing values if debugging
@@ -66,6 +66,7 @@ def main(run, rep, b, b_prime, alpha, sample_size_obs, classifier_cde,
         lik_theta0 = np.array([np.sum(np.log(lik_func(x_obs=x_obs, true_param=theta_0))) for theta_0 in t0_grid])
         max_across_grid = np.max(np.array([np.sum(np.log(lik_func(x_obs=x_obs, true_param=t1))) for t1 in grid_param]))
         true_tau_obs = lik_theta0.reshape(-1, ) - max_across_grid.reshape(1)
+        print('TRUE', true_tau_obs)
 
         # Train the classifier for the odds
         clf_odds_fitted = {}
@@ -75,7 +76,8 @@ def main(run, rep, b, b_prime, alpha, sample_size_obs, classifier_cde,
             if 'gaussian_process' in clf_name:
 
                 # Train Gaussian Process
-                gp_model = train_gp(sample_size=b, n_anchor_points=clf_model, model_obj=model_obj, t0_grid=t0_grid)
+                gp_model = train_gp(sample_size=b, n_anchor_points=clf_model, model_obj=model_obj, t0_grid=t0_grid,
+                                    sample_type=sample_type)
 
                 # Calculate LR given a Gaussian Process
                 tau_obs = np.array([
@@ -83,6 +85,7 @@ def main(run, rep, b, b_prime, alpha, sample_size_obs, classifier_cde,
                         gp_model=gp_model, obs_sample=x_obs, t0=theta_0, grid_param_t1=grid_param,
                         d=model_obj.d, d_obs=model_obj.d_obs) for theta_0 in t0_grid])
                 clf_odds_fitted[clf_name] = (tau_obs, np.mean((tau_obs - true_tau_obs)**2))
+                print(clf_name, clf_odds_fitted[clf_name])
 
                 # Calculate the LR statistics given a sample
                 theta_mat, sample_mat = msnh_sampling_func(b_prime=b_prime, sample_size=sample_size_obs)
@@ -107,6 +110,7 @@ def main(run, rep, b, b_prime, alpha, sample_size_obs, classifier_cde,
                         clf=clf_odds, obs_sample=x_obs, t0=theta_0, grid_param_t1=grid_param,
                         d=model_obj.d, d_obs=model_obj.d_obs) for theta_0 in t0_grid])
                 clf_odds_fitted[clf_name] = (tau_obs, np.mean((tau_obs - true_tau_obs)**2))
+                print(clf_name, clf_odds_fitted[clf_name])
 
                 # Train the quantile regression algorithm for confidence levels
                 theta_mat, sample_mat = msnh_sampling_func(b_prime=b_prime, sample_size=sample_size_obs)
@@ -200,6 +204,10 @@ if __name__ == '__main__':
                         help='Statistical confidence level')
     parser.add_argument('--run', action="store", type=str, default='poisson',
                         help='Problem to run')
+    parser.add_argument('--sample_type', action="store", type=str, default='MC',
+                        help='Sampling type for the Gaussian Process. MC means Monte Carlo, so it selects a number'
+                             ' of anchor points and samples sample_size/anchor points samples there, otherwise it'
+                             ' samples points uniformly.')
     parser.add_argument('--debug', action='store_true', default=False,
                         help='If true, a very small value for the sample sizes is fit to make sure the'
                              'file can run quickly for debugging purposes')
@@ -233,5 +241,6 @@ if __name__ == '__main__':
             seed=argument_parsed.seed,
             verbose=argument_parsed.verbose,
             classifier_cde=argument_parsed.class_cde,
-            size_marginal=argument_parsed.size_marginal
+            size_marginal=argument_parsed.size_marginal,
+            sample_type=argument_parsed.sample_type
         )

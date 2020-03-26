@@ -13,13 +13,15 @@ import matplotlib.pyplot as plt
 from utils.functions import train_clf, compute_statistics_single_t0, clf_prob_value, or_loss
 from models.toy_poisson import ToyPoissonLoader
 from models.toy_gmm import ToyGMMLoader
+from models.toy_gamma import ToyGammaLoader
 from utils.qr_functions import train_qr_algo
 from or_classifiers.toy_example_list import classifier_dict
 from qr_algorithms.complete_list import classifier_cde_dict
 
 model_dict = {
     'poisson': ToyPoissonLoader,
-    'gmm': ToyGMMLoader
+    'gmm': ToyGMMLoader,
+    'gamma': ToyGammaLoader
 }
 
 
