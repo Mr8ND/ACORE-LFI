@@ -6,13 +6,13 @@ import argparse
 import pandas as pd
 from tqdm.auto import tqdm
 from datetime import datetime
-from sklearn.metrics import log_loss
 import seaborn as sns
 import matplotlib.pyplot as plt
 
-from utils.functions import train_clf, compute_statistics_single_t0, clf_prob_value, or_loss
+from utils.functions import train_clf, compute_statistics_single_t0
 from models.toy_poisson import ToyPoissonLoader
 from models.toy_gmm import ToyGMMLoader
+from models.toy_gamma import ToyGammaLoader
 from utils.qr_functions import train_qr_algo
 from or_classifiers.toy_example_list import classifier_dict
 from qr_algorithms.complete_list import classifier_cde_dict
@@ -20,7 +20,8 @@ from utils.gp_functions import train_gp, compute_statistics_single_t0_gp
 
 model_dict = {
     'poisson': ToyPoissonLoader,
-    'gmm': ToyGMMLoader
+    'gmm': ToyGMMLoader,
+    'gamma': ToyGammaLoader
 }
 
 
