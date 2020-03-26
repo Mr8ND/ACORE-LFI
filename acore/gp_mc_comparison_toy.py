@@ -67,7 +67,7 @@ def main(run, rep, b, b_prime, alpha, sample_size_obs, classifier_cde, sample_ty
         lik_theta0 = np.array([np.sum(np.log(lik_func(x_obs=x_obs, true_param=theta_0))) for theta_0 in t0_grid])
         max_across_grid = np.max(np.array([np.sum(np.log(lik_func(x_obs=x_obs, true_param=t1))) for t1 in grid_param]))
         true_tau_obs = lik_theta0.reshape(-1, ) - max_across_grid.reshape(1)
-        print('TRUE', true_tau_obs)
+        # print('TRUE', true_tau_obs)
 
         # Train the classifier for the odds
         clf_odds_fitted = {}
@@ -86,7 +86,7 @@ def main(run, rep, b, b_prime, alpha, sample_size_obs, classifier_cde, sample_ty
                         gp_model=gp_model, obs_sample=x_obs, t0=theta_0, grid_param_t1=grid_param,
                         d=model_obj.d, d_obs=model_obj.d_obs) for theta_0 in t0_grid])
                 clf_odds_fitted[clf_name] = (tau_obs, np.mean((tau_obs - true_tau_obs)**2))
-                print(clf_name, clf_odds_fitted[clf_name])
+                # print(clf_name, clf_odds_fitted[clf_name])
 
                 # Calculate the LR statistics given a sample
                 theta_mat, sample_mat = msnh_sampling_func(b_prime=b_prime, sample_size=sample_size_obs)
@@ -111,7 +111,7 @@ def main(run, rep, b, b_prime, alpha, sample_size_obs, classifier_cde, sample_ty
                         clf=clf_odds, obs_sample=x_obs, t0=theta_0, grid_param_t1=grid_param,
                         d=model_obj.d, d_obs=model_obj.d_obs) for theta_0 in t0_grid])
                 clf_odds_fitted[clf_name] = (tau_obs, np.mean((tau_obs - true_tau_obs)**2))
-                print(clf_name, clf_odds_fitted[clf_name])
+                # print(clf_name, clf_odds_fitted[clf_name])
 
                 # Train the quantile regression algorithm for confidence levels
                 theta_mat, sample_mat = msnh_sampling_func(b_prime=b_prime, sample_size=sample_size_obs)
