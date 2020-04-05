@@ -26,7 +26,7 @@ def train_qr_algo(model_obj, theta_mat, stats_mat, algo_name, learner_kwargs, py
         model.fit(theta_mat.reshape(-1, model_obj.d), stats_mat.reshape(-1, ))
         pred_vec = model.predict(prediction_grid.reshape(-1, model_obj.d))
     elif algo_name == 'pytorch':
-        model = q_model([alpha], **pytorch_kwargs, dropout=0.1, in_shape=model_obj.d)
+        model = q_model([alpha], dropout=0.1, in_shape=model_obj.d, **pytorch_kwargs)
         loss_func = QuantileLoss(quantiles=[alpha])
         learner = Learner(model, partial(torch.optim.Adam, weight_decay=1e-6),
                           loss_func, device="cpu")
@@ -34,7 +34,7 @@ def train_qr_algo(model_obj, theta_mat, stats_mat, algo_name, learner_kwargs, py
                     **learner_kwargs)
         pred_vec = learner.predict(prediction_grid.reshape(-1, model_obj.d).astype(np.float32))
     elif algo_name == 'pytorch_3l':
-        model = q_model_3l([alpha], **pytorch_kwargs, dropout=0.1, in_shape=model_obj.d)
+        model = q_model_3l([alpha], dropout=0.1, in_shape=model_obj.d, **pytorch_kwargs)
         loss_func = QuantileLoss(quantiles=[alpha])
         learner = Learner(model, partial(torch.optim.Adam, weight_decay=1e-6),
                           loss_func, device="cpu")
