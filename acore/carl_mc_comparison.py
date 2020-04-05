@@ -251,20 +251,20 @@ if __name__ == '__main__':
     #                     help='Number of Gaussian Process anchor points in the theta space.')
     argument_parsed = parser.parse_args()
 
-    b_vec = [200, 800, 1800]
-    for b_val in b_vec:
-        main(
-            run=argument_parsed.run,
-            rep=argument_parsed.rep,
-            marginal=argument_parsed.marginal,
-            b=b_val,      # argument_parsed.b,
-            b_prime=argument_parsed.b_prime,
-            alpha=argument_parsed.alpha,
-            debug=argument_parsed.debug,
-            sample_size_obs=argument_parsed.sample_size_obs,
-            seed=argument_parsed.seed,
-            verbose=argument_parsed.verbose,
-            classifier_cde=argument_parsed.class_cde,
-            size_marginal=argument_parsed.size_marginal,
-            sample_type=argument_parsed.sample_type
-        )
+    # b_vec = [200, 800, 1800]
+    # for b_val in b_vec:
+    main(
+        run=argument_parsed.run,
+        rep=argument_parsed.rep,
+        marginal=argument_parsed.marginal,
+        b=argument_parsed.b,
+        b_prime=argument_parsed.b_prime,
+        alpha=argument_parsed.alpha,
+        debug=argument_parsed.debug,
+        sample_size_obs=argument_parsed.sample_size_obs,
+        seed=argument_parsed.seed,
+        verbose=argument_parsed.verbose,
+        classifier_cde=argument_parsed.class_cde,
+        size_marginal=argument_parsed.size_marginal,
+        sample_type=argument_parsed.sample_type
+    )
