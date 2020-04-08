@@ -127,7 +127,8 @@ def main(run, rep, b, b_prime, alpha, sample_size_obs, classifier_cde, sample_ty
 
                 n_training_epochs = {200: 50, 800: 100, 1800: 150}
                 carl.train(method='carl', x=x_mat, y=y_mat, theta0=theta_mat[:, :model_obj.d],
-                           theta1=theta_mat[:, model_obj.d:], n_epochs=n_training_epochs[b])
+                           theta1=theta_mat[:, model_obj.d:], n_epochs=n_training_epochs[b],
+                           initial_lr=1e-6, final_lr=1e-6)
 
                 theta0_pred = np.repeat(t0_grid, grid_param.shape[0]).reshape(-1, model_obj.d)
                 theta1_pred = np.tile(grid_param, (t0_grid.shape[0], 1)).reshape(-1, model_obj.d)
