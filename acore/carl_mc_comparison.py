@@ -27,12 +27,13 @@ model_dict = {
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 
 
-def compute_statistics_single_t0_carl(model, obs_sample, t0, grid_param_t1):
-    theta0_pred = np.repeat(t0, grid_param_t1.shape[0]).reshape(-1, 1)
+def compute_statistics_single_t0_carl(model, obs_sample, t0, grid_param_t1, param_d):
+
+    theta0_pred = np.repeat(t0, grid_param_t1.shape[0]).reshape(-1, param_d)
     theta1_pred = grid_param_t1
     log_r_hat, _, _ = model.evaluate(theta0=theta0_pred, theta1=theta1_pred,
                                      x=obs_sample, evaluate_score=False)
-    return np.min(log_r_hat)
+    return np.min(np.sum(log_r_hat.reshape(theta1_pred.shape[0], obs_sample.shape[0]), axis=1))
 
 
 def main(run, rep, b, b_prime, alpha, sample_size_obs, classifier_cde, sample_type='MC',
@@ -114,26 +115,28 @@ def main(run, rep, b, b_prime, alpha, sample_size_obs, classifier_cde, sample_ty
                 else:
                     raise NotImplementedError
 
-                sample_t0 = np.array([model_obj.sample_sim(sample_size=1, true_param=t0)
+                sample_t0 = np.array([model_obj.sample_sim(sample_size=sample_size_obs, true_param=t0)
                                       for t0 in theta0])
-                sample_t1 = np.array([model_obj.sample_sim(sample_size=1, true_param=t1)
+                sample_t1 = np.array([model_obj.sample_sim(sample_size=sample_size_obs, true_param=t1)
                                       for t1 in theta1])
 
-                theta_mat = np.vstack((np.hstack((theta0.reshape(-1, 1), theta1.reshape(-1, 1))),
-                                       np.hstack((theta0.reshape(-1, 1), theta1.reshape(-1, 1)))))
-                x_mat = np.vstack((sample_t0.reshape(-1, 1), sample_t1.reshape(-1, 1)))
+                theta_mat = np.vstack((np.hstack((theta0.reshape(-1, model_obj.d), theta1.reshape(-1, model_obj.d))),
+                                       np.hstack((theta0.reshape(-1, model_obj.d), theta1.reshape(-1, model_obj.d)))))
+                x_mat = np.vstack((sample_t0.reshape(-1, sample_size_obs), sample_t1.reshape(-1, sample_size_obs)))
                 y_mat = np.vstack((np.zeros(b // 2).reshape(-1, 1), np.ones(b // 2).reshape(-1, 1)))
 
-                carl.train(method='carl', x=x_mat, y=y_mat, theta0=theta_mat[:, 0], theta1=theta_mat[:, 1],
-                           n_epochs=50, shuffle_labels=True)
+                carl.train(method='carl', x=x_mat, y=y_mat, theta0=theta_mat[:, :model_obj.d],
+                           theta1=theta_mat[:, model_obj.d:], n_epochs=75, shuffle_labels=True)
 
-                theta0_pred = np.repeat(t0_grid, grid_param.shape[0]).reshape(-1, 1)
-                theta1_pred = np.tile(grid_param, (t0_grid.shape[0], 1)).reshape(-1, 1)
+                theta0_pred = np.repeat(t0_grid, grid_param.shape[0]).reshape(-1, model_obj.d)
+                theta1_pred = np.tile(grid_param, (t0_grid.shape[0], 1)).reshape(-1, model_obj.d)
                 log_r_hat, _, _ = carl.evaluate(theta0=theta0_pred, theta1=theta1_pred,
                                                 x=x_obs, evaluate_score=False)
-                tau_obs = np.min(log_r_hat.reshape(t0_grid.shape[0], grid_param.shape[0]), axis=1)
+
+                tau_obs = np.min(
+                    np.sum(log_r_hat.reshape(t0_grid.shape[0], grid_param.shape[0], sample_size_obs), axis=2),
+                    axis=1)
                 clf_odds_fitted[clf_name] = (tau_obs, np.mean((tau_obs - true_tau_obs)**2))
-                #print(clf_name, np.mean((tau_obs - true_tau_obs)**2))
 
                 # Calculate the LR statistics given a sample
                 theta_mat, sample_mat = msnh_sampling_func(b_prime=b_prime, sample_size=sample_size_obs)
@@ -143,7 +146,8 @@ def main(run, rep, b, b_prime, alpha, sample_size_obs, classifier_cde, sample_ty
                                                     model=carl,
                                                     obs_sample=row[model_obj.d:],
                                                     t0=row[:model_obj.d],
-                                                    grid_param_t1=grid_param
+                                                    grid_param_t1=grid_param,
+                                                    param_d=model_obj.d
                                                 ))
 
             else:
@@ -217,7 +221,7 @@ if __name__ == '__main__':
                         help='Random State')
     parser.add_argument('--rep', action="store", type=int, default=100,
                         help='Number of Repetitions for calculating the Pinball loss')
-    parser.add_argument('--b', action="store", type=int, default=5000,
+    parser.add_argument('--b', action="store", type=int, default=200,
                         help='Sample size to train the classifier for calculating odds')
     parser.add_argument('--b_prime', action="store", type=int, default=1000,
                         help='Sample size to train the quantile regression algorithm')
