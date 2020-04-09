@@ -103,13 +103,13 @@ def main(run, rep, b, b_prime, alpha, sample_size_obs, classifier_cde, sample_ty
 
                 # Generate data for CARL
                 if sample_type == 'MC':
-                    n_pairs = np.sqrt(b // 2)
+                    n_pairs = int(np.sqrt(b // 2))
                     theta0_base = np.linspace(start=model_obj.low_int, stop=model_obj.high_int, num=n_pairs)
                     theta1_base = np.linspace(start=model_obj.low_int, stop=model_obj.high_int, num=n_pairs)
                     theta0 = np.repeat(theta0_base.reshape(-1, 1), int(n_pairs))
                     theta1 = np.tile(theta1_base.reshape(-1, 1), (int(n_pairs), 1))
                 elif sample_type == 'uniform':
-                    n_pairs = b // 2
+                    n_pairs = int(b // 2)
                     theta0 = np.random.uniform(low=model_obj.low_int, high=model_obj.high_int, size=n_pairs)
                     theta1 = np.random.uniform(low=model_obj.low_int, high=model_obj.high_int, size=n_pairs)
                 else:
@@ -125,10 +125,9 @@ def main(run, rep, b, b_prime, alpha, sample_size_obs, classifier_cde, sample_ty
                 x_mat = np.vstack((sample_t0.reshape(-1, sample_size_obs), sample_t1.reshape(-1, sample_size_obs)))
                 y_mat = np.vstack((np.zeros(b // 2).reshape(-1, 1), np.ones(b // 2).reshape(-1, 1)))
 
-                n_training_epochs = {200: 50, 800: 100, 1800: 150}
                 carl.train(method='carl', x=x_mat, y=y_mat, theta0=theta_mat[:, :model_obj.d],
-                           theta1=theta_mat[:, model_obj.d:], n_epochs=n_training_epochs[b],
-                           initial_lr=1e-6, final_lr=1e-6)
+                           theta1=theta_mat[:, model_obj.d:], n_epochs=25,
+                           initial_lr=1e-4, final_lr=1e-4)
 
                 theta0_pred = np.repeat(t0_grid, grid_param.shape[0]).reshape(-1, model_obj.d)
                 theta1_pred = np.tile(grid_param, (t0_grid.shape[0], 1)).reshape(-1, model_obj.d)
