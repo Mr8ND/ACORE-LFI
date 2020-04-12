@@ -56,19 +56,23 @@ def main(b, b_prime, alpha, classifier, class_cde, sample_size_obs, run, t_star,
     # and compute statistics tau value for each t0
     x_obs = gen_obs_func(sample_size=sample_size_obs, true_param=t0_val)
 
+    start_time = datetime.now()
     # Calculate Odds
     print('----- Calculating Odds')
     if t_star:
+        train_time = datetime.now()
         pbar = tqdm(total=t0_grid.shape[0], desc=r'Calculating True $\tau$')
         tau_obs = []
         for t0 in t0_grid:
             tau_obs.append(model_obj.compute_exact_tau(x_obs=x_obs, t0_val=t0, meshgrid=grid_param))
             pbar.update(1)
         tau_obs = np.array(tau_obs)
+        pred_time = datetime.now()
     else:
         # Compute Odds via classifier
         clf = train_clf(sample_size=b, clf_model=clf_model, gen_function=gen_sample_func, d=model_obj.d,
                         clf_name=classifier)
+        train_time = datetime.now()
         print('----- %s Trained' % classifier)
 
         pbar = tqdm(total=len(t0_grid), desc='Calculate Odds')
@@ -78,6 +82,7 @@ def main(b, b_prime, alpha, classifier, class_cde, sample_size_obs, run, t_star,
                 clf=clf, obs_sample=x_obs, t0=theta_0, d=model_obj.d, d_obs=model_obj.d_obs, grid_param_t1=grid_param))
             pbar.update(1)
         tau_obs = np.array(tau_obs)
+        pred_time = datetime.now()
 
     # Train Quantile Regression
     if c_star:
@@ -90,12 +95,14 @@ def main(b, b_prime, alpha, classifier, class_cde, sample_size_obs, run, t_star,
                 n_sampled=n_sampled,
                 sample_size_obs=sample_size_obs))
             pbar.update(1)
+        bprime_time = datetime.now()
 
         tau_distr = np.array(tau_distr)
         np.save(file='sims/%stau_distr_t0_%s_%s_%ssampled_%ssamplesizeobs.npy' % (
             model_obj.out_directory, b, b_prime, n_sampled, sample_size_obs
         ), arr=tau_distr)
         t0_pred_vec = np.quantile(a=tau_distr, q=alpha, axis=1)
+        cutoff_time = datetime.now()
 
     else:
         print('----- Training Quantile Regression Algorithm')
@@ -110,19 +117,27 @@ def main(b, b_prime, alpha, classifier, class_cde, sample_size_obs, run, t_star,
             stats_mat = np.array([compute_statistics_single_t0(
                 clf=clf, d=model_obj.d, d_obs=model_obj.d_obs, grid_param_t1=grid_param,
                 t0=theta_0, obs_sample=sample_mat[kk, :, :]) for kk, theta_0 in enumerate(theta_mat)])
-
+        bprime_time = datetime.now()
         clf_params = classifier_cde_dict[class_cde]
 
         t0_pred_vec = train_qr_algo(model_obj=model_obj, alpha=alpha, theta_mat=theta_mat, stats_mat=stats_mat,
                                     algo_name=clf_params[0], learner_kwargs=clf_params[1],
                                     pytorch_kwargs=clf_params[2] if len(clf_params) > 2 else None,
                                     prediction_grid=t0_grid)
+        cutoff_time = datetime.now()
 
     # Confidence Region
     print('----- Creating Confidence Region')
     simultaneous_nh_decision = []
     for jj, t0_pred in enumerate(t0_pred_vec):
         simultaneous_nh_decision.append([t0_pred, tau_obs[jj], int(tau_obs[jj] < t0_pred)])
+
+    time_vec = [(train_time - start_time).total_seconds(),
+                (pred_time - train_time).total_seconds(),
+                (bprime_time - pred_time).total_seconds(),
+                (cutoff_time - bprime_time).total_seconds()]
+    time_vec.append(sum(time_vec))
+    print(time_vec)
 
     # Saving data
     print('----- Saving Data')
@@ -137,7 +152,8 @@ def main(b, b_prime, alpha, classifier, class_cde, sample_size_obs, run, t_star,
         'seed': seed,
         'sample_size_obs': sample_size_obs,
         'classifier': classifier,
-        't_star': t_star
+        't_star': t_star,
+        'time_vec': time_vec
     }
     outfile_name = '2d_confint_%s_data_b_%s_bprime_%s_%s_%s_n%s_%s_%s_%s_%s%s_%s.pkl' % (
         run, b, b_prime, t0_val[0], t0_val[1], sample_size_obs, classifier, class_cde, n_sampled,

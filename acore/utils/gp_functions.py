@@ -41,7 +41,7 @@ def compute_statistics_single_t0_gp(gp_model, obs_sample, t0, grid_param_t1, d, 
 
     params_vec = np.vstack((t0.reshape(1, d), grid_param_t1.reshape(-1, d)))
     mean_vec, std_vec = gp_model.predict(params_vec.reshape(-1, d), return_std=True)
-    std_vec[std_vec == 0] = 1e-5
+    std_vec[std_vec == 0] = 1e-15
 
     # Likelihood of the observed sample at t0
     density_obj = norm(loc=mean_vec[0], scale=std_vec[0])

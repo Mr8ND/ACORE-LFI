@@ -6,7 +6,7 @@ import numpy as np
 import argparse
 import pandas as pd
 from tqdm.auto import tqdm
-from datetime import datetime
+from datetime import datetime, timedelta
 import lightgbm as lgb
 import logging
 import os
@@ -36,7 +36,7 @@ def compute_statistics_single_t0_carl(model, obs_sample, t0, grid_param_t1, para
     return np.min(np.sum(log_r_hat.reshape(theta1_pred.shape[0], obs_sample.shape[0]), axis=1))
 
 
-def main(run, rep, b, b_prime, alpha, sample_size_obs, classifier_cde, sample_type='MC',
+def main(run, rep, b, b_prime, alpha, sample_size_obs, classifier_cde, sample_type='MC', train_time_flag=True,
          debug=False, seed=7, size_check=1000, verbose=False, marginal=False, size_marginal=1000):
 
     # Changing values if debugging
@@ -78,7 +78,8 @@ def main(run, rep, b, b_prime, alpha, sample_size_obs, classifier_cde, sample_ty
     out_val = []
     out_cols = ['b_prime', 'b', 'classifier', 'classifier_cde', 'run', 'rep', 'sample_size_obs',
                 't0_true_val', 'theta_0_current', 'on_true_t0',
-                'estimated_tau', 'estimated_cutoff', 'in_confint', 'out_confint', 'size_CI', 'mse_loss']
+                'estimated_tau', 'estimated_cutoff', 'in_confint', 'out_confint', 'size_CI', 'mse_loss',
+                'training_time', 'pred_time', 'bprime_time', 'cutoff_time', 'total_time']
     pbar = tqdm(total=rep, desc='Toy Example for Simulations, n=%s, b=%s' % (sample_size_obs, b))
     for jj in range(rep):
 
@@ -95,6 +96,8 @@ def main(run, rep, b, b_prime, alpha, sample_size_obs, classifier_cde, sample_ty
         clf_odds_fitted = {}
         clf_cde_fitted = {}
         for clf_name, clf_model in sorted(classifier_dict.items(), key=lambda x: x[0]):
+
+            start_time = datetime.now()
 
             if 'carl_' in clf_name:
 
@@ -129,6 +132,8 @@ def main(run, rep, b, b_prime, alpha, sample_size_obs, classifier_cde, sample_ty
                            theta1=theta_mat[:, model_obj.d:], n_epochs=25,
                            initial_lr=1e-4, final_lr=1e-4)
 
+                training_time = datetime.now()
+
                 theta0_pred = np.repeat(t0_grid, grid_param.shape[0]).reshape(-1, model_obj.d)
                 theta1_pred = np.tile(grid_param, (t0_grid.shape[0], 1)).reshape(-1, model_obj.d)
                 log_r_hat, _, _ = carl.evaluate(theta0=theta0_pred, theta1=theta1_pred,
@@ -138,6 +143,7 @@ def main(run, rep, b, b_prime, alpha, sample_size_obs, classifier_cde, sample_ty
                     np.sum(log_r_hat.reshape(t0_grid.shape[0], grid_param.shape[0], sample_size_obs), axis=2),
                     axis=1)
                 clf_odds_fitted[clf_name] = (tau_obs, np.mean((tau_obs - true_tau_obs)**2))
+                pred_time = datetime.now()
 
                 # Calculate the LR statistics given a sample
                 theta_mat, sample_mat = msnh_sampling_func(b_prime=b_prime, sample_size=sample_size_obs)
@@ -150,10 +156,14 @@ def main(run, rep, b, b_prime, alpha, sample_size_obs, classifier_cde, sample_ty
                                                     grid_param_t1=grid_param,
                                                     param_d=model_obj.d
                                                 ))
+                bprime_time = datetime.now()
 
             else:
+
                 clf_odds = train_clf(sample_size=b, clf_model=clf_model, gen_function=gen_sample_func,
                                      clf_name=clf_name, marginal=marginal, nn_square_root=True)
+                training_time = datetime.now()
+
                 if verbose:
                     print('----- %s Trained' % clf_name)
                 tau_obs = np.array([
@@ -162,6 +172,7 @@ def main(run, rep, b, b_prime, alpha, sample_size_obs, classifier_cde, sample_ty
                         d=model_obj.d, d_obs=model_obj.d_obs) for theta_0 in t0_grid])
                 clf_odds_fitted[clf_name] = (tau_obs, np.mean((tau_obs - true_tau_obs)**2))
                 #print(clf_name, np.mean((tau_obs - true_tau_obs)**2))
+                pred_time = datetime.now()
 
                 # Train the quantile regression algorithm for confidence levels
                 theta_mat, sample_mat = msnh_sampling_func(b_prime=b_prime, sample_size=sample_size_obs)
@@ -175,6 +186,7 @@ def main(run, rep, b, b_prime, alpha, sample_size_obs, classifier_cde, sample_ty
                                                     d=model_obj.d,
                                                     d_obs=model_obj.d_obs
                                                 ))
+                bprime_time = datetime.now()
             clf_cde_fitted[clf_name] = {}
             # for clf_name_qr, clf_params in sorted(classifier_cde_dict.items(), key=lambda x: x[0]):
             clf_name_qr = classifier_cde
@@ -182,18 +194,26 @@ def main(run, rep, b, b_prime, alpha, sample_size_obs, classifier_cde, sample_ty
             model = lgb.LGBMRegressor(objective='quantile', alpha=alpha, **clf_params[1])
             model.fit(theta_mat.reshape(-1, model_obj.d), stats_mat.reshape(-1, ))
             t0_pred_vec = model.predict(t0_grid.reshape(-1, model_obj.d))
-            clf_cde_fitted[clf_name][clf_name_qr] = t0_pred_vec
+
+            cutoff_time = datetime.now()
+            clf_cde_fitted[clf_name][clf_name_qr] = (
+                t0_pred_vec, ((training_time - start_time).total_seconds() * 100,
+                              (pred_time - training_time).total_seconds() * 100,
+                              (bprime_time - pred_time).total_seconds() * 100,
+                              (cutoff_time - bprime_time).total_seconds() * 100))
+
 
         # At this point all it's left is to record
         for clf_name, (tau_obs_val, mse_val) in clf_odds_fitted.items():
-            for clf_name_qr, cutoff_val in clf_cde_fitted[clf_name].items():
+            for clf_name_qr, (cutoff_val, time_vec) in clf_cde_fitted[clf_name].items():
                 size_temp = np.sum((tau_obs_val >= cutoff_val).astype(int))/t0_grid.shape[0]
                 for kk, theta_0_current in enumerate(t0_grid):
                     out_val.append([
                         b_prime, b, clf_name, clf_name_qr, run, jj, sample_size_obs,
                         t0_val, theta_0_current, int(t0_val == theta_0_current),
                         tau_obs_val[kk], cutoff_val[kk], int(tau_obs_val[kk] > cutoff_val[kk]),
-                        int(tau_obs_val[kk] <= cutoff_val[kk]), size_temp, mse_val
+                        int(tau_obs_val[kk] <= cutoff_val[kk]), size_temp, mse_val,
+                        time_vec[0], time_vec[1], time_vec[2], time_vec[3], sum(time_vec)
                     ])
         pbar.update(1)
 
@@ -209,10 +229,17 @@ def main(run, rep, b, b_prime, alpha, sample_size_obs, classifier_cde, sample_ty
 
     # Print results
     cov_df = out_df[out_df['on_true_t0'] == 1][['classifier', 'classifier_cde',
-                                                'in_confint', 'mse_loss', 'size_CI']]
+                                                'in_confint', 'mse_loss', 'size_CI',
+                                                'training_time', 'pred_time', 'bprime_time', 'cutoff_time',
+                                                'total_time']]
     print(cov_df.groupby(['classifier', 'classifier_cde']).agg({'in_confint': [np.average],
                                                                 'size_CI': [np.average, np.std],
-                                                                'mse_loss': [np.average, np.std]}))
+                                                                'mse_loss': [np.average, np.std],
+                                                                'training_time': [np.average, np.std],
+                                                                'pred_time': [np.average, np.std],
+                                                                'bprime_time': [np.average, np.std],
+                                                                'cutoff_time': [np.average, np.std],
+                                                                'total_time': [np.average, np.std]}))
 
 
 if __name__ == '__main__':

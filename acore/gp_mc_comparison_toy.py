@@ -56,7 +56,8 @@ def main(run, rep, b, b_prime, alpha, sample_size_obs, classifier_cde, sample_ty
     out_val = []
     out_cols = ['b_prime', 'b', 'classifier', 'classifier_cde', 'run', 'rep', 'sample_size_obs',
                 't0_true_val', 'theta_0_current', 'on_true_t0',
-                'estimated_tau', 'estimated_cutoff', 'in_confint', 'out_confint', 'size_CI', 'mse_loss']
+                'estimated_tau', 'estimated_cutoff', 'in_confint', 'out_confint', 'size_CI', 'mse_loss',
+                'training_time', 'pred_time', 'bprime_time', 'cutoff_time', 'total_time']
     pbar = tqdm(total=rep, desc='Toy Example for Simulations, n=%s, b=%s' % (sample_size_obs, b))
     for jj in range(rep):
 
@@ -73,12 +74,14 @@ def main(run, rep, b, b_prime, alpha, sample_size_obs, classifier_cde, sample_ty
         clf_odds_fitted = {}
         clf_cde_fitted = {}
         for clf_name, clf_model in sorted(classifier_dict.items(), key=lambda x: x[0]):
+            start_time = datetime.now()
 
             if 'gaussian_process' in clf_name:
 
                 # Train Gaussian Process
                 gp_model = train_gp(sample_size=b, n_anchor_points=clf_model, model_obj=model_obj, t0_grid=t0_grid,
                                     sample_type=sample_type)
+                training_time = datetime.now()
 
                 # Calculate LR given a Gaussian Process
                 tau_obs = np.array([
@@ -87,6 +90,7 @@ def main(run, rep, b, b_prime, alpha, sample_size_obs, classifier_cde, sample_ty
                         d=model_obj.d, d_obs=model_obj.d_obs) for theta_0 in t0_grid])
                 clf_odds_fitted[clf_name] = (tau_obs, np.mean((tau_obs - true_tau_obs)**2))
                 # print(clf_name, clf_odds_fitted[clf_name])
+                pred_time = datetime.now()
 
                 # Calculate the LR statistics given a sample
                 theta_mat, sample_mat = msnh_sampling_func(b_prime=b_prime, sample_size=sample_size_obs)
@@ -100,10 +104,13 @@ def main(run, rep, b, b_prime, alpha, sample_size_obs, classifier_cde, sample_ty
                                                     d=model_obj.d,
                                                     d_obs=model_obj.d_obs
                                                 ))
+                bprime_time = datetime.now()
 
             else:
                 clf_odds = train_clf(sample_size=b, clf_model=clf_model, gen_function=gen_sample_func,
                                      clf_name=clf_name, marginal=marginal, nn_square_root=True)
+                training_time = datetime.now()
+
                 if verbose:
                     print('----- %s Trained' % clf_name)
                 tau_obs = np.array([
@@ -112,6 +119,7 @@ def main(run, rep, b, b_prime, alpha, sample_size_obs, classifier_cde, sample_ty
                         d=model_obj.d, d_obs=model_obj.d_obs) for theta_0 in t0_grid])
                 clf_odds_fitted[clf_name] = (tau_obs, np.mean((tau_obs - true_tau_obs)**2))
                 # print(clf_name, clf_odds_fitted[clf_name])
+                pred_time = datetime.now()
 
                 # Train the quantile regression algorithm for confidence levels
                 theta_mat, sample_mat = msnh_sampling_func(b_prime=b_prime, sample_size=sample_size_obs)
@@ -125,6 +133,8 @@ def main(run, rep, b, b_prime, alpha, sample_size_obs, classifier_cde, sample_ty
                                                     d=model_obj.d,
                                                     d_obs=model_obj.d_obs
                                                 ))
+                bprime_time = datetime.now()
+
             clf_cde_fitted[clf_name] = {}
             # for clf_name_qr, clf_params in sorted(classifier_cde_dict.items(), key=lambda x: x[0]):
             clf_name_qr = classifier_cde
@@ -133,18 +143,24 @@ def main(run, rep, b, b_prime, alpha, sample_size_obs, classifier_cde, sample_ty
                                         algo_name=clf_params[0], learner_kwargs=clf_params[1],
                                         pytorch_kwargs=clf_params[2] if len(clf_params) > 2 else None,
                                         alpha=alpha, prediction_grid=t0_grid)
-            clf_cde_fitted[clf_name][clf_name_qr] = t0_pred_vec
+            cutoff_time = datetime.now()
+            clf_cde_fitted[clf_name][clf_name_qr] = (
+                t0_pred_vec, ((training_time - start_time).total_seconds() * 100,
+                              (pred_time - training_time).total_seconds() * 100,
+                              (bprime_time - pred_time).total_seconds() * 100,
+                              (cutoff_time - bprime_time).total_seconds() * 100))
 
         # At this point all it's left is to record
         for clf_name, (tau_obs_val, mse_val) in clf_odds_fitted.items():
-            for clf_name_qr, cutoff_val in clf_cde_fitted[clf_name].items():
+            for clf_name_qr, (cutoff_val, time_vec) in clf_cde_fitted[clf_name].items():
                 size_temp = np.sum((tau_obs_val >= cutoff_val).astype(int))/t0_grid.shape[0]
                 for kk, theta_0_current in enumerate(t0_grid):
                     out_val.append([
                         b_prime, b, clf_name, clf_name_qr, run, jj, sample_size_obs,
                         t0_val, theta_0_current, int(t0_val == theta_0_current),
                         tau_obs_val[kk], cutoff_val[kk], int(tau_obs_val[kk] > cutoff_val[kk]),
-                        int(tau_obs_val[kk] <= cutoff_val[kk]), size_temp, mse_val
+                        int(tau_obs_val[kk] <= cutoff_val[kk]), size_temp, mse_val,
+                        time_vec[0], time_vec[1], time_vec[2], time_vec[3], sum(time_vec)
                     ])
         pbar.update(1)
 
@@ -160,10 +176,17 @@ def main(run, rep, b, b_prime, alpha, sample_size_obs, classifier_cde, sample_ty
 
     # Print results
     cov_df = out_df[out_df['on_true_t0'] == 1][['classifier', 'classifier_cde',
-                                                'in_confint', 'mse_loss', 'size_CI']]
+                                                'in_confint', 'mse_loss', 'size_CI',
+                                                'training_time', 'pred_time', 'bprime_time', 'cutoff_time',
+                                                'total_time']]
     print(cov_df.groupby(['classifier', 'classifier_cde']).agg({'in_confint': [np.average],
                                                                 'size_CI': [np.average, np.std],
-                                                                'mse_loss': [np.average, np.std]}))
+                                                                'mse_loss': [np.average, np.std],
+                                                                'training_time': [np.average, np.std],
+                                                                'pred_time': [np.average, np.std],
+                                                                'bprime_time': [np.average, np.std],
+                                                                'cutoff_time': [np.average, np.std],
+                                                                'total_time': [np.average, np.std]}))
 
     # Power plots
     out_df['class_combo'] = out_df[['classifier', 'classifier_cde']].apply(lambda x: x[0] + '---' + x[1], axis = 1)
