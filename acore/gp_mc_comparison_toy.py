@@ -58,7 +58,7 @@ def main(run, rep, b, b_prime, alpha, sample_size_obs, classifier_cde, sample_ty
     out_cols = ['b_prime', 'b', 'classifier', 'classifier_cde', 'run', 'rep', 'sample_size_obs',
                 't0_true_val', 'theta_0_current', 'on_true_t0',
                 'estimated_tau', 'estimated_cutoff', 'in_confint', 'out_confint', 'size_CI', 'mse_loss',
-                'training_time', 'pred_time', 'bprime_time', 'cutoff_time', 'total_time']
+                'training_time', 'pred_time', 'bprime_time', 'cutoff_time', 'total_time', 'cutoff_type']
     pbar = tqdm(total=rep, desc='Toy Example for Simulations, n=%s, b=%s' % (sample_size_obs, b))
     for jj in range(rep):
 
@@ -181,7 +181,7 @@ def main(run, rep, b, b_prime, alpha, sample_size_obs, classifier_cde, sample_ty
                         t0_val, theta_0_current, int(t0_val == theta_0_current),
                         tau_obs_val[kk], cutoff_val[kk], int(tau_obs_val[kk] > cutoff_val[kk]),
                         int(tau_obs_val[kk] <= cutoff_val[kk]), size_temp, mse_val,
-                        time_vec[0], time_vec[1], time_vec[2], time_vec[3], sum(time_vec)
+                        time_vec[0], time_vec[1], time_vec[2], time_vec[3], sum(time_vec), cutoff
                     ])
         pbar.update(1)
 
