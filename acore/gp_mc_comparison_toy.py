@@ -17,6 +17,7 @@ from utils.qr_functions import train_qr_algo
 from or_classifiers.toy_example_list import classifier_dict
 from qr_algorithms.complete_list import classifier_cde_dict
 from utils.gp_functions import train_gp, compute_statistics_single_t0_gp
+from scipy.stats import chi2
 
 model_dict = {
     'poisson': ToyPoissonLoader,
@@ -25,7 +26,7 @@ model_dict = {
 }
 
 
-def main(run, rep, b, b_prime, alpha, sample_size_obs, classifier_cde, sample_type='MC',
+def main(run, rep, b, b_prime, alpha, sample_size_obs, classifier_cde, sample_type='MC', cutoff='qr',
          debug=False, seed=7, size_check=1000, verbose=False, marginal=False, size_marginal=1000):
 
     # Changing values if debugging
@@ -93,18 +94,37 @@ def main(run, rep, b, b_prime, alpha, sample_size_obs, classifier_cde, sample_ty
                 pred_time = datetime.now()
 
                 # Calculate the LR statistics given a sample
-                theta_mat, sample_mat = msnh_sampling_func(b_prime=b_prime, sample_size=sample_size_obs)
-                full_mat = np.hstack((theta_mat, sample_mat))
-                stats_mat = np.apply_along_axis(arr=full_mat, axis=1,
-                                                func1d=lambda row: compute_statistics_single_t0_gp(
-                                                    gp_model=gp_model,
-                                                    obs_sample=row[model_obj.d:],
-                                                    t0=row[:model_obj.d],
-                                                    grid_param_t1=grid_param,
-                                                    d=model_obj.d,
-                                                    d_obs=model_obj.d_obs
-                                                ))
-                bprime_time = datetime.now()
+                if cutoff == 'qr':
+                    theta_mat, sample_mat = msnh_sampling_func(b_prime=b_prime, sample_size=sample_size_obs)
+                    full_mat = np.hstack((theta_mat, sample_mat))
+                    stats_mat = np.apply_along_axis(arr=full_mat, axis=1,
+                                                    func1d=lambda row: compute_statistics_single_t0_gp(
+                                                        gp_model=gp_model,
+                                                        obs_sample=row[model_obj.d:],
+                                                        t0=row[:model_obj.d],
+                                                        grid_param_t1=grid_param,
+                                                        d=model_obj.d,
+                                                        d_obs=model_obj.d_obs
+                                                    ))
+                    bprime_time = datetime.now()
+
+                    clf_cde_fitted[clf_name] = {}
+                    # for clf_name_qr, clf_params in sorted(classifier_cde_dict.items(), key=lambda x: x[0]):
+                    clf_name_qr = classifier_cde
+                    clf_params = classifier_cde_dict[classifier_cde]
+                    t0_pred_vec = train_qr_algo(model_obj=model_obj, theta_mat=theta_mat, stats_mat=stats_mat,
+                                                algo_name=clf_params[0], learner_kwargs=clf_params[1],
+                                                pytorch_kwargs=clf_params[2] if len(clf_params) > 2 else None,
+                                                alpha=alpha, prediction_grid=t0_grid)
+                elif cutoff == 'chisquare':
+                    chisquare_cutoff = chi2.ppf(q=1.0-alpha, df=1)
+                    t0_pred_vec = np.array([-0.5 * chisquare_cutoff] * tau_obs.shape[0])
+
+                    bprime_time = datetime.now()
+                    clf_name_qr = classifier_cde
+                    clf_cde_fitted[clf_name] = {}
+                else:
+                    raise ValueError('Cutoff %s not recognized. Either "qr" or "chisquare" are accepted' % cutoff)
 
             else:
                 clf_odds = train_clf(sample_size=b, clf_model=clf_model, gen_function=gen_sample_func,
@@ -135,14 +155,15 @@ def main(run, rep, b, b_prime, alpha, sample_size_obs, classifier_cde, sample_ty
                                                 ))
                 bprime_time = datetime.now()
 
-            clf_cde_fitted[clf_name] = {}
-            # for clf_name_qr, clf_params in sorted(classifier_cde_dict.items(), key=lambda x: x[0]):
-            clf_name_qr = classifier_cde
-            clf_params = classifier_cde_dict[classifier_cde]
-            t0_pred_vec = train_qr_algo(model_obj=model_obj, theta_mat=theta_mat, stats_mat=stats_mat,
-                                        algo_name=clf_params[0], learner_kwargs=clf_params[1],
-                                        pytorch_kwargs=clf_params[2] if len(clf_params) > 2 else None,
-                                        alpha=alpha, prediction_grid=t0_grid)
+                clf_cde_fitted[clf_name] = {}
+                # for clf_name_qr, clf_params in sorted(classifier_cde_dict.items(), key=lambda x: x[0]):
+                clf_name_qr = classifier_cde
+                clf_params = classifier_cde_dict[classifier_cde]
+                t0_pred_vec = train_qr_algo(model_obj=model_obj, theta_mat=theta_mat, stats_mat=stats_mat,
+                                            algo_name=clf_params[0], learner_kwargs=clf_params[1],
+                                            pytorch_kwargs=clf_params[2] if len(clf_params) > 2 else None,
+                                            alpha=alpha, prediction_grid=t0_grid)
+
             cutoff_time = datetime.now()
             clf_cde_fitted[clf_name][clf_name_qr] = (
                 t0_pred_vec, ((training_time - start_time).total_seconds() * 100,
@@ -247,6 +268,9 @@ if __name__ == '__main__':
                         help='Sample size of the actual marginal distribution, if marginal is True.')
     parser.add_argument('--or_loss_samples', action="store", type=int, default=1000,
                         help='Sample size for the calculation of the OR loss.')
+    parser.add_argument('--cutoff', action="store", type=str, default='qr',
+                        help='How to obtain the cutoff approximation: either qr (quantile regression estimation)'
+                             ' or chisquare (chisquare approximation via Wilks theorem)')
     # parser.add_argument('--n_anchor', action="store", type=int, default=5,
     #                     help='Number of Gaussian Process anchor points in the theta space.')
     argument_parsed = parser.parse_args()
@@ -266,5 +290,6 @@ if __name__ == '__main__':
             verbose=argument_parsed.verbose,
             classifier_cde=argument_parsed.class_cde,
             size_marginal=argument_parsed.size_marginal,
-            sample_type=argument_parsed.sample_type
+            sample_type=argument_parsed.sample_type,
+            cutoff=argument_parsed.cutoff
         )
