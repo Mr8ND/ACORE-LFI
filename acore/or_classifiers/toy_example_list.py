@@ -12,6 +12,11 @@ classifier_dict = {
     'QDA': QuadraticDiscriminantAnalysis()
 }
 
+classifier_dict_multid = {
+    'NN': KNeighborsClassifier(),
+    'MLP': MLPClassifier(alpha=0, max_iter=25000),
+    'XGBoost (d3, n500)': XGBClassifier(max_depth=3, n_estimators=500)
+}
 
 classifier_dict_complete = {
     'NN': KNeighborsClassifier(),
