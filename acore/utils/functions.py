@@ -197,13 +197,19 @@ def compute_exact_tau(or_func, x_obs, t0_val, t1_linspace):
     return np.min(np.array([np.sum(np.log(or_func(x_obs=x_obs, t0=t0_val, t1=t1))) for t1 in t1_linspace]))
 
 
-def compute_exact_tau_distr(gen_obs_func, or_func, t0_val, t1_linspace, n_sampled=1000, sample_size_obs=200):
+def compute_exact_tau_distr(gen_obs_func, or_func, t0_val, t1_linspace, d_obs=1, n_sampled=1000, sample_size_obs=200):
     full_obs_sample = gen_obs_func(sample_size=n_sampled * sample_size_obs, true_param=t0_val)
-    sample_mat = full_obs_sample.reshape(n_sampled, sample_size_obs)
 
-    tau_sample = np.apply_along_axis(arr=sample_mat, axis=1,
-                                     func1d=lambda row: compute_exact_tau(
-                                         or_func=or_func, x_obs=row, t0_val=t0_val, t1_linspace=t1_linspace))
+    if d_obs == 1:
+        sample_mat = full_obs_sample.reshape(n_sampled, sample_size_obs)
+        tau_sample = np.apply_along_axis(arr=sample_mat, axis=1,
+                                         func1d=lambda row: compute_exact_tau(
+                                             or_func=or_func, x_obs=row, t0_val=t0_val, t1_linspace=t1_linspace))
+    else:
+        sample_mat = full_obs_sample.reshape(n_sampled, sample_size_obs, d_obs)
+        tau_sample = np.array([compute_exact_tau(
+            or_func=or_func, x_obs=sample_mat[kk, :, :], t0_val=t0_val, t1_linspace=t1_linspace)
+            for kk in range(n_sampled)])
 
     return tau_sample
 
