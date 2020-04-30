@@ -18,7 +18,7 @@ model_dict = {
 
 
 def main(d_obs, run, rep, alpha, sample_size_obs, n_sampled_true_tau, debug=False, seed=7, verbose=False,
-         marginal=False, size_marginal=1000, size_check=1000):
+         marginal=False, size_marginal=1000, size_check=10000):
 
     # Changing values if debugging
     rep = rep if not debug else 2
@@ -87,9 +87,9 @@ def main(d_obs, run, rep, alpha, sample_size_obs, n_sampled_true_tau, debug=Fals
     # Saving the results
     out_df = pd.DataFrame.from_records(data=out_val, index=range(len(out_val)), columns=out_cols)
     out_dir = 'sims/classifier_power_multid/'
-    out_filename = 'truth_classifier_power_multid%s_%s_%srep_alpha%s_sampleobs%s_t0val%s_%s.csv' % (
+    out_filename = 'truth_classifier_power_multid%s_%s_%srep_alpha%s_sampleobs%s_t0val%s_%ssampletau_%s.csv' % (
         d_obs, run, rep, str(alpha).replace('.', '-'), sample_size_obs,
-        str(t0_val).replace('.', '-'),
+        str(t0_val).replace('.', '-'), n_sampled_true_tau,
         datetime.strftime(datetime.today(), '%Y-%m-%d')
     )
     out_df.to_csv(out_dir + out_filename)
