@@ -127,10 +127,62 @@ def pinball_loss(y_true, y_pred, alpha):
     return np.average(np.max(diff_mat, axis=1))
 
 
+def compute_bayesfactor_single_t0(clf, obs_sample, t0, gen_param_fun,
+                                  d=1, d_obs=1, monte_carlo_samples=500):
+
+    theta_samples = gen_param_fun(sample_size=monte_carlo_samples)
+    n = obs_sample.shape[0]
+
+    if d > 1:
+        predict_mat = np.hstack((
+            np.vstack((
+                np.tile(t0, n).reshape(-1, d),
+                np.tile(theta_samples, n).reshape(-1, d)
+            )),
+            np.vstack((
+                obs_sample.reshape(-1, d_obs),
+                np.tile(obs_sample, (monte_carlo_samples, 1)).reshape(-1, d_obs)
+            ))
+        ))
+    else:
+        predict_mat = np.hstack((
+            np.vstack((
+                np.repeat(t0, n).reshape(-1, 1),
+                np.repeat(theta_samples, n).reshape(-1, 1)
+            )),
+            np.vstack((
+                obs_sample.reshape(-1, d_obs),
+                np.tile(obs_sample, (monte_carlo_samples, 1)).reshape(-1, d_obs)
+            ))
+        ))
+    assert predict_mat.shape == (n * monte_carlo_samples + n, d + d_obs)
+
+    # Do the prediction step
+    prob_mat = clf.predict_proba(predict_mat)
+    prob_mat[prob_mat == 0] = 1e-15
+    assert prob_mat.shape == (n * monte_carlo_samples + n, 2)
+
+    # Calculate odds
+    # We extract t0 values
+    odds_t0 = np.exp(np.sum(np.log(prob_mat[0:n, 1] / prob_mat[0:n, 0])))
+    assert isinstance(odds_t0, float)
+
+    # We calculate the values for the monte carlo samples to approximate the integral
+    odds_t1 = prob_mat[n:, 1] / prob_mat[n:, 0]
+    assert odds_t1.shape[0] == n * monte_carlo_samples
+
+    # Calculate sum of logs for each of the value we sampled from Monte Carlo samples
+    grouped_sum_t1 = np.array(
+        [np.exp(np.sum(np.log(odds_t1[n * ii:(n * (ii + 1))]))) for ii in range(monte_carlo_samples)])
+    assert grouped_sum_t1.shape[0] == monte_carlo_samples
+
+    return odds_t0/np.average(grouped_sum_t1.reshape(-1, ))
+
+
 def compute_statistics_single_t0(clf, obs_sample, t0, grid_param_t1, d=1, d_obs=1):
     # Stack the data
-    # First column: we repeat t0 for n times, and then repeat t1 for n times each
-    # Second column: We duplicate the data n_t1 + 1 times
+    # First sets of column: we repeat t0 for n times, and then repeat t1 for n times each
+    # Second sets of column: We duplicate the data n_t1 + 1 times
     n = obs_sample.shape[0]
     n_t1 = grid_param_t1.shape[0]
 

@@ -10,7 +10,7 @@ from sklearn.metrics import log_loss
 import seaborn as sns
 import matplotlib.pyplot as plt
 
-from utils.functions import train_clf, compute_statistics_single_t0, clf_prob_value, or_loss
+from utils.functions import train_clf, compute_statistics_single_t0, clf_prob_value, compute_bayesfactor_single_t0
 from models.toy_poisson import ToyPoissonLoader
 from models.toy_gmm import ToyGMMLoader
 from models.toy_gamma import ToyGammaLoader
@@ -25,8 +25,8 @@ model_dict = {
 }
 
 
-def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier_cde, or_loss_samples=1000,
-         debug=False, seed=7, size_check=1000, verbose=False, marginal=False, size_marginal=1000):
+def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier_cde, test_statistic,
+         or_loss_samples=1000, debug=False, seed=7, size_check=1000, verbose=False, marginal=False, size_marginal=1000):
 
     # Changing values if debugging
     b = b if not debug else 100
@@ -40,6 +40,7 @@ def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier_cde, o
     grid_param = model_obj.grid
     gen_obs_func = model_obj.sample_sim
     gen_sample_func = model_obj.generate_sample
+    gen_param_fun = model_obj.sample_param_values
     t0_grid = model_obj.pred_grid
     tp_func = model_obj.compute_exact_prob
     or_loss_sample_func = model_obj.create_samples_for_or_loss
@@ -63,10 +64,9 @@ def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier_cde, o
     # Each time we train the different classifiers, we build the intervals and we record
     # whether the point is in or not.
     out_val = []
-    out_cols = ['b_prime', 'b', 'classifier', 'classifier_cde', 'run', 'rep', 'sample_size_obs',
+    out_cols = ['test_statistic', 'b_prime', 'b', 'classifier', 'classifier_cde', 'run', 'rep', 'sample_size_obs',
                 'cross_entropy_loss', 't0_true_val', 'theta_0_current', 'on_true_t0',
-                'estimated_tau', 'estimated_cutoff', 'in_confint', 'out_confint', 'size_CI', 'true_entropy',
-                'or_loss']
+                'estimated_tau', 'estimated_cutoff', 'in_confint', 'out_confint', 'size_CI', 'true_entropy']
     pbar = tqdm(total=rep, desc='Toy Example for Simulations, n=%s, b=%s' % (sample_size_obs, b))
     for jj in range(rep):
 
@@ -81,10 +81,20 @@ def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier_cde, o
                                  clf_name=clf_name, marginal=marginal, nn_square_root=True)
             if verbose:
                 print('----- %s Trained' % clf_name)
-            tau_obs = np.array([
-                compute_statistics_single_t0(
-                    clf=clf_odds, obs_sample=x_obs, t0=theta_0, grid_param_t1=grid_param,
-                    d=model_obj.d, d_obs=model_obj.d_obs) for theta_0 in t0_grid])
+
+            if test_statistic == 'acore':
+                tau_obs = np.array([
+                    compute_statistics_single_t0(
+                        clf=clf_odds, obs_sample=x_obs, t0=theta_0, grid_param_t1=grid_param,
+                        d=model_obj.d, d_obs=model_obj.d_obs) for theta_0 in t0_grid])
+            elif test_statistic == 'avgacore':
+                tau_obs = np.array([
+                    compute_bayesfactor_single_t0(
+                        clf=clf_odds, obs_sample=x_obs, t0=theta_0, gen_param_fun=gen_param_fun,
+                        d=model_obj.d, d_obs=model_obj.d_obs) for theta_0 in t0_grid])
+            else:
+                raise ValueError('The variable test_statistic needs to be either acore or avgacore.'
+                                 ' Currently %s' % test_statistic)
 
             # Calculating cross-entropy
             est_prob_vec = clf_prob_value(clf=clf_odds, x_vec=x_vec, theta_vec=theta_vec, d=model_obj.d,
@@ -92,22 +102,39 @@ def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier_cde, o
             loss_value = log_loss(y_true=bern_vec, y_pred=est_prob_vec)
 
             # Calculating or loss
-            or_loss_value = or_loss(clf=clf_odds, first_sample=first_term_sample, second_sample=second_term_sample)
+            # or_loss_value = or_loss(clf=clf_odds, first_sample=first_term_sample, second_sample=second_term_sample)
+            # clf_odds_fitted[clf_name] = (tau_obs, loss_value, or_loss_value)
 
-            clf_odds_fitted[clf_name] = (tau_obs, loss_value, or_loss_value)
+            clf_odds_fitted[clf_name] = (tau_obs, loss_value)
 
             # Train the quantile regression algorithm for confidence levels
             theta_mat, sample_mat = msnh_sampling_func(b_prime=b_prime, sample_size=sample_size_obs)
             full_mat = np.hstack((theta_mat, sample_mat))
-            stats_mat = np.apply_along_axis(arr=full_mat, axis=1,
-                                            func1d=lambda row: compute_statistics_single_t0(
-                                                clf=clf_odds,
-                                                obs_sample=row[model_obj.d:],
-                                                t0=row[:model_obj.d],
-                                                grid_param_t1=grid_param,
-                                                d=model_obj.d,
-                                                d_obs=model_obj.d_obs
-                                            ))
+
+            if test_statistic == 'acore':
+                stats_mat = np.apply_along_axis(arr=full_mat, axis=1,
+                                                func1d=lambda row: compute_statistics_single_t0(
+                                                    clf=clf_odds,
+                                                    obs_sample=row[model_obj.d:],
+                                                    t0=row[:model_obj.d],
+                                                    grid_param_t1=grid_param,
+                                                    d=model_obj.d,
+                                                    d_obs=model_obj.d_obs
+                                                ))
+            elif test_statistic == 'avgacore':
+                stats_mat = np.apply_along_axis(arr=full_mat, axis=1,
+                                                func1d=lambda row: compute_bayesfactor_single_t0(
+                                                    clf=clf_odds,
+                                                    obs_sample=row[model_obj.d:],
+                                                    t0=row[:model_obj.d],
+                                                    gen_param_fun=gen_param_fun,
+                                                    d=model_obj.d,
+                                                    d_obs=model_obj.d_obs
+                                                ))
+            else:
+                raise ValueError('The variable test_statistic needs to be either acore or avgacore.'
+                                 ' Currently %s' % test_statistic)
+
             clf_cde_fitted[clf_name] = {}
             # for clf_name_qr, clf_params in sorted(classifier_cde_dict.items(), key=lambda x: x[0]):
             clf_name_qr = classifier_cde
@@ -119,23 +146,23 @@ def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier_cde, o
             clf_cde_fitted[clf_name][clf_name_qr] = t0_pred_vec
 
         # At this point all it's left is to record
-        for clf_name, (tau_obs_val, cross_ent_loss, or_loss_value) in clf_odds_fitted.items():
+        for clf_name, (tau_obs_val, cross_ent_loss) in clf_odds_fitted.items():
             for clf_name_qr, cutoff_val in clf_cde_fitted[clf_name].items():
                 size_temp = np.sum((tau_obs_val >= cutoff_val).astype(int))/t0_grid.shape[0]
                 for kk, theta_0_current in enumerate(t0_grid):
                     out_val.append([
-                        b_prime, b, clf_name, clf_name_qr, run, jj, sample_size_obs, cross_ent_loss,
+                        test_statistic, b_prime, b, clf_name, clf_name_qr, run, jj, sample_size_obs, cross_ent_loss,
                         t0_val, theta_0_current, int(t0_val == theta_0_current),
                         tau_obs_val[kk], cutoff_val[kk], int(tau_obs_val[kk] > cutoff_val[kk]),
-                        int(tau_obs_val[kk] <= cutoff_val[kk]), size_temp, entropy_est, or_loss_value
+                        int(tau_obs_val[kk] <= cutoff_val[kk]), size_temp, entropy_est
                     ])
         pbar.update(1)
 
     # Saving the results
     out_df = pd.DataFrame.from_records(data=out_val, index=range(len(out_val)), columns=out_cols)
     out_dir = 'sims/classifier_cov_pow_toy/'
-    out_filename = 'classifier_reps_cov_pow_toy_%sB_%sBprime_%s_%srep_alpha%s_sampleobs%s_t0val%s_%s_%s.csv' % (
-        b, b_prime, run, rep, str(alpha).replace('.', '-'), sample_size_obs,
+    out_filename = 'classifier_reps_cov_pow_toy_%steststats_%sB_%sBprime_%s_%srep_alpha%s_sampleobs%s_t0val%s_%s_%s.csv' % (
+        test_statistic, b, b_prime, run, rep, str(alpha).replace('.', '-'), sample_size_obs,
         str(t0_val).replace('.', '-'), classifier_cde,
         datetime.strftime(datetime.today(), '%Y-%m-%d')
     )
@@ -160,8 +187,8 @@ def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier_cde, o
     plt.title("Power of Hypothesis Test, B=%s, B'=%s, n=%s, %s" % (
         b, b_prime, sample_size_obs, run.title()), fontsize=25)
     out_dir = 'images/classifier_cov_pow_toy/'
-    outfile_name = 'power_classifier_reps_%sB_%sBprime_%s_%srep_alpha%s_sampleobs%s_t0val%s_%s_%s.pdf' % (
-        b, b_prime, run, rep, str(alpha).replace('.', '-'), sample_size_obs,
+    outfile_name = 'power_classifier_reps_%steststats_%sB_%sBprime_%s_%srep_alpha%s_sampleobs%s_t0val%s_%s_%s.pdf' % (
+        test_statistic, b, b_prime, run, rep, str(alpha).replace('.', '-'), sample_size_obs,
         str(t0_val).replace('.', '-'), classifier_cde,
         datetime.strftime(datetime.today(), '%Y-%m-%d')
     )
@@ -203,6 +230,8 @@ if __name__ == '__main__':
                         help='Sample size of the actual marginal distribution, if marginal is True.')
     parser.add_argument('--or_loss_samples', action="store", type=int, default=1000,
                         help='Sample size for the calculation of the OR loss.')
+    parser.add_argument('--test_statistic', action="store", type=str, default='acore',
+                        help='Test statistic to compute confidence intervals. Can be acore|avgacore')
     argument_parsed = parser.parse_args()
 
     b_vec = [100, 500, 1000]
@@ -221,5 +250,6 @@ if __name__ == '__main__':
             verbose=argument_parsed.verbose,
             classifier_cde=argument_parsed.class_cde,
             size_marginal=argument_parsed.size_marginal,
-            or_loss_samples=argument_parsed.or_loss_samples
+            or_loss_samples=argument_parsed.or_loss_samples,
+            test_statistic=argument_parsed.test_statistic
         )
