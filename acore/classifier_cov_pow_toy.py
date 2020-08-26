@@ -234,13 +234,12 @@ if __name__ == '__main__':
                         help='Test statistic to compute confidence intervals. Can be acore|avgacore')
     argument_parsed = parser.parse_args()
 
-    b_vec = [100, 500, 1000]
     for b_val in b_vec:
         main(
             run=argument_parsed.run,
             rep=argument_parsed.rep,
             marginal=argument_parsed.marginal,
-            b=b_val,      # argument_parsed.b,
+            b=argument_parsed.b,
             b_prime=argument_parsed.b_prime,
             alpha=argument_parsed.alpha,
             debug=argument_parsed.debug,
