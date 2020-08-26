@@ -234,21 +234,21 @@ if __name__ == '__main__':
                         help='Test statistic to compute confidence intervals. Can be acore|avgacore')
     argument_parsed = parser.parse_args()
 
-    for b_val in b_vec:
-        main(
-            run=argument_parsed.run,
-            rep=argument_parsed.rep,
-            marginal=argument_parsed.marginal,
-            b=argument_parsed.b,
-            b_prime=argument_parsed.b_prime,
-            alpha=argument_parsed.alpha,
-            debug=argument_parsed.debug,
-            sample_size_obs=argument_parsed.sample_size_obs,
-            t0_val=argument_parsed.t0_val,
-            seed=argument_parsed.seed,
-            verbose=argument_parsed.verbose,
-            classifier_cde=argument_parsed.class_cde,
-            size_marginal=argument_parsed.size_marginal,
-            or_loss_samples=argument_parsed.or_loss_samples,
-            test_statistic=argument_parsed.test_statistic
-        )
+    # for b_val in b_vec:
+    main(
+        run=argument_parsed.run,
+        rep=argument_parsed.rep,
+        marginal=argument_parsed.marginal,
+        b=argument_parsed.b,
+        b_prime=argument_parsed.b_prime,
+        alpha=argument_parsed.alpha,
+        debug=argument_parsed.debug,
+        sample_size_obs=argument_parsed.sample_size_obs,
+        t0_val=argument_parsed.t0_val,
+        seed=argument_parsed.seed,
+        verbose=argument_parsed.verbose,
+        classifier_cde=argument_parsed.class_cde,
+        size_marginal=argument_parsed.size_marginal,
+        or_loss_samples=argument_parsed.or_loss_samples,
+        test_statistic=argument_parsed.test_statistic
+    )
