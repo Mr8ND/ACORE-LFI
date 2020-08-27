@@ -128,7 +128,7 @@ def pinball_loss(y_true, y_pred, alpha):
 
 
 def compute_bayesfactor_single_t0(clf, obs_sample, t0, gen_param_fun,
-                                  d=1, d_obs=1, monte_carlo_samples=500):
+                                  log_out=False, d=1, d_obs=1, monte_carlo_samples=500):
 
     theta_samples = gen_param_fun(sample_size=monte_carlo_samples)
     n = obs_sample.shape[0]
@@ -176,6 +176,11 @@ def compute_bayesfactor_single_t0(clf, obs_sample, t0, gen_param_fun,
         [np.exp(np.sum(np.log(odds_t1[n * ii:(n * (ii + 1))]))) for ii in range(monte_carlo_samples)])
     assert grouped_sum_t1.shape[0] == monte_carlo_samples
 
+    # Using the log of the average rather than the average itself
+    if log_out:
+        return np.log(odds_t0) - np.log(np.average(grouped_sum_t1.reshape(-1, )))
+
+    # Using the bayes factor directly
     return odds_t0/np.average(grouped_sum_t1.reshape(-1, ))
 
 

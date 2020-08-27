@@ -92,8 +92,13 @@ def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier_cde, t
                     compute_bayesfactor_single_t0(
                         clf=clf_odds, obs_sample=x_obs, t0=theta_0, gen_param_fun=gen_param_fun,
                         d=model_obj.d, d_obs=model_obj.d_obs) for theta_0 in t0_grid])
+            elif test_statistic == 'logavgacore':
+                tau_obs = np.array([
+                    compute_bayesfactor_single_t0(
+                        clf=clf_odds, obs_sample=x_obs, t0=theta_0, gen_param_fun=gen_param_fun,
+                        d=model_obj.d, d_obs=model_obj.d_obs, log_out=True) for theta_0 in t0_grid])
             else:
-                raise ValueError('The variable test_statistic needs to be either acore or avgacore.'
+                raise ValueError('The variable test_statistic needs to be either acore, avgacore, logavgacore.'
                                  ' Currently %s' % test_statistic)
 
             # Calculating cross-entropy
@@ -131,8 +136,19 @@ def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier_cde, t
                                                     d=model_obj.d,
                                                     d_obs=model_obj.d_obs
                                                 ))
+            elif test_statistic == 'logavgacore':
+                stats_mat = np.apply_along_axis(arr=full_mat, axis=1,
+                                                func1d=lambda row: compute_bayesfactor_single_t0(
+                                                    clf=clf_odds,
+                                                    obs_sample=row[model_obj.d:],
+                                                    t0=row[:model_obj.d],
+                                                    gen_param_fun=gen_param_fun,
+                                                    d=model_obj.d,
+                                                    d_obs=model_obj.d_obs,
+                                                    log_out=True
+                                                ))
             else:
-                raise ValueError('The variable test_statistic needs to be either acore or avgacore.'
+                raise ValueError('The variable test_statistic needs to be either acore, avgacore, logavgacore.'
                                  ' Currently %s' % test_statistic)
 
             clf_cde_fitted[clf_name] = {}
@@ -231,9 +247,10 @@ if __name__ == '__main__':
     parser.add_argument('--or_loss_samples', action="store", type=int, default=1000,
                         help='Sample size for the calculation of the OR loss.')
     parser.add_argument('--test_statistic', action="store", type=str, default='acore',
-                        help='Test statistic to compute confidence intervals. Can be acore|avgacore')
+                        help='Test statistic to compute confidence intervals. Can be acore|avgacore|logavgacore')
     argument_parsed = parser.parse_args()
 
+    # b_vec = [100, 500, 1000]
     # for b_val in b_vec:
     main(
         run=argument_parsed.run,
