@@ -11,7 +11,7 @@ sys.path.append("..")
 from tqdm.auto import tqdm
 from datetime import datetime
 from xgboost import XGBClassifier
-from utils.functions import Suppressor, train_clf, compute_statistics_single_t0
+from utils.functions import Suppressor, train_clf, compute_statistics_single_t0, compute_bayesfactor_single_t0
 from models.camelus_wl import CamelusSimLoader
 from models.sen_poisson import SenPoissonLoader
 from or_classifiers.complete_list import classifier_dict, classifier_conv_dict
@@ -25,14 +25,14 @@ model_dict = {
 }
 
 
-def main(b, alpha, classifier, sample_size_obs, run, n_eval_grid=101,
+def main(b, alpha, classifier, sample_size_obs, run, test_statistic, n_eval_grid=101,
          debug=False, seed=7, sample_size_check=1000, size_reference=1000):
 
     # Setup the variables, also to account for debug runs
     np.random.seed(seed)
     b = b if not debug else 100
     sample_size_obs = sample_size_obs if not debug else 5
-    classifier_cde_dict = classifier_cde_dict_full if not debug else classifier_cde_dict_small
+    classifier_cde_dict = classifier_cde_dict_full #if not debug else classifier_cde_dict_small
 
     # Create the loader object, which drives most
     print('----- Loading Simulations In')
@@ -44,6 +44,7 @@ def main(b, alpha, classifier, sample_size_obs, run, n_eval_grid=101,
     # Get the correct functions
     msnh_sampling_func = model_obj.sample_msnh_algo5
     grid_param = model_obj.grid
+    gen_param_fun = model_obj.sample_param_values
     clf_model = classifier_dict[classifier]
     gen_sample_func = model_obj.generate_sample
     classifier = classifier.replace('\n', '').replace(' ', '-')
@@ -55,10 +56,27 @@ def main(b, alpha, classifier, sample_size_obs, run, n_eval_grid=101,
     print('----- Calculating Odds')
     clf = train_clf(sample_size=b, clf_model=clf_model, gen_function=gen_sample_func,
                     d=model_obj.d, clf_name=classifier)
-    tau_obs = np.array([
-        compute_statistics_single_t0(
-            clf=clf, obs_sample=x_vec[kk, :, :].reshape(-1, model_obj.d_obs), d=model_obj.d, d_obs=model_obj.d_obs,
-            t0=theta_0, grid_param_t1=grid_param) for kk, theta_0 in enumerate(theta_vec)])
+
+    if test_statistic == 'acore':
+        tau_obs = np.array([
+            compute_statistics_single_t0(
+                clf=clf, obs_sample=x_vec[kk, :, :].reshape(-1, model_obj.d_obs), d=model_obj.d, d_obs=model_obj.d_obs,
+                t0=theta_0, grid_param_t1=grid_param) for kk, theta_0 in enumerate(theta_vec)])
+    elif test_statistic == 'avgacore':
+        tau_obs = np.array([
+            compute_bayesfactor_single_t0(
+                clf=clf, obs_sample=x_vec[kk, :, :].reshape(-1, model_obj.d_obs), t0=theta_0,
+                gen_param_fun=gen_param_fun, d=model_obj.d, d_obs=model_obj.d_obs)
+            for kk, theta_0 in enumerate(theta_vec)])
+    elif test_statistic == 'logavgacore':
+        tau_obs = np.array([
+            compute_bayesfactor_single_t0(
+                clf=clf, obs_sample=x_vec[kk, :, :].reshape(-1, model_obj.d_obs), t0=theta_0,
+                gen_param_fun=gen_param_fun, d=model_obj.d, d_obs=model_obj.d_obs, log_out=True)
+            for kk, theta_0 in enumerate(theta_vec)])
+    else:
+        raise ValueError('The variable test_statistic needs to be either acore, avgacore, logavgacore.'
+                         ' Currently %s' % test_statistic)
     print('----- %s Trained' % classifier)
 
     # Loop over B'
@@ -68,14 +86,27 @@ def main(b, alpha, classifier, sample_size_obs, run, n_eval_grid=101,
                 'sample_reference', 'percent_correct_coverage', 'average_coverage',
                 'percent_correct_coverage_lr', 'average_coverage_lr',
                 'percent_correct_coverage_1std', 'average_coverage_1std',
-                'percent_correct_coverage_2std', 'average_coverage_2std']
+                'percent_correct_coverage_2std', 'average_coverage_2std', 'test_statistics']
     for b_prime in np.array(b_prime_vec).astype(int):
         # First generate the samples to train b_prime algorithm
         np.random.seed(seed)
         theta_mat, sample_mat = msnh_sampling_func(b_prime=b_prime, sample_size=sample_size_obs)
-        stats_mat = np.array([compute_statistics_single_t0(
+
+        if test_statistic == 'acore':
+            stats_mat = np.array([compute_statistics_single_t0(
                 clf=clf, d=model_obj.d, d_obs=model_obj.d_obs, grid_param_t1=grid_param,
                 t0=theta_0, obs_sample=sample_mat[kk, :, :]) for kk, theta_0 in enumerate(theta_mat)])
+        elif test_statistic == 'avgacore':
+            stats_mat = np.array([compute_bayesfactor_single_t0(
+                clf=clf, obs_sample=sample_mat[kk, :, :], t0=theta_0, gen_param_fun=gen_param_fun,
+                d=model_obj.d, d_obs=model_obj.d_obs) for kk, theta_0 in enumerate(theta_mat)])
+        elif test_statistic == 'logavgacore':
+            stats_mat = np.array([compute_bayesfactor_single_t0(
+                clf=clf, obs_sample=sample_mat[kk, :, :], t0=theta_0, gen_param_fun=gen_param_fun, log_out=True,
+                d=model_obj.d, d_obs=model_obj.d_obs) for kk, theta_0 in enumerate(theta_mat)])
+        else:
+            raise ValueError('The variable test_statistic needs to be either acore, avgacore, logavgacore.'
+                             ' Currently %s' % test_statistic)
 
         pbar = tqdm(total=len(classifier_cde_dict.keys()),
                     desc=r'Working on QR classifiers, b=%s' % b_prime)
@@ -84,6 +115,7 @@ def main(b, alpha, classifier, sample_size_obs, run, n_eval_grid=101,
             if b_prime > 10000 and 'RF' in clf_name_qr:
                 continue
 
+            print(clf_name_qr, clf_params)
             t0_pred_vec = train_qr_algo(model_obj=model_obj, theta_mat=theta_mat, stats_mat=stats_mat,
                                         algo_name=clf_params[0], learner_kwargs=clf_params[1],
                                         pytorch_kwargs=clf_params[2] if len(clf_params) > 2 else None,
@@ -131,7 +163,7 @@ def main(b, alpha, classifier, sample_size_obs, run, n_eval_grid=101,
                 b_prime, classifier, clf_name_qr, run, n_eval_grid, sample_size_check, size_reference,
                 percent_correct_coverage, average_coverage, percent_correct_coverage_lr, average_coverage_lr,
                 percent_correct_coverage_upper, average_coverage_upper,
-                percent_correct_coverage_upper_2std, average_coverage_upper_2std
+                percent_correct_coverage_upper_2std, average_coverage_upper_2std, test_statistic
             ])
 
             pbar.update(1)
@@ -168,6 +200,8 @@ if __name__ == '__main__':
                         help='Classifier to run for learning the odds')
     parser.add_argument('--size_reference', action="store", type=int, default=1000,
                         help='Number of samples used for the reference distribution')
+    parser.add_argument('--test_statistic', action="store", type=str, default='acore',
+                        help='Test statistic to compute confidence intervals. Can be acore|avgacore|logavgacore')
     argument_parsed = parser.parse_args()
 
     main(
@@ -178,5 +212,6 @@ if __name__ == '__main__':
         seed=argument_parsed.seed,
         classifier=classifier_conv_dict[argument_parsed.classifier],
         run=argument_parsed.run,
-        size_reference=argument_parsed.size_reference
+        size_reference=argument_parsed.size_reference,
+        test_statistic=argument_parsed.test_statistic
     )

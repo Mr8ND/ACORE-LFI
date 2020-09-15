@@ -84,7 +84,7 @@ class q_model_3l(nn.Module):
             nn.Dropout(self.dropout),
         )
         final_layers = [
-            nn.Linear(32, 1) for _ in range(len(self.quantiles))
+            nn.Linear(self.neur_shapes[-1], 1) for _ in range(len(self.quantiles))
         ]
         self.final_layers = nn.ModuleList(final_layers)
 
