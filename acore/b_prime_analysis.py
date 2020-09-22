@@ -32,7 +32,7 @@ def main(b, alpha, classifier, sample_size_obs, run, test_statistic, n_eval_grid
     np.random.seed(seed)
     b = b if not debug else 100
     sample_size_obs = sample_size_obs if not debug else 5
-    classifier_cde_dict = classifier_cde_dict_full #if not debug else classifier_cde_dict_small
+    classifier_cde_dict = classifier_cde_dict_full if not debug else classifier_cde_dict_small
 
     # Create the loader object, which drives most
     print('----- Loading Simulations In')
@@ -171,9 +171,10 @@ def main(b, alpha, classifier, sample_size_obs, run, test_statistic, n_eval_grid
     # Saving the results
     out_df = pd.DataFrame.from_records(data=out_val, index=range(len(out_val)), columns=out_cols)
     out_dir = 'sims/%s' % model_obj.out_directory
-    out_filename = 'b_prime_analysis_%s_%s_alpha%s_ngrid%s_sizecheck%s_bprimemax%s_logregint_%s.csv' % (
+    out_filename = 'b_prime_analysis_%s_%s_alpha%s_ngrid%s_sizecheck%s_bprimemax%s_logregint_%s_%s.csv' % (
         classifier, run, str(alpha).replace('.', '-'),
         n_eval_grid, sample_size_check, np.max(b_prime_vec),
+        test_statistic,
         datetime.strftime(datetime.today(), '%Y-%m-%d')
     )
     out_df.to_csv(out_dir + out_filename)

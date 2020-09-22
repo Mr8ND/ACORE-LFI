@@ -186,10 +186,11 @@ def main(b, b_prime, alpha, classifier, class_cde, sample_size_obs, run, t_star,
         't_star': t_star,
         'time_vec': time_vec
     }
-    outfile_name = '2d_confint_%s_data_b_%s_bprime_%s_%s_%s_n%s_%s_%s_%s_%s%s_%s.pkl' % (
+    outfile_name = '2d_confint_%s_data_b_%s_bprime_%s_%s_%s_n%s_%s_%s_%s_%s%s_%s_%s.pkl' % (
         run, b, b_prime, t0_val[0], t0_val[1], sample_size_obs, classifier, class_cde, n_sampled,
         '' if not t_star else '_taustar',
         '' if not c_star else '_cstar',
+        test_statistic,
         datetime.strftime(datetime.today(), '%Y-%m-%d')
     )
     outdir = 'sims/%s' % model_obj.out_directory
@@ -231,12 +232,13 @@ def main(b, b_prime, alpha, classifier, class_cde, sample_size_obs, run, t_star,
             '' if not c_star else ', c_star'), fontsize=25)
 
     plt.tight_layout()
-    image_name = '2d_confint_%s_b_%s_bprime_%s_%s_%s_%s_n%s%s%s_%s.pdf' % (
+    image_name = '2d_confint_%s_b_%s_bprime_%s_%s_%s_%s_n%s%s%s_%s_%s.pdf' % (
         run, b, b_prime, t0_val[0], t0_val[1], sample_size_obs, classifier,
         '' if not t_star else '_taustar',
         '' if not c_star else '_cstar',
+        test_statistic,
         datetime.strftime(datetime.today(), '%Y-%m-%d'))
-    plt.savefig('images/%s/' % model_obj.out_directory + image_name)
+    plt.savefig('images/%s' % model_obj.out_directory + image_name)
 
 
 if __name__ == '__main__':
