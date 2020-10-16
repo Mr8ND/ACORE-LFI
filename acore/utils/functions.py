@@ -9,6 +9,29 @@ from sklearn.model_selection import GridSearchCV
 neighbor_range = [1, 2, 3, 4, 5, 10, 15, 20, 25] + [50 * x for x in range(1, 21)] + [500 * x for x in range(3, 6)]
 
 
+def odds_ratio_loss(clf, sample_size, gen_function, d=1, d_obs=1, marginal=False, p=0.5):
+
+    # Obtain samples from the simulator and from the reference distribution
+    gen_sample = gen_function(sample_size=sample_size, p=p, marginal=marginal)
+
+    # Split them accordingly
+    theta_simulator = gen_sample[gen_sample[:, d] == 1][:, :d].reshape(-1, d)
+    x_simulator = gen_sample[gen_sample[:, d] == 1][:, (d+1):].reshape(-1, d_obs)
+    theta_reference = gen_sample[gen_sample[:, d] == 0][:, :d].reshape(-1, d)
+    x_reference = gen_sample[gen_sample[:, d] == 0][:, (d + 1):].reshape(-1, d_obs)
+
+    # Predict the odds for both of them
+    prob_simulator = clf.predict_proba(np.hstack((theta_simulator, x_simulator)))
+    prob_simulator = prob_simulator[~np.any(prob_simulator == 0, axis=1)]
+    odds_simulator = (prob_simulator[:, 1]) / (prob_simulator[:, 0])
+
+    prob_reference = clf.predict_proba(np.hstack((theta_reference, x_reference)))
+    prob_reference = prob_reference[~np.any(prob_reference == 0, axis=1)]
+    odds_reference = (prob_reference[:, 1]) / (prob_reference[:, 0])
+
+    return np.average(odds_reference**2) - 2 * (p/(1-p)) * np.average(odds_simulator)
+
+
 def clf_prob_value(clf, x_vec, theta_vec, d, d_obs):
     predict_mat = np.hstack((theta_vec.reshape(-1, d),
                             x_vec.reshape(-1, d_obs)))
@@ -128,7 +151,7 @@ def pinball_loss(y_true, y_pred, alpha):
 
 
 def compute_bayesfactor_single_t0(clf, obs_sample, t0, gen_param_fun,
-                                  log_out=False, d=1, d_obs=1, monte_carlo_samples=500):
+                                  log_out=False, d=1, d_obs=1, monte_carlo_samples=1000):
 
     theta_samples = gen_param_fun(sample_size=monte_carlo_samples)
     n = obs_sample.shape[0]
