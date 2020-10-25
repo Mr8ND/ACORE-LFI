@@ -9,16 +9,16 @@ from sklearn.model_selection import GridSearchCV
 neighbor_range = [1, 2, 3, 4, 5, 10, 15, 20, 25] + [50 * x for x in range(1, 21)] + [500 * x for x in range(3, 6)]
 
 
-def odds_ratio_loss(clf, sample_size, gen_function, d=1, d_obs=1, marginal=False, p=0.5):
+def odds_ratio_loss(clf, x_vec, theta_vec, bern_vec, d=1, d_obs=1, p=0.5):
 
     # Obtain samples from the simulator and from the reference distribution
-    gen_sample = gen_function(sample_size=sample_size, p=p, marginal=marginal)
+    # gen_sample = gen_function(sample_size=sample_size, p=p, marginal=marginal)
 
     # Split them accordingly
-    theta_simulator = gen_sample[gen_sample[:, d] == 1][:, :d].reshape(-1, d)
-    x_simulator = gen_sample[gen_sample[:, d] == 1][:, (d+1):].reshape(-1, d_obs)
-    theta_reference = gen_sample[gen_sample[:, d] == 0][:, :d].reshape(-1, d)
-    x_reference = gen_sample[gen_sample[:, d] == 0][:, (d + 1):].reshape(-1, d_obs)
+    theta_simulator = theta_vec[bern_vec == 1].reshape(-1, d)
+    x_simulator = x_vec[bern_vec == 1].reshape(-1, d_obs)
+    theta_reference = theta_vec[bern_vec == 0].reshape(-1, d)
+    x_reference = x_vec[bern_vec == 0].reshape(-1, d_obs)
 
     # Predict the odds for both of them
     prob_simulator = clf.predict_proba(np.hstack((theta_simulator, x_simulator)))
@@ -313,19 +313,25 @@ def matrix_mesh(a_tuple):
     return np.hstack((a_tuple[0].reshape(-1, 1), a_tuple[1].reshape(-1, 1)))
 
 
-def or_loss(clf, first_sample, second_sample):
-    num1, den1, num2, den2 = clf.predict_proba(first_sample[:, (0, 1)]), clf.predict_proba(first_sample[:, (0, 2)]), \
-                             clf.predict_proba(second_sample[:, (0, 1)]), clf.predict_proba(second_sample[:, (0, 2)])
+def tensor_4d_mesh(a_tuple):
+    return np.hstack((
+        a_tuple[0].reshape(-1, 1), a_tuple[1].reshape(-1, 1), a_tuple[2].reshape(-1, 1), a_tuple[3].reshape(-1, 1)
+    ))
 
-    # Some of the classifiers might return odds which are infinity -- we filter those out
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        odds_num1, odds_den1 = (num1[:, 1] / num1[:, 0]).reshape(-1, ), (den1[:, 1] / den1[:, 0]).reshape(-1, )
-        odds_num2, odds_den2 = (num2[:, 1] / num2[:, 0]).reshape(-1, ), (den2[:, 1] / den2[:, 0]).reshape(-1, )
 
-    first_term = np.mean([el / odds_den1[ii] for ii, el in enumerate(odds_num1) if el != np.inf
-                          and odds_den1[ii] != np.inf and odds_den1[ii] > 0])
-    second_term = np.mean([el / odds_den2[ii] for ii, el in enumerate(odds_num2) if el != np.inf
-                          and odds_den2[ii] != np.inf and odds_den2[ii] > 0])
-
-    return first_term - 2 * second_term
+# def or_loss(clf, first_sample, second_sample):
+#     num1, den1, num2, den2 = clf.predict_proba(first_sample[:, (0, 1)]), clf.predict_proba(first_sample[:, (0, 2)]), \
+#                              clf.predict_proba(second_sample[:, (0, 1)]), clf.predict_proba(second_sample[:, (0, 2)])
+#
+#     # Some of the classifiers might return odds which are infinity -- we filter those out
+#     with warnings.catch_warnings():
+#         warnings.simplefilter("ignore")
+#         odds_num1, odds_den1 = (num1[:, 1] / num1[:, 0]).reshape(-1, ), (den1[:, 1] / den1[:, 0]).reshape(-1, )
+#         odds_num2, odds_den2 = (num2[:, 1] / num2[:, 0]).reshape(-1, ), (den2[:, 1] / den2[:, 0]).reshape(-1, )
+#
+#     first_term = np.mean([el / odds_den1[ii] for ii, el in enumerate(odds_num1) if el != np.inf
+#                           and odds_den1[ii] != np.inf and odds_den1[ii] > 0])
+#     second_term = np.mean([el / odds_den2[ii] for ii, el in enumerate(odds_num2) if el != np.inf
+#                           and odds_den2[ii] != np.inf and odds_den2[ii] > 0])
+#
+#     return first_term - 2 * second_term

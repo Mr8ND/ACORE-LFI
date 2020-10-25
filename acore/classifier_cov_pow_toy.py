@@ -104,8 +104,8 @@ def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier_cde, t
             loss_value = log_loss(y_true=bern_vec, y_pred=est_prob_vec)
 
             # Calculating or loss
-            or_loss_value = odds_ratio_loss(clf=clf_odds, sample_size=size_check,
-                                            gen_function=gen_sample_func, d=1, d_obs=1)
+            or_loss_value = odds_ratio_loss(clf=clf_odds, x_vec=x_vec, theta_vec=theta_vec,
+                                            bern_vec=bern_vec, d=1, d_obs=1)
             clf_odds_fitted[clf_name] = (tau_obs, loss_value, or_loss_value)
 
             # Train the quantile regression algorithm for confidence levels
