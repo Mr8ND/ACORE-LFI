@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import numpy as np
+from sklearn.model_selection import train_test_split
 
 
 class Dataset(torch.utils.data.Dataset):
@@ -51,7 +52,7 @@ def or_loss_singleodds(out, y, true_tensor, false_tensor, p_param=0.5):
 class OddsNet(nn.Sequential):
 
     def __init__(self, direct_odds=False, layers=(100,), batch_size=64, n_epochs=25000,
-                 epoch_check=250, learning_rate=1e-4, precision=1e-6, verbose=False):
+                 epoch_check=100, learning_rate=1e-4, precision=1e-6, verbose=False, validation_size=0.2):
         super().__init__()
 
         self.layers = layers
@@ -66,6 +67,7 @@ class OddsNet(nn.Sequential):
         self.learning_rate = learning_rate
         self.precision = precision
         self.verbose = verbose
+        self.validation_size = validation_size
 
     def forward(self, x):
         return super().forward(x).squeeze()
@@ -94,8 +96,11 @@ class OddsNet(nn.Sequential):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate)
 
         # Add the data to the device
-        x = torch.from_numpy(X.astype(np.float64)).type(torch.Tensor).to(self.device)
-        y = torch.from_numpy(y.astype(np.float64)).type(torch.Tensor).to(self.device)
+        x_train, x_test, y_train, y_test = train_test_split(X, y, test_size=self.validation_size)
+        x = torch.from_numpy(x_train.astype(np.float64)).type(torch.Tensor).to(self.device)
+        y = torch.from_numpy(y_train.astype(np.float64)).type(torch.Tensor).to(self.device)
+        x_test = torch.from_numpy(x_test.astype(np.float64)).type(torch.Tensor).to(self.device)
+        y_test = torch.from_numpy(y_test.astype(np.float64)).type(torch.Tensor).to(self.device)
         train_load = torch.utils.data.DataLoader(dataset=Dataset(x, y), batch_size=self.batch_size, shuffle=False)
 
         # Training the actual net
@@ -116,10 +121,15 @@ class OddsNet(nn.Sequential):
                 loss_list.append(loss.item())
 
             if epoch % self.epoch_check == 0:
+                loss_list_check.append(self.custom_loss(
+                    self.forward(x_test), y_test,
+                    true_tensor=self.true_tensor, false_tensor=self.false_tensor).item())
                 if self.verbose:
-                    print('Epoch %d, Training Loss: %.8f' % (epoch, loss_list[-1]))
-                loss_list_check.append(loss_list[-1])
-                if len(loss_list_check) > 2 and (loss_list_check[-3] - loss_list_check[-1]) <= self.precision:
+                    print('Epoch %d, Training Loss: %.5f, %.5f' % (epoch, loss_list[-1], loss_list_check[-1]))
+                if len(loss_list_check) > 2 and \
+                        ((loss_list[-1] <= loss_list_check[-1]) or (epoch > self.n_epochs * 0.5)) and\
+                        ((loss_list_check[-1] >= loss_list_check[-3]) or
+                         np.abs(loss_list_check[-3] - loss_list_check[-1]) <= self.precision):
                     break
 
     def predict_proba(self, X):
@@ -131,4 +141,4 @@ class OddsNet(nn.Sequential):
         else:
             out_mat = out_test
 
-        return out_mat
+        return out_mat.astype(np.float64)

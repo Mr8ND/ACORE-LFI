@@ -14,8 +14,8 @@ from or_classifiers.dnn_classifiers import OddsNet
 # }
 
 classifier_dict = {
-    'pytorch_mlp': OddsNet(direct_odds=False, batch_size=64),
-    'pytorch_mlp_direct': OddsNet(direct_odds=True, batch_size=64),
+    'pytorch_mlp': OddsNet(direct_odds=False, batch_size=64, learning_rate=1e-6),
+    'pytorch_mlp_direct': OddsNet(direct_odds=True, batch_size=64, learning_rate=1e-5),
     'MLP': MLPClassifier(alpha=0, max_iter=25000)
 }
 
