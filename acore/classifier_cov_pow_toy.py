@@ -27,7 +27,8 @@ model_dict = {
 
 
 def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier_cde, test_statistic,
-         or_loss_samples=1000, debug=False, seed=7, size_check=1000, verbose=False, marginal=False, size_marginal=1000):
+         monte_carlo_samples=500, debug=False, seed=7, size_check=1000, verbose=False, marginal=False,
+         size_marginal=1000):
 
     # Changing values if debugging
     b = b if not debug else 100
@@ -63,7 +64,8 @@ def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier_cde, t
     out_val = []
     out_cols = ['test_statistic', 'b_prime', 'b', 'classifier', 'classifier_cde', 'run', 'rep', 'sample_size_obs',
                 'cross_entropy_loss', 't0_true_val', 'theta_0_current', 'on_true_t0', 'estimated_tau',
-                'estimated_cutoff', 'in_confint', 'out_confint', 'size_CI', 'true_entropy', 'or_loss_value']
+                'estimated_cutoff', 'in_confint', 'out_confint', 'size_CI', 'true_entropy', 'or_loss_value',
+                'monte_carlo_samples']
     pbar = tqdm(total=rep, desc='Toy Example for Simulations, n=%s, b=%s' % (sample_size_obs, b))
     for jj in range(rep):
 
@@ -130,7 +132,8 @@ def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier_cde, t
                                                     t0=row[:model_obj.d],
                                                     gen_param_fun=gen_param_fun,
                                                     d=model_obj.d,
-                                                    d_obs=model_obj.d_obs
+                                                    d_obs=model_obj.d_obs,
+                                                    monte_carlo_samples=monte_carlo_samples
                                                 ))
             elif test_statistic == 'logavgacore':
                 stats_mat = np.apply_along_axis(arr=full_mat, axis=1,
@@ -141,6 +144,7 @@ def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier_cde, t
                                                     gen_param_fun=gen_param_fun,
                                                     d=model_obj.d,
                                                     d_obs=model_obj.d_obs,
+                                                    monte_carlo_samples=monte_carlo_samples,
                                                     log_out=True
                                                 ))
             else:
@@ -166,7 +170,8 @@ def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier_cde, t
                         test_statistic, b_prime, b, clf_name, clf_name_qr, run, jj, sample_size_obs, cross_ent_loss,
                         t0_val, theta_0_current, int(t0_val == theta_0_current),
                         tau_obs_val[kk], cutoff_val[kk], int(tau_obs_val[kk] > cutoff_val[kk]),
-                        int(tau_obs_val[kk] <= cutoff_val[kk]), size_temp, entropy_est, or_loss_value
+                        int(tau_obs_val[kk] <= cutoff_val[kk]), size_temp, entropy_est, or_loss_value,
+                        monte_carlo_samples
                     ])
         pbar.update(1)
 
@@ -240,8 +245,8 @@ if __name__ == '__main__':
                         help='Classifier for quantile regression')
     parser.add_argument('--size_marginal', action="store", type=int, default=1000,
                         help='Sample size of the actual marginal distribution, if marginal is True.')
-    parser.add_argument('--or_loss_samples', action="store", type=int, default=1000,
-                        help='Sample size for the calculation of the OR loss.')
+    parser.add_argument('--monte_carlo_samples', action="store", type=int, default=500,
+                        help='Sample size for the calculation of the avgacore and logavgacore statistic.')
     parser.add_argument('--test_statistic', action="store", type=str, default='acore',
                         help='Test statistic to compute confidence intervals. Can be acore|avgacore|logavgacore')
     argument_parsed = parser.parse_args()
@@ -262,6 +267,6 @@ if __name__ == '__main__':
         verbose=argument_parsed.verbose,
         classifier_cde=argument_parsed.class_cde,
         size_marginal=argument_parsed.size_marginal,
-        or_loss_samples=argument_parsed.or_loss_samples,
+        monte_carlo_samples=argument_parsed.monte_carlo_samples,
         test_statistic=argument_parsed.test_statistic
     )
