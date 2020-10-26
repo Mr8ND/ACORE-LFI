@@ -79,7 +79,7 @@ class ToyGMMLoader:
 
     def _gmm_likelihood_manual(self, x, mu):
         return self.mixing_param * self._normal_likelihood(x=x, mu=mu, sigma=self.sigma_mixture[0]) + \
-               self.mixing_param * self._normal_likelihood(x=x, mu=-1 * mu, sigma=self.sigma_mixture[1])
+               (1 - self.mixing_param) * self._normal_likelihood(x=x, mu=-1 * mu, sigma=self.sigma_mixture[1])
 
     def compute_exact_or(self, t0, t1, x_obs):
         return self._gmm_likelihood_manual(x=x_obs, mu=t0) / self._gmm_likelihood_manual(x=x_obs, mu=t1)
