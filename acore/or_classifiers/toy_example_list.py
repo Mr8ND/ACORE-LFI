@@ -5,11 +5,18 @@ from sklearn.neural_network import MLPClassifier
 from sklearn.gaussian_process import GaussianProcessClassifier
 from sklearn.gaussian_process.kernels import RBF
 from sklearn.linear_model import LogisticRegression
+from or_classifiers.dnn_classifiers import OddsNet
+
+# classifier_dict = {
+#     'NN': KNeighborsClassifier(),
+#     'MLP': MLPClassifier(alpha=0, max_iter=25000),
+#     'QDA': QuadraticDiscriminantAnalysis()
+# }
 
 classifier_dict = {
-    'NN': KNeighborsClassifier(),
-    'MLP': MLPClassifier(alpha=0, max_iter=25000),
-    'QDA': QuadraticDiscriminantAnalysis()
+    'pytorch_mlp': OddsNet(direct_odds=False, batch_size=64),
+    'pytorch_mlp_direct': OddsNet(direct_odds=True, batch_size=64),
+    'MLP': MLPClassifier(alpha=0, max_iter=25000)
 }
 
 classifier_dict_multid = {
