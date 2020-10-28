@@ -67,8 +67,9 @@ def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier_cde, t
                 'estimated_cutoff', 'in_confint', 'out_confint', 'size_CI', 'true_entropy', 'or_loss_value',
                 'monte_carlo_samples']
     pbar = tqdm(total=rep, desc='Toy Example for Simulations, n=%s, b=%s' % (sample_size_obs, b))
-    for jj in range(rep):
-
+    rep_counter = 0
+    not_update_flag = False
+    while rep_counter < rep:
         # Generates samples for each t0 values, so to be able to check both coverage and power
         x_obs = gen_obs_func(sample_size=sample_size_obs, true_param=t0_val)
 
@@ -151,6 +152,10 @@ def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier_cde, t
                 raise ValueError('The variable test_statistic needs to be either acore, avgacore, logavgacore.'
                                  ' Currently %s' % test_statistic)
 
+            if np.any(np.isnan(stats_mat)) or not np.all(np.isfinite(stats_mat)):
+                not_update_flag = True
+                break
+
             clf_cde_fitted[clf_name] = {}
             # for clf_name_qr, clf_params in sorted(classifier_cde_dict.items(), key=lambda x: x[0]):
             clf_name_qr = classifier_cde
@@ -161,19 +166,25 @@ def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier_cde, t
                                         alpha=alpha, prediction_grid=t0_grid)
             clf_cde_fitted[clf_name][clf_name_qr] = t0_pred_vec
 
+        # If there were some problems in calculating the statistics, get out of the loop
+        if not_update_flag:
+            not_update_flag = False
+            continue
+
         # At this point all it's left is to record
         for clf_name, (tau_obs_val, cross_ent_loss, or_loss_value) in clf_odds_fitted.items():
             for clf_name_qr, cutoff_val in clf_cde_fitted[clf_name].items():
                 size_temp = np.sum((tau_obs_val >= cutoff_val).astype(int))/t0_grid.shape[0]
                 for kk, theta_0_current in enumerate(t0_grid):
                     out_val.append([
-                        test_statistic, b_prime, b, clf_name, clf_name_qr, run, jj, sample_size_obs, cross_ent_loss,
-                        t0_val, theta_0_current, int(t0_val == theta_0_current),
+                        test_statistic, b_prime, b, clf_name, clf_name_qr, run, rep_counter, sample_size_obs,
+                        cross_ent_loss, t0_val, theta_0_current, int(t0_val == theta_0_current),
                         tau_obs_val[kk], cutoff_val[kk], int(tau_obs_val[kk] > cutoff_val[kk]),
                         int(tau_obs_val[kk] <= cutoff_val[kk]), size_temp, entropy_est, or_loss_value,
                         monte_carlo_samples
                     ])
         pbar.update(1)
+        rep_counter += 1
 
     # Saving the results
     out_df = pd.DataFrame.from_records(data=out_val, index=range(len(out_val)), columns=out_cols)

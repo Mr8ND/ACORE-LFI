@@ -6,6 +6,7 @@ sys.path.append('..')
 from utils.functions import tensor_4d_mesh
 from scipy.stats import multivariate_normal, poisson, rv_discrete, expon
 from scipy.linalg import sqrtm
+from scipy.optimize import Bounds, minimize
 
 
 class InfernoToyLoader:
@@ -86,14 +87,26 @@ class InfernoToyLoader:
             self.b_high = b_high
 
         active_params_tuple = [True, False, False, False]
+        low_bounds, high_bounds = [], []
         for idx, (low, high) in enumerate([(self.r_low, self.r_high), (self.lambda_low, self.lambda_high),
                                            (self.b_low, self.b_high)]):
             if low != high:
                 active_params_tuple[idx + 1] = True
+                low_bounds.append(low)
+                high_bounds.append(high)
 
         self.active_params = sum(active_params_tuple)
-        self.active_params_columns = np.where(active_params_tuple)[0]
         self.nuisance_parameters = self.active_params > 1
+        self.active_params_columns = np.where(active_params_tuple)[0]
+        self.nuisance_parameters_cols = np.where(active_params_tuple)[0][1:] if self.nuisance_parameters else None
+
+        print(self.active_params)
+        print(self.active_params_columns)
+        print(self.nuisance_parameters)
+        print(self.nuisance_parameters_cols)
+        print(low_bounds)
+        print(high_bounds)
+        print(stop)
 
         self.regen_flag = False
         self.out_directory = out_dir
@@ -126,6 +139,14 @@ class InfernoToyLoader:
 
     def select_active_parameters(self, param_mat):
         return param_mat[:, self.active_params_columns]
+
+    def _nuisance_parameter_func(self, nu_params, x_obs, target_params, fixed_params, clf_odds):
+        param_mat = np.hstack((
+            np.tile(np.concatenate((target_params, nu_params, fixed_params)), x_obs.shape[0]).reshape(-1, self.d),
+            x_obs.reshape(-1, self.d_obs)
+        ))
+        pred_mat = clf_odds.predict_proba(param_mat)
+        return -1 * (np.prod(pred_mat[:, 1] / pred_mat[:, 0]))
 
     @staticmethod
     def _compute_mean_vec(r_param):

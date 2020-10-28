@@ -49,21 +49,39 @@ def or_loss_singleodds(out, y, true_tensor, false_tensor, p_param=0.5):
     return (out_neg ** 2).mean() - 2 * (p_param / (1 - p_param)) * out_pos.mean()
 
 
+def kl_loss_odds(out, y, true_tensor, false_tensor):
+    y_mat = y.unsqueeze(1).repeat(1, 2)
+    mask_pos = torch.where((y_mat == 1) & (out == out), true_tensor, false_tensor).bool()
+    out_pos = torch.masked_select(out, mask_pos).view(-1, 2)
+    return -1.0 * torch.log((out_pos[:, 0] / out_pos[:, 1])).mean()
+
+
 class OddsNet(nn.Sequential):
 
-    def __init__(self, direct_odds=False, layers=(100,), batch_size=64, n_epochs=25000,
+    def __init__(self, loss_function='direct_odds', layers=(100,), batch_size=64, n_epochs=25000,
                  epoch_check=100, learning_rate=1e-4, precision=1e-6, verbose=False, validation_size=0.2):
         super().__init__()
 
+        if loss_function == 'direct_odds':
+            self.custom_loss = or_loss_singleodds
+            self.direct_odds = True
+        elif loss_function == 'or_loss':
+            self.custom_loss = or_loss
+            self.direct_odds = False
+        elif loss_function == 'kl_or':
+            self.custom_loss = kl_loss_odds
+            self.direct_odds = False
+        else:
+            raise ValueError('Loss function has to be either "direct_odds", "or_loss" or "kl_odds". '
+                             'Currently %s.' % loss_function)
+
         self.layers = layers
-        self.direct_odds = direct_odds
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
         self.batch_size = batch_size
         self.true_tensor = torch.tensor([1]).to(self.device)
         self.false_tensor = torch.tensor([0]).to(self.device)
         self.n_epochs = n_epochs
         self.epoch_check = epoch_check
-        self.custom_loss = or_loss_singleodds if self.direct_odds else or_loss
         self.learning_rate = learning_rate
         self.precision = precision
         self.verbose = verbose
@@ -84,16 +102,12 @@ class OddsNet(nn.Sequential):
                 self.add_module('lin%s' % idx, nn.Linear(input_size, layer_val))
             else:
                 self.add_module('lin%s' % idx, nn.Linear(self.layers[idx - 1], layer_val))
-            self.add_module("ReLU", nn.ReLU())
+            self.add_module("Tanh", nn.Tanh())
         if self.direct_odds:
             self.add_module('lin%s' % len(self.layers), nn.Linear(self.layers[-1], 1))
         else:
             self.add_module('lin%s' % len(self.layers), nn.Linear(self.layers[-1], 2))
             self.add_module('softmax', nn.Softmax(dim=1))
-
-        # Initialize the weights randomly
-        self.apply(weights_init)
-        optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate)
 
         # Add the data to the device
         x_train, x_test, y_train, y_test = train_test_split(X, y, test_size=self.validation_size)
@@ -104,33 +118,51 @@ class OddsNet(nn.Sequential):
         train_load = torch.utils.data.DataLoader(dataset=Dataset(x, y), batch_size=self.batch_size, shuffle=False)
 
         # Training the actual net
-        loss_list = []
-        loss_list_check = []
-        for epoch in range(self.n_epochs):
-            self.train()
-            for batch_idx, (x_batch, y_basis_batch) in enumerate(train_load):
-                x_batch, y_basis_batch = x_batch.to(self.device), y_basis_batch.to(self.device)
-                optimizer.zero_grad()
-                out_batch = self.forward(x_batch)
-                loss = self.custom_loss(out_batch, y_basis_batch,
-                                        true_tensor=self.true_tensor, false_tensor=self.false_tensor)
+        na_finite_pass = False
+        while not na_finite_pass:
 
-                loss.backward()
-                optimizer.step()
+            # first by initialize the weights randomly
+            self.apply(weights_init)
+            optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate)
 
-                loss_list.append(loss.item())
+            # Then get the loss function for early stopping
+            loss_list = []
+            loss_list_check = []
+            early_stopping = False
+            for epoch in range(self.n_epochs):
+                self.train()
+                for batch_idx, (x_batch, y_basis_batch) in enumerate(train_load):
+                    x_batch, y_basis_batch = x_batch.to(self.device), y_basis_batch.to(self.device)
+                    optimizer.zero_grad()
+                    out_batch = self.forward(x_batch)
+                    loss = self.custom_loss(out_batch, y_basis_batch,
+                                            true_tensor=self.true_tensor, false_tensor=self.false_tensor)
 
-            if epoch % self.epoch_check == 0:
-                loss_list_check.append(self.custom_loss(
-                    self.forward(x_test), y_test,
-                    true_tensor=self.true_tensor, false_tensor=self.false_tensor).item())
-                if self.verbose:
-                    print('Epoch %d, Training Loss: %.5f, %.5f' % (epoch, loss_list[-1], loss_list_check[-1]))
-                if len(loss_list_check) > 2 and \
-                        ((loss_list[-1] <= loss_list_check[-1]) or (epoch > self.n_epochs * 0.5)) and\
-                        ((loss_list_check[-1] >= loss_list_check[-3]) or
-                         np.abs(loss_list_check[-3] - loss_list_check[-1]) <= self.precision):
-                    break
+                    loss.backward()
+                    optimizer.step()
+
+                    loss_list.append(loss.item())
+
+                if epoch % self.epoch_check == 0:
+                    loss_list_check.append(self.custom_loss(
+                        self.forward(x_test), y_test,
+                        true_tensor=self.true_tensor, false_tensor=self.false_tensor).item())
+                    if self.verbose:
+                        print('Epoch %d, Training Loss: %.5f, %.5f' % (epoch, loss_list[-1], loss_list_check[-1]))
+                    if len(loss_list_check) > 2 and \
+                            ((loss_list[-1] <= loss_list_check[-1]) or (epoch > self.n_epochs * 0.5)) and\
+                            ((loss_list_check[-1] >= loss_list_check[-3]) or
+                             np.abs(loss_list_check[-3] - loss_list_check[-1]) <= self.precision):
+                        early_stopping = True
+                        break
+
+            out_test = self.forward(x_test).detach().numpy()
+            if early_stopping or (not np.any(np.isnan(out_test)) and np.all(np.isfinite(out_test))):
+                na_finite_pass = True
+            else:
+                print('Output is either with NaN (%s) or infinite (%s).' % (
+                    np.any(np.isnan(out_test)), not np.all(np.isfinite(out_test))))
+                torch.manual_seed(np.random.choice(list(range(1000))))
 
     def predict_proba(self, X):
         x_test = torch.from_numpy(X.astype(np.float64)).type(torch.Tensor).to(self.device)
