@@ -16,7 +16,7 @@ from models.toy_poisson import ToyPoissonLoader
 from models.toy_gmm import ToyGMMLoader
 from models.toy_gamma import ToyGammaLoader
 from utils.qr_functions import train_qr_algo
-from or_classifiers.toy_example_list import classifier_dict
+from or_classifiers.toy_example_list import classifier_dict, classifier_dict_mlpcomp
 from qr_algorithms.complete_list import classifier_cde_dict
 
 model_dict = {
@@ -26,7 +26,7 @@ model_dict = {
 }
 
 
-def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier_cde, test_statistic,
+def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier_cde, test_statistic, mlp_comp=False,
          monte_carlo_samples=500, debug=False, seed=7, size_check=1000, verbose=False, marginal=False,
          size_marginal=1000):
 
@@ -36,6 +36,7 @@ def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier_cde, t
     size_check = size_check if not debug else 100
     rep = rep if not debug else 2
     model_obj = model_dict[run](marginal=marginal, size_marginal=size_marginal)
+    classifier_dict_run = classifier_dict_mlpcomp if mlp_comp else classifier_dict
 
     # Get the correct functions
     msnh_sampling_func = model_obj.sample_msnh_algo5
@@ -76,7 +77,7 @@ def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier_cde, t
         # Train the classifier for the odds
         clf_odds_fitted = {}
         clf_cde_fitted = {}
-        for clf_name, clf_model in sorted(classifier_dict.items(), key=lambda x: x[0]):
+        for clf_name, clf_model in sorted(classifier_dict_run.items(), key=lambda x: x[0]):
             clf_odds = train_clf(sample_size=b, clf_model=clf_model, gen_function=gen_sample_func,
                                  clf_name=clf_name, marginal=marginal, nn_square_root=True)
             if verbose:
@@ -189,10 +190,11 @@ def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier_cde, t
     # Saving the results
     out_df = pd.DataFrame.from_records(data=out_val, index=range(len(out_val)), columns=out_cols)
     out_dir = 'sims/classifier_cov_pow_toy/'
-    out_filename = 'classifier_reps_cov_pow_toy_%steststats_%sB_%sBprime_%s_%srep_alpha%s_sampleobs%s_t0val%s_%s_%s.csv' % (
-        test_statistic, b, b_prime, run, rep, str(alpha).replace('.', '-'), sample_size_obs,
+    out_filename = 'classifier_reps_cov_pow_toy_%steststats_%s_%sB_%sBprime_%s_%srep_alpha%s_sampleobs%s_t0val%s_%s_%s.csv' % (
+        test_statistic, 'mlp_comp' if mlp_comp else 'toyclassifiers', b, b_prime, run, rep,
+        str(alpha).replace('.', '-'), sample_size_obs,
         str(t0_val).replace('.', '-'), classifier_cde,
-        datetime.strftime(datetime.today(), '%Y-%m-%d')
+        datetime.strftime(datetime.today(), '%Y-%m-%d-%H-%M')
     )
     out_df.to_csv(out_dir + out_filename)
 
@@ -260,6 +262,8 @@ if __name__ == '__main__':
                         help='Sample size for the calculation of the avgacore and logavgacore statistic.')
     parser.add_argument('--test_statistic', action="store", type=str, default='acore',
                         help='Test statistic to compute confidence intervals. Can be acore|avgacore|logavgacore')
+    parser.add_argument('--mlp_comp', action='store_true', default=False,
+                        help='If true, we compare different MLP training algorithm.')
     argument_parsed = parser.parse_args()
 
     # b_vec = [100, 500, 1000]
@@ -279,5 +283,6 @@ if __name__ == '__main__':
         classifier_cde=argument_parsed.class_cde,
         size_marginal=argument_parsed.size_marginal,
         monte_carlo_samples=argument_parsed.monte_carlo_samples,
-        test_statistic=argument_parsed.test_statistic
+        test_statistic=argument_parsed.test_statistic,
+        mlp_comp=argument_parsed.mlp_comp
     )
