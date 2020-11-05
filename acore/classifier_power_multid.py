@@ -10,19 +10,23 @@ from sklearn.metrics import log_loss
 import seaborn as sns
 import matplotlib.pyplot as plt
 
-from utils.functions import train_clf, compute_statistics_single_t0, clf_prob_value, or_loss
+from utils.functions import train_clf, compute_statistics_single_t0, clf_prob_value, compute_bayesfactor_single_t0, \
+    odds_ratio_loss
 from models.toy_gmm_multid import ToyGMMMultiDLoader
+from models.toy_mvn import ToyMVNLoader
 from utils.qr_functions import train_qr_algo
 from or_classifiers.toy_example_list import classifier_dict_multid as classifier_dict
 from qr_algorithms.complete_list import classifier_cde_dict
 
 model_dict = {
-    'gmm': ToyGMMMultiDLoader
+    'gmm': ToyGMMMultiDLoader,
+    'mvn': ToyMVNLoader
 }
 
 
-def main(d_obs, run, rep, b, b_prime, alpha, sample_size_obs, classifier_cde, or_loss_samples=1000,
-         debug=False, seed=7, size_check=1000, verbose=False, marginal=False, size_marginal=1000):
+def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier_cde, test_statistic,
+         monte_carlo_samples=500, debug=False, seed=7, size_check=1000, verbose=False, marginal=False,
+         size_marginal=1000):
 
     # Changing values if debugging
     b = b if not debug else 100
@@ -36,10 +40,9 @@ def main(d_obs, run, rep, b, b_prime, alpha, sample_size_obs, classifier_cde, or
     grid_param = model_obj.grid
     gen_obs_func = model_obj.sample_sim
     gen_sample_func = model_obj.generate_sample
+    gen_param_fun = model_obj.sample_param_values
     t0_grid = model_obj.pred_grid
     tp_func = model_obj.compute_exact_prob
-    t0_val = model_obj.true_param
-    # or_loss_sample_func = model_obj.create_samples_for_or_loss
 
     # Creating sample to check entropy about
     np.random.seed(seed)
@@ -53,17 +56,14 @@ def main(d_obs, run, rep, b, b_prime, alpha, sample_size_obs, classifier_cde, or
                                else np.log(1 - true_prob_vec[kk])
                                for kk, el in enumerate(bern_vec)])
 
-    # Creating sample to calculate the OR loss
-    # first_term_sample, second_term_sample = or_loss_sample_func(or_loss_samples=or_loss_samples)
-
     # Loop over repetitions and classifiers
     # Each time we train the different classifiers, we build the intervals and we record
     # whether the point is in or not.
     out_val = []
-    out_cols = ['d_obs', 'b_prime', 'b', 'classifier', 'classifier_cde', 'run', 'rep', 'sample_size_obs',
-                'cross_entropy_loss', 't0_true_val', 'theta_0_current', 'on_true_t0',
-                'estimated_tau', 'estimated_cutoff', 'in_confint', 'out_confint', 'size_CI', 'true_entropy',
-                'or_loss']
+    out_cols = ['d_obs', 'test_statistic', 'b_prime', 'b', 'classifier', 'classifier_cde', 'run', 'rep', 'sample_size_obs',
+                'cross_entropy_loss', 't0_true_val', 'theta_0_current', 'on_true_t0', 'estimated_tau',
+                'estimated_cutoff', 'in_confint', 'out_confint', 'size_CI', 'true_entropy', 'or_loss_value',
+                'monte_carlo_samples']
     pbar = tqdm(total=rep, desc='Toy Example for Simulations, n=%s, b=%s' % (sample_size_obs, b))
     for jj in range(rep):
 
@@ -74,14 +74,30 @@ def main(d_obs, run, rep, b, b_prime, alpha, sample_size_obs, classifier_cde, or
         clf_odds_fitted = {}
         clf_cde_fitted = {}
         for clf_name, clf_model in sorted(classifier_dict.items(), key=lambda x: x[0]):
-            clf_odds = train_clf(sample_size=b, clf_model=clf_model, gen_function=gen_sample_func,
+            clf_odds = train_clf(d=model_obj.d, sample_size=b, clf_model=clf_model, gen_function=gen_sample_func,
                                  clf_name=clf_name, marginal=marginal, nn_square_root=True)
             if verbose:
                 print('----- %s Trained' % clf_name)
-            tau_obs = np.array([
-                compute_statistics_single_t0(
-                    clf=clf_odds, obs_sample=x_obs, t0=theta_0, grid_param_t1=grid_param,
-                    d=model_obj.d, d_obs=model_obj.d_obs) for theta_0 in t0_grid])
+            
+            if test_statistic == 'acore':
+                tau_obs = np.array([
+                    compute_statistics_single_t0(
+                        clf=clf_odds, obs_sample=x_obs, t0=theta_0, grid_param_t1=grid_param,
+                        d=model_obj.d, d_obs=model_obj.d_obs) for theta_0 in t0_grid])
+            elif test_statistic == 'avgacore':
+                tau_obs = np.array([
+                    compute_bayesfactor_single_t0(
+                        clf=clf_odds, obs_sample=x_obs, t0=theta_0, gen_param_fun=gen_param_fun,
+                        d=model_obj.d, d_obs=model_obj.d_obs) for theta_0 in t0_grid])
+            elif test_statistic == 'logavgacore':
+                tau_obs = np.array([
+                    compute_bayesfactor_single_t0(
+                        clf=clf_odds, obs_sample=x_obs, t0=theta_0, gen_param_fun=gen_param_fun,
+                        d=model_obj.d, d_obs=model_obj.d_obs, log_out=True) for theta_0 in t0_grid])
+            else:
+                raise ValueError('The variable test_statistic needs to be either acore, avgacore, logavgacore.'
+                                 ' Currently %s' % test_statistic)
+            
 
             # Calculating cross-entropy
             est_prob_vec = clf_prob_value(clf=clf_odds, x_vec=x_vec, theta_vec=theta_vec, d=model_obj.d,
@@ -89,15 +105,36 @@ def main(d_obs, run, rep, b, b_prime, alpha, sample_size_obs, classifier_cde, or
             loss_value = log_loss(y_true=bern_vec, y_pred=est_prob_vec)
 
             # Calculating or loss
-            or_loss_value = 0
+            or_loss_value = odds_ratio_loss(clf=clf_odds, x_vec=x_vec, theta_vec=theta_vec,
+                                            bern_vec=bern_vec, d=model_obj.d, d_obs=model_obj.d_obs)
             # or_loss_value = or_loss(clf=clf_odds, first_sample=first_term_sample, second_sample=second_term_sample)
             clf_odds_fitted[clf_name] = (tau_obs, loss_value, or_loss_value)
 
             # Train the quantile regression algorithm for confidence levels
             theta_mat, sample_mat = msnh_sampling_func(b_prime=b_prime, sample_size=sample_size_obs)
-            stats_mat = np.array([compute_statistics_single_t0(
-                clf=clf_odds, d=model_obj.d, d_obs=model_obj.d_obs, grid_param_t1=grid_param,
-                t0=theta_0, obs_sample=sample_mat[kk, :, :]) for kk, theta_0 in enumerate(theta_mat)])
+            
+            
+            if test_statistic == 'acore':
+                stats_mat = np.array([compute_statistics_single_t0(
+                                      clf=clf_odds, d=model_obj.d, d_obs=model_obj.d_obs, grid_param_t1=grid_param,
+                                      t0=theta_0, obs_sample=sample_mat[kk, :, :]) for kk, theta_0 in enumerate(theta_mat)
+                                     ])
+            elif test_statistic == 'avgacore':
+                stats_mat = np.array([compute_bayesfactor_single_t0(
+                                      clf=clf_odds, d=model_obj.d, d_obs=model_obj.d_obs, gen_param_fun=gen_param_fun,
+                                      monte_carlo_samples=monte_carlo_samples,
+                                      t0=theta_0, obs_sample=sample_mat[kk, :, :]) for kk, theta_0 in enumerate(theta_mat)
+                                     ])
+            elif test_statistic == 'logavgacore':
+                stats_mat = np.array([compute_bayesfactor_single_t0(
+                                      clf=clf_odds, d=model_obj.d, d_obs=model_obj.d_obs, gen_param_fun=gen_param_fun,
+                                      monte_carlo_samples=monte_carlo_samples, log_out=True,
+                                      t0=theta_0, obs_sample=sample_mat[kk, :, :]) for kk, theta_0 in enumerate(theta_mat)
+                                     ])
+            else:
+                raise ValueError('The variable test_statistic needs to be either acore, avgacore, logavgacore.'
+                                 ' Currently %s' % test_statistic)
+            
 
             clf_cde_fitted[clf_name] = {}
             # for clf_name_qr, clf_params in sorted(classifier_cde_dict.items(), key=lambda x: x[0]):
@@ -114,11 +151,14 @@ def main(d_obs, run, rep, b, b_prime, alpha, sample_size_obs, classifier_cde, or
             for clf_name_qr, cutoff_val in clf_cde_fitted[clf_name].items():
                 size_temp = np.sum((tau_obs_val >= cutoff_val).astype(int))/t0_grid.shape[0]
                 for kk, theta_0_current in enumerate(t0_grid):
+                    if isinstance(theta_0_current, np.ndarray):
+                        theta_0_current = theta_0_current[0]
                     out_val.append([
-                        d_obs, b_prime, b, clf_name, clf_name_qr, run, jj, sample_size_obs, cross_ent_loss,
+                        d_obs, test_statistic, b_prime, b, clf_name, clf_name_qr, run, jj, sample_size_obs, cross_ent_loss,
                         t0_val, theta_0_current, int(t0_val == theta_0_current),
                         tau_obs_val[kk], cutoff_val[kk], int(tau_obs_val[kk] > cutoff_val[kk]),
-                        int(tau_obs_val[kk] <= cutoff_val[kk]), size_temp, entropy_est, or_loss_value
+                        int(tau_obs_val[kk] <= cutoff_val[kk]), size_temp, entropy_est, or_loss_value,
+                        monte_carlo_samples
                     ])
         pbar.update(1)
 
@@ -134,10 +174,11 @@ def main(d_obs, run, rep, b, b_prime, alpha, sample_size_obs, classifier_cde, or
 
     # Print results
     cov_df = out_df[out_df['on_true_t0'] == 1][['classifier', 'classifier_cde',
-                                                'in_confint', 'cross_entropy_loss', 'size_CI']]
+                                                'in_confint', 'cross_entropy_loss', 'or_loss_value', 'size_CI']]
     print(cov_df.groupby(['classifier', 'classifier_cde']).agg({'in_confint': [np.average],
                                                                 'size_CI': [np.average, np.std],
-                                                                'cross_entropy_loss': [np.average, np.std]}))
+                                                                'cross_entropy_loss': [np.average, np.std],
+                                                                'or_loss_value': [np.average, np.std]}))
 
     # Power plots
     out_df['class_combo'] = out_df[['classifier', 'classifier_cde']].apply(lambda x: x[0] + '---' + x[1], axis = 1)
@@ -159,6 +200,7 @@ def main(d_obs, run, rep, b, b_prime, alpha, sample_size_obs, classifier_cde, or
     plt.tight_layout()
     plt.savefig(out_dir + outfile_name)
     plt.close()
+    
 
 
 if __name__ == '__main__':
@@ -179,6 +221,8 @@ if __name__ == '__main__':
                              'the baseline reference G')
     parser.add_argument('--alpha', action="store", type=float, default=0.1,
                         help='Statistical confidence level')
+    parser.add_argument('--t0_val', action="store", type=float, default=5,
+                        help='True param value')
     parser.add_argument('--run', action="store", type=str, default='gmm',
                         help='Problem to run')
     parser.add_argument('--debug', action='store_true', default=False,
@@ -188,29 +232,33 @@ if __name__ == '__main__':
                         help='If true, logs are printed to the terminal')
     parser.add_argument('--sample_size_obs', action="store", type=int, default=10,
                         help='Sample size of the actual observed data.')
+    parser.add_argument('--test_statistic', action="store", type=str, default='acore',
+                        help='Type of ACORE test statistic to use.')
     parser.add_argument('--class_cde', action="store", type=str, default='xgb_d3_n100',
                         help='Classifier for quantile regression')
     parser.add_argument('--size_marginal', action="store", type=int, default=1000,
                         help='Sample size of the actual marginal distribution, if marginal is True.')
-    parser.add_argument('--or_loss_samples', action="store", type=int, default=1000,
+    parser.add_argument('--monte_carlo_samples', action="store", type=int, default=1000,
                         help='Sample size for the calculation of the OR loss.')
     argument_parsed = parser.parse_args()
 
-    b_vec = [100, 500, 1000]
-    for b_val in b_vec:
-        main(
-            d_obs=argument_parsed.d_obs,
-            run=argument_parsed.run,
-            rep=argument_parsed.rep,
-            marginal=argument_parsed.marginal,
-            b=b_val,      # argument_parsed.b,
-            b_prime=argument_parsed.b_prime,
-            alpha=argument_parsed.alpha,
-            debug=argument_parsed.debug,
-            sample_size_obs=argument_parsed.sample_size_obs,
-            seed=argument_parsed.seed,
-            verbose=argument_parsed.verbose,
-            classifier_cde=argument_parsed.class_cde,
-            size_marginal=argument_parsed.size_marginal,
-            or_loss_samples=argument_parsed.or_loss_samples
-        )
+    #b_vec = [100, 500, 1000]
+    #for b_val in b_vec:
+    main(
+        d_obs=argument_parsed.d_obs,
+        run=argument_parsed.run,
+        rep=argument_parsed.rep,
+        marginal=argument_parsed.marginal,
+        b=argument_parsed.b,      # b_val,
+        b_prime=argument_parsed.b_prime,
+        alpha=argument_parsed.alpha,
+        t0_val=argument_parsed.t0_val,
+        debug=argument_parsed.debug,
+        sample_size_obs=argument_parsed.sample_size_obs,
+        seed=argument_parsed.seed,
+        verbose=argument_parsed.verbose,
+        test_statistic=argument_parsed.test_statistic,
+        classifier_cde=argument_parsed.class_cde,
+        size_marginal=argument_parsed.size_marginal,
+        monte_carlo_samples=argument_parsed.monte_carlo_samples
+    )
