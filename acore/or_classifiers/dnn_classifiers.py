@@ -154,7 +154,7 @@ class OddsNet(nn.Sequential):
                     #         ((loss_list[-1] <= loss_list_check[-1]) or (epoch > self.n_epochs * 0.5)) and\
                     #         ((loss_list_check[-1] >= loss_list_check[-3]) or
                     #          np.abs(loss_list_check[-3] - loss_list_check[-1]) <= self.precision):
-                    if len(loss_list_check) > 2 and (epoch > self.n_epochs * 0.5) and \
+                    if len(loss_list_check) > 2 and \
                             ((loss_list_check[-1] >= loss_list_check[-3]) or
                              np.abs(loss_list_check[-3] - loss_list_check[-1]) <= self.precision):
                         early_stopping = True
