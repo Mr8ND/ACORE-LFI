@@ -144,13 +144,17 @@ class OddsNet(nn.Sequential):
                     loss_list.append(loss.item())
 
                 if epoch % self.epoch_check == 0:
-                    loss_list_check.append(self.custom_loss(
-                        self.forward(x_test), y_test,
-                        true_tensor=self.true_tensor, false_tensor=self.false_tensor).item())
+                    # loss_list_check.append(self.custom_loss(
+                    #     self.forward(x_test), y_test,
+                    #     true_tensor=self.true_tensor, false_tensor=self.false_tensor).item())
+                    loss_list_check.append(loss_list[-1])
                     if self.verbose:
                         print('Epoch %d, Training Loss: %.5f, %.5f' % (epoch, loss_list[-1], loss_list_check[-1]))
-                    if len(loss_list_check) > 2 and \
-                            ((loss_list[-1] <= loss_list_check[-1]) or (epoch > self.n_epochs * 0.5)) and\
+                    # if len(loss_list_check) > 2 and \
+                    #         ((loss_list[-1] <= loss_list_check[-1]) or (epoch > self.n_epochs * 0.5)) and\
+                    #         ((loss_list_check[-1] >= loss_list_check[-3]) or
+                    #          np.abs(loss_list_check[-3] - loss_list_check[-1]) <= self.precision):
+                    if len(loss_list_check) > 2 and (epoch > self.n_epochs * 0.5) and \
                             ((loss_list_check[-1] >= loss_list_check[-3]) or
                              np.abs(loss_list_check[-3] - loss_list_check[-1]) <= self.precision):
                         early_stopping = True
