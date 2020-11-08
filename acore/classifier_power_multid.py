@@ -14,13 +14,15 @@ from utils.functions import train_clf, compute_statistics_single_t0, clf_prob_va
     odds_ratio_loss
 from models.toy_gmm_multid import ToyGMMMultiDLoader
 from models.toy_mvn import ToyMVNLoader
+from models.toy_mvn_multid import ToyMVNMultiDLoader
 from utils.qr_functions import train_qr_algo
 from or_classifiers.toy_example_list import classifier_dict_multid as classifier_dict
 from qr_algorithms.complete_list import classifier_cde_dict
 
 model_dict = {
     'gmm': ToyGMMMultiDLoader,
-    'mvn': ToyMVNLoader
+    'mvn': ToyMVNLoader,
+    'mvn_multid': ToyMVNMultiDLoader
 }
 
 
@@ -151,11 +153,12 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
             for clf_name_qr, cutoff_val in clf_cde_fitted[clf_name].items():
                 size_temp = np.sum((tau_obs_val >= cutoff_val).astype(int))/t0_grid.shape[0]
                 for kk, theta_0_current in enumerate(t0_grid):
-                    if isinstance(theta_0_current, np.ndarray):
-                        theta_0_current = theta_0_current[0]
+                    if run == 'mvn':
+                        if isinstance(theta_0_current, np.ndarray):
+                            theta_0_current = theta_0_current[0]
                     out_val.append([
                         d_obs, test_statistic, b_prime, b, clf_name, clf_name_qr, run, jj, sample_size_obs, cross_ent_loss,
-                        t0_val, theta_0_current, int(t0_val == theta_0_current),
+                        t0_val, theta_0_current, int(np.array_equal(t0_val, theta_0_current)),
                         tau_obs_val[kk], cutoff_val[kk], int(tau_obs_val[kk] > cutoff_val[kk]),
                         int(tau_obs_val[kk] <= cutoff_val[kk]), size_temp, entropy_est, or_loss_value,
                         monte_carlo_samples
