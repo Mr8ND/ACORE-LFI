@@ -1,9 +1,12 @@
 import numpy as np
 import sys
 import warnings
+warnings.filterwarnings('ignore')
 import pdb
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.model_selection import GridSearchCV
+from functools import partial
+from scipy.optimize import minimize
 
 
 neighbor_range = [1, 2, 3, 4, 5, 10, 15, 20, 25] + [50 * x for x in range(1, 21)] + [500 * x for x in range(3, 6)]
@@ -259,6 +262,29 @@ def compute_statistics_single_t0(clf, obs_sample, t0, grid_param_t1, d=1, d_obs=
     assert grouped_sum_t1.shape[0] == n_t1
 
     return np.sum(odds_t0) - np.max(grouped_sum_t1)
+
+
+def _clf_odds_function(theta_param, clf, obs_sample, d=1, d_obs=1, mult_min=1):
+    predict_mat_t0 = np.hstack((np.tile(theta_param, obs_sample.shape[0]).reshape(-1, d),
+                                obs_sample.reshape(-1, d_obs)))
+    prob_mat_t0 = clf.predict_proba(predict_mat_t0)
+    prob_mat_t0[prob_mat_t0 == 0] = 1e-15
+    return mult_min * np.sum(np.log(prob_mat_t0[:, 1]) - np.log(prob_mat_t0[:, 0]))
+
+
+def compute_statistics_single_t0_multid(clf, obs_sample, t0, bounds_opt, d=1, d_obs=1):
+    # First compute the first term, which is the value of the odds under theta0
+    t0_odds = _clf_odds_function(theta_param=t0, clf=clf, obs_sample=obs_sample, d=d, d_obs=d_obs)
+
+    # Then implement some sort of gradient-free optimization routing to find the minimum over multiple dimensions
+    opt_function = partial(_clf_odds_function, clf=clf, obs_sample=obs_sample, d=d, d_obs=d_obs, mult_min=-1)
+
+    # Choose a starting value which avoids the exact value of the bounds
+    starting_value = t0 + 0.01 if np.sum(t0) == 0.0 else t0 - 0.01
+    res = minimize(opt_function, starting_value, method='trust-constr', options={'verbose': 0}, bounds=bounds_opt)
+    t1_odds = _clf_odds_function(theta_param=res.x, clf=clf, obs_sample=obs_sample, d=d, d_obs=d_obs)
+
+    return t0_odds - t1_odds
 
 
 def compute_clf_tau_distr(clf, gen_obs_func, theta_0, t1_linspace, n_sampled=1000, sample_size_obs=200):
