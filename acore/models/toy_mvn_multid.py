@@ -45,15 +45,12 @@ class ToyMVNMultiDLoader:
         if marginal:
             self.compute_marginal_reference(size_marginal)
 
-        self.num_grid = 11 if self.d > 2 else 51
-        grid_param_t1 = np.linspace(start=self.low_int, stop=self.high_int, num=self.num_grid)
-        iter_list = [grid_param_t1] * d_obs
-        self.grid = np.array(list(product(*iter_list)))
-
-        self.num_pred_grid = 11 if self.d > 2 else 51
-        t0_grid = np.linspace(start=self.low_int, stop=self.high_int, num=self.num_pred_grid)
+        self.num_pred_grid = 11 if self.d > 2 else 21
+        t0_grid = np.round(np.linspace(start=self.low_int, stop=self.high_int, num=self.num_pred_grid), 2)
         pred_iter_list = [t0_grid] * d_obs
-        self.pred_grid = np.array(list(product(*pred_iter_list)))
+        list_full_product = list(product(*pred_iter_list))
+        self.pred_grid = np.array(list_full_product)
+        self.idx_row_true_param = list_full_product.index(tuple(self.true_param.tolist()))
 
     def sample_sim(self, sample_size, true_param):
         return multivariate_normal(mean=true_param, cov=self.true_cov).rvs(sample_size).reshape(sample_size, self.d_obs)

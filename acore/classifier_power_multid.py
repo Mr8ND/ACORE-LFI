@@ -11,7 +11,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 
 from utils.functions import train_clf, compute_statistics_single_t0, clf_prob_value, compute_bayesfactor_single_t0, \
-    odds_ratio_loss
+    odds_ratio_loss, compute_statistics_single_t0_multid
 from models.toy_gmm_multid import ToyGMMMultiDLoader
 from models.toy_mvn import ToyMVNLoader
 from models.toy_mvn_multid import ToyMVNMultiDLoader
@@ -20,8 +20,8 @@ from or_classifiers.toy_example_list import classifier_dict_multid as classifier
 from qr_algorithms.complete_list import classifier_cde_dict
 
 model_dict = {
-    'gmm': ToyGMMMultiDLoader,
-    'mvn': ToyMVNLoader,
+    # 'gmm': ToyGMMMultiDLoader,
+    # 'mvn': ToyMVNLoader,
     'mvn_multid': ToyMVNMultiDLoader
 }
 
@@ -35,16 +35,19 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
     b_prime = b_prime if not debug else 100
     size_check = size_check if not debug else 100
     rep = rep if not debug else 2
-    model_obj = model_dict[run](d_obs=d_obs, marginal=marginal, size_marginal=size_marginal)
+    model_obj = model_dict[run](d_obs=d_obs, marginal=marginal, size_marginal=size_marginal, true_param=t0_val)
 
     # Get the correct functions
     msnh_sampling_func = model_obj.sample_msnh_algo5
-    grid_param = model_obj.grid
     gen_obs_func = model_obj.sample_sim
     gen_sample_func = model_obj.generate_sample
     gen_param_fun = model_obj.sample_param_values
     t0_grid = model_obj.pred_grid
+    grid_param = model_obj.pred_grid
     tp_func = model_obj.compute_exact_prob
+    t0_param_val = model_obj.true_param
+    true_param_row_idx = model_obj.idx_row_true_param
+    bounds_opt = model_obj.bounds_opt
 
     # Creating sample to check entropy about
     np.random.seed(seed)
@@ -63,14 +66,13 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
     # whether the point is in or not.
     out_val = []
     out_cols = ['d_obs', 'test_statistic', 'b_prime', 'b', 'classifier', 'classifier_cde', 'run', 'rep', 'sample_size_obs',
-                'cross_entropy_loss', 't0_true_val', 'theta_0_current', 'on_true_t0', 'estimated_tau',
-                'estimated_cutoff', 'in_confint', 'out_confint', 'size_CI', 'true_entropy', 'or_loss_value',
+                'cross_entropy_loss', 't0_true_val', 'coverage', 'power', 'size_CI', 'true_entropy', 'or_loss_value',
                 'monte_carlo_samples']
     pbar = tqdm(total=rep, desc='Toy Example for Simulations, n=%s, b=%s' % (sample_size_obs, b))
     for jj in range(rep):
 
         # Generates samples for each t0 values, so to be able to check both coverage and power
-        x_obs = gen_obs_func(sample_size=sample_size_obs, true_param=t0_val)
+        x_obs = gen_obs_func(sample_size=sample_size_obs, true_param=t0_param_val)
 
         # Train the classifier for the odds
         clf_odds_fitted = {}
@@ -83,9 +85,13 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
             
             if test_statistic == 'acore':
                 tau_obs = np.array([
-                    compute_statistics_single_t0(
-                        clf=clf_odds, obs_sample=x_obs, t0=theta_0, grid_param_t1=grid_param,
+                    compute_statistics_single_t0_multid(
+                        clf=clf_odds, obs_sample=x_obs, t0=theta_0, bounds_opt=bounds_opt,
                         d=model_obj.d, d_obs=model_obj.d_obs) for theta_0 in t0_grid])
+                # tau_obs = np.array([
+                #     compute_statistics_single_t0(
+                #         clf=clf_odds, obs_sample=x_obs, t0=theta_0, grid_param_t1=grid_param,
+                #         d=model_obj.d, d_obs=model_obj.d_obs) for theta_0 in t0_grid])
             elif test_statistic == 'avgacore':
                 tau_obs = np.array([
                     compute_bayesfactor_single_t0(
@@ -99,8 +105,7 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
             else:
                 raise ValueError('The variable test_statistic needs to be either acore, avgacore, logavgacore.'
                                  ' Currently %s' % test_statistic)
-            
-
+            print('DONE ODDS')
             # Calculating cross-entropy
             est_prob_vec = clf_prob_value(clf=clf_odds, x_vec=x_vec, theta_vec=theta_vec, d=model_obj.d,
                                           d_obs=model_obj.d_obs)
@@ -115,12 +120,15 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
             # Train the quantile regression algorithm for confidence levels
             theta_mat, sample_mat = msnh_sampling_func(b_prime=b_prime, sample_size=sample_size_obs)
             
-            
             if test_statistic == 'acore':
-                stats_mat = np.array([compute_statistics_single_t0(
-                                      clf=clf_odds, d=model_obj.d, d_obs=model_obj.d_obs, grid_param_t1=grid_param,
+                stats_mat = np.array([compute_statistics_single_t0_multid(
+                                      clf=clf_odds, d=model_obj.d, d_obs=model_obj.d_obs, bounds_opt=bounds_opt,
                                       t0=theta_0, obs_sample=sample_mat[kk, :, :]) for kk, theta_0 in enumerate(theta_mat)
                                      ])
+                # stats_mat = np.array([compute_statistics_single_t0(
+                #     clf=clf_odds, d=model_obj.d, d_obs=model_obj.d_obs, grid_param_t1=grid_param,
+                #     t0=theta_0, obs_sample=sample_mat[kk, :, :]) for kk, theta_0 in enumerate(theta_mat)
+                # ])
             elif test_statistic == 'avgacore':
                 stats_mat = np.array([compute_bayesfactor_single_t0(
                                       clf=clf_odds, d=model_obj.d, d_obs=model_obj.d_obs, gen_param_fun=gen_param_fun,
@@ -136,8 +144,7 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
             else:
                 raise ValueError('The variable test_statistic needs to be either acore, avgacore, logavgacore.'
                                  ' Currently %s' % test_statistic)
-            
-
+            print('DONE QR')
             clf_cde_fitted[clf_name] = {}
             # for clf_name_qr, clf_params in sorted(classifier_cde_dict.items(), key=lambda x: x[0]):
             clf_name_qr = classifier_cde
@@ -151,59 +158,16 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
         # At this point all it's left is to record
         for clf_name, (tau_obs_val, cross_ent_loss, or_loss_value) in clf_odds_fitted.items():
             for clf_name_qr, cutoff_val in clf_cde_fitted[clf_name].items():
-                size_temp = np.sum((tau_obs_val >= cutoff_val).astype(int))/t0_grid.shape[0]
-                for kk, theta_0_current in enumerate(t0_grid):
-                    if run == 'mvn':
-                        if isinstance(theta_0_current, np.ndarray):
-                            theta_0_current = theta_0_current[0]
-                    out_val.append([
-                        d_obs, test_statistic, b_prime, b, clf_name, clf_name_qr, run, jj, sample_size_obs, cross_ent_loss,
-                        t0_val, theta_0_current, int(np.array_equal(t0_val, theta_0_current)),
-                        tau_obs_val[kk], cutoff_val[kk], int(tau_obs_val[kk] > cutoff_val[kk]),
-                        int(tau_obs_val[kk] <= cutoff_val[kk]), size_temp, entropy_est, or_loss_value,
-                        monte_carlo_samples
-                    ])
+                in_confint = (tau_obs_val >= cutoff_val).astype(int)
+                size_temp = np.mean(in_confint)
+                coverage = int(tau_obs_val[true_param_row_idx] >= cutoff_val[true_param_row_idx])
+                power = (in_confint.shape[0] - np.sum(in_confint) + coverage)/in_confint.shape[0]
+                out_val.append([
+                    d_obs, test_statistic, b_prime, b, clf_name, clf_name_qr, run, jj, sample_size_obs,
+                    cross_ent_loss, t0_val, coverage, power,
+                    size_temp, entropy_est, or_loss_value, monte_carlo_samples
+                ])
         pbar.update(1)
-
-    # Saving the results
-    out_df = pd.DataFrame.from_records(data=out_val, index=range(len(out_val)), columns=out_cols)
-    out_dir = 'sims/classifier_power_multid/'
-    out_filename = 'classifier_power_multid%s_%sB_%sBprime_%s_%srep_alpha%s_sampleobs%s_t0val%s_%s_%s.csv' % (
-        d_obs, b, b_prime, run, rep, str(alpha).replace('.', '-'), sample_size_obs,
-        str(t0_val).replace('.', '-'), classifier_cde,
-        datetime.strftime(datetime.today(), '%Y-%m-%d')
-    )
-    out_df.to_csv(out_dir + out_filename)
-
-    # Print results
-    cov_df = out_df[out_df['on_true_t0'] == 1][['classifier', 'classifier_cde',
-                                                'in_confint', 'cross_entropy_loss', 'or_loss_value', 'size_CI']]
-    print(cov_df.groupby(['classifier', 'classifier_cde']).agg({'in_confint': [np.average],
-                                                                'size_CI': [np.average, np.std],
-                                                                'cross_entropy_loss': [np.average, np.std],
-                                                                'or_loss_value': [np.average, np.std]}))
-
-    # Power plots
-    out_df['class_combo'] = out_df[['classifier', 'classifier_cde']].apply(lambda x: x[0] + '---' + x[1], axis = 1)
-    plot_df = out_df[['class_combo', 'theta_0_current', 'out_confint']].groupby(
-        ['class_combo', 'theta_0_current']).mean().reset_index()
-    fig = plt.figure(figsize=(20, 10))
-    sns.lineplot(x='theta_0_current', y='out_confint', hue='class_combo', data=plot_df, palette='cubehelix')
-    plt.legend(loc='best', fontsize=25)
-    plt.xlabel(r'$\theta$', fontsize=25)
-    plt.ylabel('Power', fontsize=25)
-    plt.title("Power of Hypothesis Test, B=%s, B'=%s, n=%s, %s" % (
-        b, b_prime, sample_size_obs, run.title()), fontsize=25)
-    out_dir = 'images/classifier_power_multid/'
-    outfile_name = 'power_multid%s_classifier_reps_%sB_%sBprime_%s_%srep_alpha%s_sampleobs%s_t0val%s_%s_%s.pdf' % (
-        d_obs, b, b_prime, run, rep, str(alpha).replace('.', '-'), sample_size_obs,
-        str(t0_val).replace('.', '-'), classifier_cde,
-        datetime.strftime(datetime.today(), '%Y-%m-%d')
-    )
-    plt.tight_layout()
-    plt.savefig(out_dir + outfile_name)
-    plt.close()
-    
 
 
 if __name__ == '__main__':
@@ -224,9 +188,9 @@ if __name__ == '__main__':
                              'the baseline reference G')
     parser.add_argument('--alpha', action="store", type=float, default=0.1,
                         help='Statistical confidence level')
-    parser.add_argument('--t0_val', action="store", type=float, default=5,
+    parser.add_argument('--t0_val', action="store", type=float, default=5.0,
                         help='True param value')
-    parser.add_argument('--run', action="store", type=str, default='gmm',
+    parser.add_argument('--run', action="store", type=str, default='mvn_multid',
                         help='Problem to run')
     parser.add_argument('--debug', action='store_true', default=False,
                         help='If true, a very small value for the sample sizes is fit to make sure the'
