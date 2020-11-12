@@ -1,4 +1,5 @@
 import numpy as np
+from math import ceil
 import sys
 sys.path.append('..')
 
@@ -10,9 +11,9 @@ from itertools import product
 class ToyMVNMultiDLoader:
 
     def __init__(self, d_obs=2, mean_instrumental=0.0, std_instrumental=4.0, low_int=0.0, high_int=10.0,
-                 true_param=5.0, true_std=1.0, mean_prior=5.0, std_prior=2.0,
+                 true_param=5.0, true_std=1.0, mean_prior=5.0, std_prior=2.0, uniform_grid_sample_size=2500,
                  out_dir='toy_mvn/', prior_type='uniform',
-                 marginal=False, size_marginal=1000):
+                 marginal=False, size_marginal=5000):
 
         self.low_int = low_int
         self.high_int = high_int
@@ -45,12 +46,24 @@ class ToyMVNMultiDLoader:
         if marginal:
             self.compute_marginal_reference(size_marginal)
 
-        self.num_pred_grid = 11 if self.d > 2 else 21
-        t0_grid = np.round(np.linspace(start=self.low_int, stop=self.high_int, num=self.num_pred_grid), 2)
-        pred_iter_list = [t0_grid] * d_obs
-        list_full_product = list(product(*pred_iter_list))
-        self.pred_grid = np.array(list_full_product)
-        self.idx_row_true_param = list_full_product.index(tuple(self.true_param.tolist()))
+        # If it's too high-dimensional, rather than gridding the parameter space we randomly sample
+        if self.d <= 3:
+            self.num_pred_grid = 21
+            t0_grid = np.round(np.linspace(start=self.low_int, stop=self.high_int, num=self.num_pred_grid), 2)
+            pred_iter_list = [t0_grid] * d_obs
+            list_full_product = list(product(*pred_iter_list))
+            self.pred_grid = np.array(list_full_product)
+            self.idx_row_true_param = list_full_product.index(tuple(self.true_param.tolist()))
+        else:
+            if not uniform_grid_sample_size % self.d == 0:
+                self.num_pred_grid = ceil(uniform_grid_sample_size/self.d) * self.d
+            else:
+                self.num_pred_grid = uniform_grid_sample_size
+
+            pred_grid = np.random.uniform(
+                low=self.low_int, high=self.high_int, size=self.num_pred_grid).reshape(-1, self.d)
+            self.pred_grid = np.vstack((self.true_param.reshape(1, self.d), pred_grid))
+            self.idx_row_true_param = 0
 
     def sample_sim(self, sample_size, true_param):
         return multivariate_normal(mean=true_param, cov=self.true_cov).rvs(sample_size).reshape(sample_size, self.d_obs)

@@ -135,8 +135,8 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
             else:
                 raise ValueError('The variable test_statistic needs to be either acore, avgacore, logavgacore.'
                                  ' Currently %s' % test_statistic)
+
             clf_cde_fitted[clf_name] = {}
-            # for clf_name_qr, clf_params in sorted(classifier_cde_dict.items(), key=lambda x: x[0]):
             clf_name_qr = classifier_cde
             clf_params = classifier_cde_dict[classifier_cde]
             t0_pred_vec = train_qr_algo(model_obj=model_obj, theta_mat=theta_mat, stats_mat=stats_mat,

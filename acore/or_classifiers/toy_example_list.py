@@ -26,7 +26,7 @@ classifier_dict_mlpcomp = {
 classifier_dict_multid = {
     'NN': KNeighborsClassifier(),
     'MLP': MLPClassifier(alpha=0, max_iter=25000),
-    'XGBoost (d3, n500)': XGBClassifier(max_depth=3, n_estimators=500)
+    # 'XGBoost (d3, n500)': XGBClassifier(max_depth=5, n_estimators=300)
 }
 
 classifier_dict_complete = {
@@ -35,7 +35,7 @@ classifier_dict_complete = {
     'Gauss_Proc': GaussianProcessClassifier(RBF(1.0)),
     'XGBoost (d3, n500)': XGBClassifier(max_depth=3, n_estimators=500),
     'XGBoost (d3, n100)': XGBClassifier(max_depth=3, n_estimators=100),
-    'XGBoost (d5, n500)': XGBClassifier(max_depth=3, n_estimators=500),
+    'XGBoost (d5, n500)': XGBClassifier(max_depth=5, n_estimators=500),
     'XGBoost \n (d10, n100)': XGBClassifier(max_depth=10, n_estimators=100),
     'QDA': QuadraticDiscriminantAnalysis(),
     'Log. Regr.': LogisticRegression(penalty='none', solver='saga', max_iter=10000)
