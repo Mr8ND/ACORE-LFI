@@ -21,7 +21,7 @@ from qr_algorithms.complete_list import classifier_cde_dict
 
 model_dict = {
     # 'gmm': ToyGMMMultiDLoader,
-    # 'mvn': ToyMVNLoader,
+    'mvn': ToyMVNLoader,
     'mvn_multid': ToyMVNMultiDLoader
 }
 
@@ -47,7 +47,6 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
     tp_func = model_obj.compute_exact_prob
     t0_param_val = model_obj.true_param
     true_param_row_idx = model_obj.idx_row_true_param
-    bounds_opt = model_obj.bounds_opt
 
     # Creating sample to check entropy about
     np.random.seed(seed)
@@ -85,13 +84,9 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
             
             if test_statistic == 'acore':
                 tau_obs = np.array([
-                    compute_statistics_single_t0_multid(
-                        clf=clf_odds, obs_sample=x_obs, t0=theta_0, bounds_opt=bounds_opt,
+                    compute_statistics_single_t0(
+                        clf=clf_odds, obs_sample=x_obs, t0=theta_0, grid_param_t1=grid_param,
                         d=model_obj.d, d_obs=model_obj.d_obs) for theta_0 in t0_grid])
-                # tau_obs = np.array([
-                #     compute_statistics_single_t0(
-                #         clf=clf_odds, obs_sample=x_obs, t0=theta_0, grid_param_t1=grid_param,
-                #         d=model_obj.d, d_obs=model_obj.d_obs) for theta_0 in t0_grid])
             elif test_statistic == 'avgacore':
                 tau_obs = np.array([
                     compute_bayesfactor_single_t0(
@@ -105,7 +100,7 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
             else:
                 raise ValueError('The variable test_statistic needs to be either acore, avgacore, logavgacore.'
                                  ' Currently %s' % test_statistic)
-            print('DONE ODDS')
+
             # Calculating cross-entropy
             est_prob_vec = clf_prob_value(clf=clf_odds, x_vec=x_vec, theta_vec=theta_vec, d=model_obj.d,
                                           d_obs=model_obj.d_obs)
@@ -121,14 +116,10 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
             theta_mat, sample_mat = msnh_sampling_func(b_prime=b_prime, sample_size=sample_size_obs)
             
             if test_statistic == 'acore':
-                stats_mat = np.array([compute_statistics_single_t0_multid(
-                                      clf=clf_odds, d=model_obj.d, d_obs=model_obj.d_obs, bounds_opt=bounds_opt,
-                                      t0=theta_0, obs_sample=sample_mat[kk, :, :]) for kk, theta_0 in enumerate(theta_mat)
-                                     ])
-                # stats_mat = np.array([compute_statistics_single_t0(
-                #     clf=clf_odds, d=model_obj.d, d_obs=model_obj.d_obs, grid_param_t1=grid_param,
-                #     t0=theta_0, obs_sample=sample_mat[kk, :, :]) for kk, theta_0 in enumerate(theta_mat)
-                # ])
+                stats_mat = np.array([compute_statistics_single_t0(
+                    clf=clf_odds, d=model_obj.d, d_obs=model_obj.d_obs, grid_param_t1=grid_param,
+                    t0=theta_0, obs_sample=sample_mat[kk, :, :]) for kk, theta_0 in enumerate(theta_mat)
+                ])
             elif test_statistic == 'avgacore':
                 stats_mat = np.array([compute_bayesfactor_single_t0(
                                       clf=clf_odds, d=model_obj.d, d_obs=model_obj.d_obs, gen_param_fun=gen_param_fun,
@@ -144,7 +135,6 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
             else:
                 raise ValueError('The variable test_statistic needs to be either acore, avgacore, logavgacore.'
                                  ' Currently %s' % test_statistic)
-            print('DONE QR')
             clf_cde_fitted[clf_name] = {}
             # for clf_name_qr, clf_params in sorted(classifier_cde_dict.items(), key=lambda x: x[0]):
             clf_name_qr = classifier_cde
@@ -168,6 +158,16 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
                     size_temp, entropy_est, or_loss_value, monte_carlo_samples
                 ])
         pbar.update(1)
+
+    # Saving the results
+    out_df = pd.DataFrame.from_records(data=out_val, index=range(len(out_val)), columns=out_cols)
+    out_dir = 'sims/classifier_power_multid/'
+    out_filename = 'classifier_power_multid%s_%sB_%sBprime_%s_%srep_alpha%s_sampleobs%s_t0val%s_%s_%s.csv' % (
+        d_obs, b, b_prime, run, rep, str(alpha).replace('.', '-'), sample_size_obs,
+        str(t0_val).replace('.', '-'), classifier_cde,
+        datetime.strftime(datetime.today(), '%Y-%m-%d')
+    )
+    out_df.to_csv(out_dir + out_filename)
 
 
 if __name__ == '__main__':
