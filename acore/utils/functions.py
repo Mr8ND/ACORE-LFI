@@ -190,7 +190,7 @@ def compute_bayesfactor_single_t0(clf, obs_sample, t0, gen_param_fun,
 
     # Calculate odds
     # We extract t0 values
-    odds_t0 = np.exp(np.sum(np.log(prob_mat[0:n, 1] / prob_mat[0:n, 0])))
+    odds_t0 = np.exp(np.sum(np.log(prob_mat[0:n, 1] / prob_mat[0:n, 0]))).astype(np.float64)
     assert isinstance(odds_t0, float)
 
     # We calculate the values for the monte carlo samples to approximate the integral

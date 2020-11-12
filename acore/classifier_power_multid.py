@@ -162,10 +162,11 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
     # Saving the results
     out_df = pd.DataFrame.from_records(data=out_val, index=range(len(out_val)), columns=out_cols)
     out_dir = 'sims/classifier_power_multid/'
-    out_filename = 'classifier_power_multid%s_%sB_%sBprime_%s_%srep_alpha%s_sampleobs%s_t0val%s_%s_%s.csv' % (
-        d_obs, b, b_prime, run, rep, str(alpha).replace('.', '-'), sample_size_obs,
+    out_filename = 'classifier_reps_cov_pow_toy_%steststats_%sB_%sBprime_%s_%srep_alpha%s_sampleobs%s_t0val%s_%s_%s.csv' % (
+        test_statistic, b, b_prime, run, rep,
+        str(alpha).replace('.', '-'), sample_size_obs,
         str(t0_val).replace('.', '-'), classifier_cde,
-        datetime.strftime(datetime.today(), '%Y-%m-%d')
+        datetime.strftime(datetime.today(), '%Y-%m-%d-%H-%M')
     )
     out_df.to_csv(out_dir + out_filename)
 
