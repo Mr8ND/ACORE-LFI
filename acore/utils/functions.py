@@ -42,6 +42,49 @@ def clf_prob_value(clf, x_vec, theta_vec, d, d_obs):
     return prob_mat[:, 1]
 
 
+def train_pvalue_clf(clf_model, X, y, clf_name='xgboost', cv_nn=5, nn_square_root=False):
+    '''
+    This function trains a classifier for a classification task by passing in a X and y vectors.
+    It checks whether the classifier is a nearest neighbor algorithm, and if so it does set the neighbors either
+    to be the square root of the total number of samples (X.shape[0]) or finds them by cross-validation
+
+    :param clf_model: classifier model (sklearn compatible)
+    :param X: training data features (numpy array)
+    :param y: training data response (numpy array)
+    :param clf_name: Name of the classifier used
+    :param cv_nn: Number of folds to be used in CV for nearest neighbors
+    :param nn_square_root: If true, the number of neighbors for NN is chosen with the square root of the data
+    :return: Trained classifier model
+    '''
+
+    if 'nn' in clf_name.lower():
+
+        if nn_square_root:
+            clf_model = KNeighborsClassifier(n_neighbors=int(np.sqrt(X.shape[0])))
+            clf_model.fit(X=X, y=y)
+
+        else:
+            grid_params = {'n_neighbors': np.array(neighbor_range)}
+            # The following lines makes sure that we are not selecting a number of neighbors which is too
+            # large with respect to the data we are going to use for CV
+            grid_params['n_neighbors'] = [x for x in grid_params['n_neighbors'] if x < (X.shape[0]*(1 - (1/cv_nn)))]
+            gs = GridSearchCV(
+                KNeighborsClassifier(),
+                grid_params,
+                verbose=0,
+                cv=cv_nn,
+                n_jobs=-1,
+                scoring='neg_log_loss',
+                iid=True
+            )
+            gs_results = gs.fit(X, y)
+            clf_model = gs_results.best_estimator_
+    else:
+        clf_model.fit(X=X, y=y)
+
+    return clf_model
+
+
 def train_clf(sample_size, gen_function, clf_model,
               d=1, p=0.5, clf_name='xgboost', cv_nn=5, marginal=False, nn_square_root=False):
     '''
