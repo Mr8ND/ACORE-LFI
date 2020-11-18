@@ -11,7 +11,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 
 from utils.functions import train_clf, compute_statistics_single_t0, clf_prob_value, compute_bayesfactor_single_t0, \
-    odds_ratio_loss, compute_statistics_single_t0_multid
+    compute_averageodds_single_t0, odds_ratio_loss, compute_statistics_single_t0_multid
 from models.toy_gmm_multid import ToyGMMMultiDLoader
 from models.toy_mvn import ToyMVNLoader
 from models.toy_mvn_multid import ToyMVNMultiDLoader
@@ -97,8 +97,13 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
                     compute_bayesfactor_single_t0(
                         clf=clf_odds, obs_sample=x_obs, t0=theta_0, gen_param_fun=gen_param_fun,
                         d=model_obj.d, d_obs=model_obj.d_obs, log_out=True) for theta_0 in t0_grid])
+            elif test_statistic == 'averageodds':
+                tau_obs = np.array([
+                    compute_averageodds_single_t0(
+                        clf=clf_odds, obs_sample=x_obs, t0=theta_0, d=model_obj.d,
+                        d_obs=model_obj.d_obs) for theta_0 in t0_grid])
             else:
-                raise ValueError('The variable test_statistic needs to be either acore, avgacore, logavgacore.'
+                raise ValueError('The variable test_statistic needs to be either acore, avgacore, logavgacore, or averageodds.'
                                  ' Currently %s' % test_statistic)
 
             # Calculating cross-entropy
@@ -132,6 +137,10 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
                                       monte_carlo_samples=monte_carlo_samples, log_out=True,
                                       t0=theta_0, obs_sample=sample_mat[kk, :, :]) for kk, theta_0 in enumerate(theta_mat)
                                      ])
+            elif test_statistic == 'averageodds':
+                stats_mat = np.array([compute_averageodds_single_t0(clf=clf_odds, d=model_obj.d, d_obs=model_obj.d_obs,
+                                      t0=theta_0, obs_sample=sample_mat[kk, :, :], ) for kk, theta_0 in enumerate(theta_mat)
+                                    ])
             else:
                 raise ValueError('The variable test_statistic needs to be either acore, avgacore, logavgacore.'
                                  ' Currently %s' % test_statistic)
@@ -162,8 +171,8 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
     # Saving the results
     out_df = pd.DataFrame.from_records(data=out_val, index=range(len(out_val)), columns=out_cols)
     out_dir = 'sims/classifier_power_multid/'
-    out_filename = 'classifier_reps_cov_pow_toy_%steststats_%sB_%sBprime_%s_%srep_alpha%s_sampleobs%s_t0val%s_%s_%s.csv' % (
-        test_statistic, b, b_prime, run, rep,
+    out_filename = 'classifier_reps_cov_pow_toy_d%s_%steststats_%sB_%sBprime_%s_%srep_alpha%s_sampleobs%s_t0val%s_%s_%s.csv' % (
+        d_obs, test_statistic, b, b_prime, run, rep,
         str(alpha).replace('.', '-'), sample_size_obs,
         str(t0_val).replace('.', '-'), classifier_cde,
         datetime.strftime(datetime.today(), '%Y-%m-%d-%H-%M')

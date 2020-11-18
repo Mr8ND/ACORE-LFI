@@ -196,6 +196,30 @@ def pinball_loss(y_true, y_pred, alpha):
     return np.average(np.max(diff_mat, axis=1))
 
 
+def compute_averageodds_single_t0(clf, obs_sample, t0, d=1, d_obs=1):
+
+    n = obs_sample.shape[0]
+
+    predict_mat = np.hstack((
+            np.tile(t0, n).reshape(-1, d),
+            obs_sample.reshape(-1, d_obs),
+    ))
+    assert predict_mat.shape == (n, d + d_obs)
+
+    # Do the prediction step
+    prob_mat = clf.predict_proba(predict_mat)
+    prob_mat[prob_mat == 0] = 1e-15
+    assert prob_mat.shape == (n, 2)
+
+    # Calculate odds
+    # We extract t0 values
+    odds_t0 = np.exp(np.sum(np.log(prob_mat[:, 1] / prob_mat[:, 0]))).astype(np.float64)
+    assert isinstance(odds_t0, float)
+
+    # return the average odds directly
+    return odds_t0
+
+
 def compute_bayesfactor_single_t0(clf, obs_sample, t0, gen_param_fun,
                                   log_out=False, d=1, d_obs=1, monte_carlo_samples=1000):
 
