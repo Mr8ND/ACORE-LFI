@@ -159,3 +159,7 @@ acore/toy_examples/*
 
 # Pycharm
 .idea/*
+
+# MAC stuff
+.DS_Store
+/.DS_Store

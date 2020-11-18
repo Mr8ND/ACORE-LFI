@@ -13,6 +13,13 @@ classifier_dict = {
     'QDA': QuadraticDiscriminantAnalysis()
 }
 
+classifier_pvalue_dict = {
+    'NN': KNeighborsClassifier(),
+    'MLP': MLPClassifier(alpha=0, max_iter=25000),
+    'QDA': QuadraticDiscriminantAnalysis(),
+    'XGBoost (d3, n500)': XGBClassifier(max_depth=3, n_estimators=500),
+}
+
 classifier_dict_mlpcomp = {
     'pytorch_mlp_orloss': OddsNet(loss_function='or_loss', batch_size=64,
                                   learning_rate=1e-6, n_epochs=50000),
@@ -26,7 +33,7 @@ classifier_dict_mlpcomp = {
 classifier_dict_multid = {
     'NN': KNeighborsClassifier(),
     'MLP': MLPClassifier(alpha=0, max_iter=25000),
-    # 'XGBoost (d3, n500)': XGBClassifier(max_depth=5, n_estimators=300)
+    'MLP2': MLPClassifier((64, 32, 32), activation='relu', alpha=0, max_iter=25000)
 }
 
 classifier_dict_complete = {
