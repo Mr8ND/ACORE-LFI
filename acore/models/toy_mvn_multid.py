@@ -47,7 +47,7 @@ class ToyMVNMultiDLoader:
             self.compute_marginal_reference(size_marginal)
 
         # If it's too high-dimensional, rather than gridding the parameter space we randomly sample
-        if self.d <= 3:
+        if self.d < 3:
             self.num_pred_grid = 21
             t0_grid = np.round(np.linspace(start=self.low_int, stop=self.high_int, num=self.num_pred_grid), 2)
             pred_iter_list = [t0_grid] * d_obs
