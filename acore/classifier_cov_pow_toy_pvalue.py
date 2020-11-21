@@ -62,7 +62,7 @@ def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_statistic, m
     # whether the point is in or not.
     out_val = []
     out_cols = ['test_statistic', 'b_prime', 'b', 'classifier', 'classifier_pvalue', 'run', 'rep', 'sample_size_obs',
-                'cross_entropy_loss', 't0_true_val', 'theta_0_current', 'on_true_t0',
+                'cross_entropy_loss', 'cross_entropy_loss_pvalue', 't0_true_val', 'theta_0_current', 'on_true_t0',
                 'estimated_pvalue', 'in_confint', 'out_confint', 'size_CI', 'true_entropy', 'or_loss_value',
                 'monte_carlo_samples']
     pbar = tqdm(total=rep, desc='Toy Example for Simulations, n=%s, b=%s' % (sample_size_obs, b))
@@ -190,11 +190,20 @@ def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_statistic, m
             clf_pvalue_fitted[clf_name] = {}
             indicator_vec = np.greater(stats_mat_observed, stats_mat_generated).astype(int)
             for clf_name_pvalue, clf_model_pvalue in sorted(classifier_pvalue_dict.items(), key=lambda x: x[0]):
-                clf_pvalue = train_pvalue_clf(clf_model=clf_model_pvalue, X=theta_mat.reshape(-1, model_obj.d),
-                                              y=indicator_vec.reshape(-1, ), clf_name=clf_name_pvalue,
-                                              nn_square_root=True)
-                pval_pred = clf_pvalue.predict_proba(t0_grid.reshape(-1, model_obj.d))[:, 1]
-                clf_pvalue_fitted[clf_name][clf_name_pvalue] = pval_pred
+
+                # If there the indicator_vec is either all 0 or all 1, do not fit a classifier or sklearn will throw
+                # an error out. Just return the class.
+                if sum(indicator_vec) == 0 or sum(indicator_vec) == len(indicator_vec):
+                    pval_pred = np.repeat(sum(indicator_vec) / len(indicator_vec), b_prime)
+                    loss_value_pval = np.nan
+                else:
+                    clf_pvalue = train_pvalue_clf(clf_model=clf_model_pvalue, X=theta_mat.reshape(-1, model_obj.d),
+                                                  y=indicator_vec.reshape(-1, ), clf_name=clf_name_pvalue,
+                                                  nn_square_root=True)
+                    pval_pred = clf_pvalue.predict_proba(t0_grid.reshape(-1, model_obj.d))[:, 1]
+                    theta_mat_pred = clf_pvalue.predict_proba(theta_mat.reshape(-1, model_obj.d))[:, 1]
+                    loss_value_pval = log_loss(y_true=indicator_vec, y_pred=theta_mat_pred)
+                clf_pvalue_fitted[clf_name][clf_name_pvalue] = (pval_pred, loss_value_pval)
 
         # If there were some problems in calculating the statistics, get out of the loop
         if not_update_flag:
@@ -203,12 +212,12 @@ def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_statistic, m
 
         # At this point all it's left is to record
         for clf_name, (tau_obs_val, cross_ent_loss, or_loss_value) in clf_odds_fitted.items():
-            for clf_name_qr, pvalue_val in clf_pvalue_fitted[clf_name].items():
+            for clf_name_qr, (pvalue_val, pvalue_celoss_val) in clf_pvalue_fitted[clf_name].items():
                 size_temp = np.mean((pvalue_val > alpha).astype(int))
                 for kk, theta_0_current in enumerate(t0_grid):
                     out_val.append([
                         test_statistic, b_prime, b, clf_name, clf_name_qr, run, rep_counter, sample_size_obs,
-                        cross_ent_loss, t0_val, theta_0_current, int(t0_val == theta_0_current),
+                        cross_ent_loss, pvalue_celoss_val, t0_val, theta_0_current, int(t0_val == theta_0_current),
                         pvalue_val[kk], int(pvalue_val[kk] > alpha),
                         int(pvalue_val[kk] <= alpha), size_temp, entropy_est, or_loss_value,
                         monte_carlo_samples
@@ -228,11 +237,12 @@ def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_statistic, m
     out_df.to_csv(out_dir + out_filename)
 
     # Print results
-    cov_df = out_df[out_df['on_true_t0'] == 1][['classifier', 'classifier_pvalue',
-                                                'in_confint', 'cross_entropy_loss', 'size_CI']]
+    cov_df = out_df[out_df['on_true_t0'] == 1][['classifier', 'classifier_pvalue', 'in_confint',
+                                                'cross_entropy_loss', 'cross_entropy_loss_pvalue', 'size_CI']]
     print(cov_df.groupby(['classifier', 'classifier_pvalue']).agg({'in_confint': [np.average],
                                                                 'size_CI': [np.average, np.std],
-                                                                'cross_entropy_loss': [np.average, np.std]}))
+                                                                'cross_entropy_loss': [np.average],
+                                                                'cross_entropy_loss_pvalue': [np.average]}))
 
     # Power plots
     out_df['class_combo'] = out_df[['classifier', 'classifier_pvalue']].apply(lambda x: x[0] + '---' + x[1], axis = 1)
