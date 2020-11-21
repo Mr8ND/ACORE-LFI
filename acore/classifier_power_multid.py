@@ -15,6 +15,7 @@ from utils.functions import train_clf, compute_statistics_single_t0, clf_prob_va
 from models.toy_gmm_multid import ToyGMMMultiDLoader
 from models.toy_mvn import ToyMVNLoader
 from models.toy_mvn_multid import ToyMVNMultiDLoader
+from models.toy_mvn_multid_simplehyp import ToyMVNMultiDSimpleHypLoader
 from utils.qr_functions import train_qr_algo
 from or_classifiers.toy_example_list import classifier_dict_multid as classifier_dict
 from qr_algorithms.complete_list import classifier_cde_dict
@@ -22,11 +23,12 @@ from qr_algorithms.complete_list import classifier_cde_dict
 model_dict = {
     # 'gmm': ToyGMMMultiDLoader,
     'mvn': ToyMVNLoader,
-    'mvn_multid': ToyMVNMultiDLoader
+    'mvn_multid': ToyMVNMultiDLoader,
+    'mvn_multid_simplehyp': ToyMVNMultiDSimpleHypLoader
 }
 
 
-def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier_cde, test_statistic,
+def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier_cde, test_statistic, alternative_norm,
          monte_carlo_samples=500, debug=False, seed=7, size_check=1000, verbose=False, marginal=False,
          size_marginal=1000):
 
@@ -35,7 +37,9 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
     b_prime = b_prime if not debug else 100
     size_check = size_check if not debug else 100
     rep = rep if not debug else 2
-    model_obj = model_dict[run](d_obs=d_obs, marginal=marginal, size_marginal=size_marginal, true_param=t0_val)
+    model_obj = model_dict[run](
+        d_obs=d_obs, marginal=marginal, size_marginal=size_marginal, true_param=t0_val, alt_mu_norm=alternative_norm
+    )
 
     # Get the correct functions
     msnh_sampling_func = model_obj.sample_msnh_algo5
@@ -217,6 +221,8 @@ if __name__ == '__main__':
                         help='Sample size of the actual marginal distribution, if marginal is True.')
     parser.add_argument('--monte_carlo_samples', action="store", type=int, default=1000,
                         help='Sample size for the calculation of the OR loss.')
+    parser.add_argument('--alt_norm', action="store", type=float, default=5,
+                        help='Norm of the mean under the alternative -- to be used for toy_mvn_multid_simplehyp only.')
     argument_parsed = parser.parse_args()
 
     #b_vec = [100, 500, 1000]
@@ -237,5 +243,6 @@ if __name__ == '__main__':
         test_statistic=argument_parsed.test_statistic,
         classifier_cde=argument_parsed.class_cde,
         size_marginal=argument_parsed.size_marginal,
-        monte_carlo_samples=argument_parsed.monte_carlo_samples
+        monte_carlo_samples=argument_parsed.monte_carlo_samples,
+        alternative_norm=argument_parsed.alt_norm
     )

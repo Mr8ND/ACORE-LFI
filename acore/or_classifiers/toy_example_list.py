@@ -14,7 +14,6 @@ classifier_dict = {
 }
 
 classifier_pvalue_dict = {
-    'NN': KNeighborsClassifier(),
     'MLP': MLPClassifier(alpha=0, max_iter=25000),
     'QDA': QuadraticDiscriminantAnalysis(),
     'XGBoost (d3, n500)': XGBClassifier(max_depth=3, n_estimators=500),

@@ -14,17 +14,19 @@ from utils.functions import train_clf, compute_statistics_single_t0, clf_prob_va
 # from models.toy_gmm_multid import ToyGMMMultiDLoader
 from models.toy_mvn import ToyMVNLoader
 from models.toy_mvn_multid import ToyMVNMultiDLoader
+from models.toy_mvn_multid_simplehyp import ToyMVNMultiDSimpleHypLoader
 from or_classifiers.toy_example_list import classifier_dict_multid as classifier_dict
 from or_classifiers.toy_example_list import classifier_pvalue_dict
 
 model_dict = {
     # 'gmm': ToyGMMMultiDLoader,
     'mvn': ToyMVNLoader,
-    'mvn_multid': ToyMVNMultiDLoader
+    'mvn_multid': ToyMVNMultiDLoader,
+    'mvn_multid_simplehyp': ToyMVNMultiDSimpleHypLoader
 }
 
 
-def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_statistic,
+def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_statistic, alternative_norm,
          monte_carlo_samples=500, debug=False, seed=7, size_check=1000, verbose=False, marginal=False,
          size_marginal=1000):
     # Changing values if debugging
@@ -32,7 +34,9 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_stati
     b_prime = b_prime if not debug else 100
     size_check = size_check if not debug else 100
     rep = rep if not debug else 2
-    model_obj = model_dict[run](d_obs=d_obs, marginal=marginal, size_marginal=size_marginal, true_param=t0_val)
+    model_obj = model_dict[run](
+        d_obs=d_obs, marginal=marginal, size_marginal=size_marginal, true_param=t0_val, alt_mu_norm=alternative_norm
+    )
 
     # Get the correct functions
     msnh_sampling_func = model_obj.sample_msnh_algo5
@@ -62,9 +66,8 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_stati
     # whether the point is in or not.
     out_val = []
     out_cols = ['d_obs', 'test_statistic', 'b_prime', 'b', 'classifier', 'classifier_pvalue', 'run', 'rep',
-                'sample_size_obs',
-                'cross_entropy_loss', 't0_true_val', 'coverage', 'power', 'size_CI', 'true_entropy', 'or_loss_value',
-                'monte_carlo_samples']
+                'sample_size_obs', 'cross_entropy_loss', 'cross_entropy_loss_pvalue', 't0_true_val', 'coverage',
+                'power', 'size_CI', 'true_entropy', 'or_loss_value', 'monte_carlo_samples']
     pbar = tqdm(total=rep, desc='Toy Example for Simulations, n=%s, b=%s' % (sample_size_obs, b))
     for jj in range(rep):
 
@@ -167,22 +170,31 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_stati
             clf_pvalue_fitted[clf_name] = {}
             indicator_vec = np.greater(stats_mat_observed, stats_mat_generated).astype(int)
             for clf_name_pvalue, clf_model_pvalue in sorted(classifier_pvalue_dict.items(), key=lambda x: x[0]):
-                clf_pvalue = train_pvalue_clf(clf_model=clf_model_pvalue, X=theta_mat.reshape(-1, model_obj.d),
-                                              y=indicator_vec.reshape(-1, ), clf_name=clf_name_pvalue,
-                                              nn_square_root=True)
-                pval_pred = clf_pvalue.predict_proba(t0_grid.reshape(-1, model_obj.d))[:, 1]
-                clf_pvalue_fitted[clf_name][clf_name_pvalue] = pval_pred
+
+                # If there the indicator_vec is either all 0 or all 1, do not fit a classifier or sklearn will throw
+                # an error out. Just return the class.
+                if sum(indicator_vec) == 0 or sum(indicator_vec) == len(indicator_vec):
+                    pval_pred = np.repeat(sum(indicator_vec)/len(indicator_vec), b_prime)
+                    loss_value_pval = np.nan
+                else:
+                    clf_pvalue = train_pvalue_clf(clf_model=clf_model_pvalue, X=theta_mat.reshape(-1, model_obj.d),
+                                                  y=indicator_vec.reshape(-1, ), clf_name=clf_name_pvalue,
+                                                  nn_square_root=True)
+                    pval_pred = clf_pvalue.predict_proba(t0_grid.reshape(-1, model_obj.d))[:, 1]
+                    theta_mat_pred = clf_pvalue.predict_proba(theta_mat.reshape(-1, model_obj.d))[:, 1]
+                    loss_value_pval = log_loss(y_true=indicator_vec, y_pred=theta_mat_pred)
+                clf_pvalue_fitted[clf_name][clf_name_pvalue] = (pval_pred, loss_value_pval)
 
         # At this point all it's left is to record
         for clf_name, (tau_obs_val, cross_ent_loss, or_loss_value) in clf_odds_fitted.items():
-            for clf_name_qr, pvalue_val in clf_pvalue_fitted[clf_name].items():
+            for clf_name_qr, (pvalue_val, pvalue_celoss_val) in clf_pvalue_fitted[clf_name].items():
                 in_confint = (pvalue_val > alpha).astype(int)
                 size_temp = np.mean(in_confint)
                 coverage = int(pvalue_val[true_param_row_idx] >= alpha)
                 power = (in_confint.shape[0] - np.sum(in_confint) + coverage) / in_confint.shape[0]
                 out_val.append([
                     d_obs, test_statistic, b_prime, b, clf_name, clf_name_qr, run, jj, sample_size_obs,
-                    cross_ent_loss, t0_val, coverage, power,
+                    cross_ent_loss, pvalue_celoss_val, t0_val, coverage, power,
                     size_temp, entropy_est, or_loss_value, monte_carlo_samples
                 ])
         pbar.update(1)
@@ -233,6 +245,8 @@ if __name__ == '__main__':
                         help='Sample size of the actual marginal distribution, if marginal is True.')
     parser.add_argument('--monte_carlo_samples', action="store", type=int, default=1000,
                         help='Sample size for the calculation of the OR loss.')
+    parser.add_argument('--alt_norm', action="store", type=float, default=5,
+                        help='Norm of the mean under the alternative -- to be used for toy_mvn_multid_simplehyp only.')
     argument_parsed = parser.parse_args()
 
     # b_vec = [100, 500, 1000]
@@ -252,5 +266,6 @@ if __name__ == '__main__':
         verbose=argument_parsed.verbose,
         test_statistic=argument_parsed.test_statistic,
         size_marginal=argument_parsed.size_marginal,
-        monte_carlo_samples=argument_parsed.monte_carlo_samples
+        monte_carlo_samples=argument_parsed.monte_carlo_samples,
+        alternative_norm=argument_parsed.alt_norm
     )

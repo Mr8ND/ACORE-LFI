@@ -13,7 +13,7 @@ class ToyMVNMultiDLoader:
     def __init__(self, d_obs=2, mean_instrumental=0.0, std_instrumental=4.0, low_int=0.0, high_int=10.0,
                  true_param=5.0, true_std=1.0, mean_prior=5.0, std_prior=2.0, uniform_grid_sample_size=2500,
                  out_dir='toy_mvn/', prior_type='uniform',
-                 marginal=False, size_marginal=5000):
+                 marginal=False, size_marginal=5000, **kwargs):
 
         self.low_int = low_int
         self.high_int = high_int

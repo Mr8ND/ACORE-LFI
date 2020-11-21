@@ -6,21 +6,20 @@ sys.path.append('..')
 
 from scipy.stats import multivariate_normal, uniform, norm
 from scipy.optimize import Bounds
-from itertools import product
 
 
 class ToyMVNMultiDSimpleHypLoader:
 
-    def __init__(self, alt_mu_norm=25, d_obs=2, mean_instrumental=0.0, std_instrumental=4.0, low_int=-5.0, high_int=5.0,
+    def __init__(self, alt_mu_norm=25, d_obs=2, mean_instrumental=0.0, std_instrumental=4.0, low_int=-5.0,
                  true_param=0.0, true_std=1.0, mean_prior=5.0, std_prior=2.0, uniform_grid_sample_size=2500,
                  out_dir='toy_mvn/', prior_type='uniform',
-                 marginal=False, size_marginal=5000):
+                 marginal=False, size_marginal=5000, **kwargs):
 
-        self.low_int = low_int
-        self.high_int = high_int
         self.out_directory = out_dir
         self.d = d_obs
         self.d_obs = d_obs
+        self.low_int = low_int
+        self.high_int = alt_mu_norm / sqrt(self.d) + 5  # have to make sure we can sample param values where alt. is
         self.bounds_opt = Bounds([self.low_int] * self.d, [self.high_int] * self.d)
 
         if prior_type == 'uniform':
