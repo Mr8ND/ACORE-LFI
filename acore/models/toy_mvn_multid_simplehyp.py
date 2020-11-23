@@ -6,11 +6,12 @@ sys.path.append('..')
 
 from scipy.stats import multivariate_normal, uniform, norm
 from scipy.optimize import Bounds
+from itertools import product
 
 
 class ToyMVNMultiDSimpleHypLoader:
 
-    def __init__(self, alt_mu_norm=25, d_obs=2, mean_instrumental=0.0, std_instrumental=4.0, low_int=-5.0,
+    def __init__(self, alt_mu_norm=5, d_obs=2, mean_instrumental=0.0, std_instrumental=4.0, low_int=-5.0, high_int=5.0,
                  true_param=0.0, true_std=1.0, mean_prior=5.0, std_prior=2.0, uniform_grid_sample_size=2500,
                  out_dir='toy_mvn/', prior_type='uniform',
                  marginal=False, size_marginal=5000, **kwargs):
@@ -19,7 +20,8 @@ class ToyMVNMultiDSimpleHypLoader:
         self.d = d_obs
         self.d_obs = d_obs
         self.low_int = low_int
-        self.high_int = alt_mu_norm / sqrt(self.d) + 5  # have to make sure we can sample param values where alt. is
+        #self.high_int = alt_mu_norm / sqrt(self.d) + 5  # have to make sure we can sample param values where alt. is
+        self.high_int = high_int
         self.bounds_opt = Bounds([self.low_int] * self.d, [self.high_int] * self.d)
 
         if prior_type == 'uniform':
@@ -48,7 +50,24 @@ class ToyMVNMultiDSimpleHypLoader:
         if marginal:
             self.compute_marginal_reference(size_marginal)
 
-        # If it's too high-dimensional, rather than gridding the parameter space we randomly sample
+        # If it's too high-dimensional, rather than gridding the parameter space we randomly sample (just for ACORE grid)
+        if self.d < 3:
+            self.num_pred_grid = 21
+            t0_grid = np.round(np.linspace(start=self.low_int, stop=self.high_int, num=self.num_pred_grid), 2)
+            pred_iter_list = [t0_grid] * d_obs
+            list_full_product = list(product(*pred_iter_list))
+            self.acore_grid = np.array(list_full_product)
+        else:
+            if not uniform_grid_sample_size % self.d == 0:
+                self.num_pred_grid = ceil(uniform_grid_sample_size/self.d) * self.d
+            else:
+                self.num_pred_grid = uniform_grid_sample_size
+
+            acore_grid = np.random.uniform(
+                low=self.low_int, high=self.high_int, size=self.num_pred_grid).reshape(-1, self.d)
+            self.acore_grid = np.vstack((self.true_param.reshape(1, self.d), acore_grid))
+        
+        # prediction grid we care about is just at the null hypothesis at alt_param
         self.pred_grid = np.vstack((
             self.true_param.reshape(1, self.d), self.alt_param.reshape(1, self.d)
         ))
@@ -68,7 +87,7 @@ class ToyMVNMultiDSimpleHypLoader:
                                                   sample_size=1, true_param=row)).reshape(-1, self.d_obs)
 
         self.mean_instrumental = np.average(marginal_sample, axis=0)
-        self.cov_instrumental = np.diag(np.std(marginal_sample, axis=0))
+        self.cov_instrumental = np.diag(np.var(marginal_sample, axis=0))
         self.g_distribution = multivariate_normal(mean=self.mean_instrumental, cov=self.cov_instrumental)
 
     def generate_sample(self, sample_size, p=0.5, **kwargs):

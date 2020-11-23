@@ -1,32 +1,35 @@
 import numpy as np
+from math import ceil, sqrt
 import sys
+
 sys.path.append('..')
 
 from scipy.stats import multivariate_normal, uniform, norm
 
 
-class ToyMVNLoader:
+class ToyMVNSimpleHypLoader:
 
-    def __init__(self, d_obs, mean_instrumental=0.0, std_instrumental=4.0, low_int=0.0, high_int=10.0,
-                 mean_prior=5.0, std_prior=2.0,
-                 true_param=5.0, true_std=1.0, out_dir='toy_mvn/', prior_type='uniform',
+    def __init__(self, alt_mu_norm=5, d_obs=2, mean_instrumental=0.0, std_instrumental=4.0, low_int=-5.0, high_int=5.0,
+                 true_param=0.0, true_std=1.0, mean_prior=5.0, std_prior=2.0, uniform_grid_sample_size=2500,
+                 out_dir='toy_mvn/', prior_type='uniform',
                  marginal=False, size_marginal=5000, **kwargs):
-
-        self.low_int = low_int
-        self.high_int = high_int
-        self.prior_type = prior_type
+        
         self.out_directory = out_dir
         self.d = 1
         self.d_obs = d_obs
+        self.low_int = low_int
+        self.high_int = high_int
+        #self.high_int = alt_mu_norm / sqrt(self.d) + 5  # have to make sure we can sample param values where alt. is
         self.true_param = true_param
         self.true_std = true_std
-
+        self.alt_param = alt_mu_norm/sqrt(self.d_obs)
+        
         self.mean_instrumental = np.repeat(mean_instrumental, self.d_obs) if isinstance(mean_instrumental, float) \
             else mean_instrumental
         self.cov_instrumental = std_instrumental * np.eye(self.d_obs) if isinstance(std_instrumental, float) \
             else std_instrumental
         self.g_distribution = multivariate_normal(self.mean_instrumental, self.cov_instrumental)
-
+        
         if prior_type == 'uniform':
             self.prior_distribution = uniform(loc=self.low_int, scale=(self.high_int - self.low_int))
         elif prior_type == 'normal':
@@ -34,11 +37,12 @@ class ToyMVNLoader:
         else:
             raise ValueError('The variable prior_type needs to be either uniform or normal.'
                              ' Currently %s' % prior_type)
-
+        
         self.num_pred_grid = 51
-        self.pred_grid = np.linspace(start=self.low_int, stop=self.high_int, num=self.num_pred_grid).reshape(-1, 1)
-        self.idx_row_true_param = self.pred_grid.tolist().index(np.array(self.true_param))
-        self.acore_grid = self.pred_grid
+        self.acore_grid = np.linspace(start=self.low_int, stop=self.high_int, num=self.num_pred_grid).reshape(-1, 1)
+        
+        self.pred_grid = np.array([self.true_param, self.alt_param])
+        self.idx_row_true_param = 0
 
         if marginal:
             self.compute_marginal_reference(size_marginal)

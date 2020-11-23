@@ -14,6 +14,7 @@ from utils.functions import train_clf, compute_statistics_single_t0, clf_prob_va
     compute_averageodds_single_t0, odds_ratio_loss, compute_statistics_single_t0_multid
 from models.toy_gmm_multid import ToyGMMMultiDLoader
 from models.toy_mvn import ToyMVNLoader
+from models.toy_mvn_simplehyp import ToyMVNSimpleHypLoader
 from models.toy_mvn_multid import ToyMVNMultiDLoader
 from models.toy_mvn_multid_simplehyp import ToyMVNMultiDSimpleHypLoader
 from utils.qr_functions import train_qr_algo
@@ -23,6 +24,7 @@ from qr_algorithms.complete_list import classifier_cde_dict
 model_dict = {
     # 'gmm': ToyGMMMultiDLoader,
     'mvn': ToyMVNLoader,
+    'mvn_simplehyp': ToyMVNSimpleHypLoader,
     'mvn_multid': ToyMVNMultiDLoader,
     'mvn_multid_simplehyp': ToyMVNMultiDSimpleHypLoader
 }
@@ -47,7 +49,7 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
     gen_sample_func = model_obj.generate_sample
     gen_param_fun = model_obj.sample_param_values
     t0_grid = model_obj.pred_grid
-    grid_param = model_obj.pred_grid
+    grid_param = model_obj.acore_grid
     tp_func = model_obj.compute_exact_prob
     t0_param_val = model_obj.true_param
     true_param_row_idx = model_obj.idx_row_true_param
@@ -118,7 +120,6 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
             # Calculating or loss
             or_loss_value = odds_ratio_loss(clf=clf_odds, x_vec=x_vec, theta_vec=theta_vec,
                                             bern_vec=bern_vec, d=model_obj.d, d_obs=model_obj.d_obs)
-            # or_loss_value = or_loss(clf=clf_odds, first_sample=first_term_sample, second_sample=second_term_sample)
             clf_odds_fitted[clf_name] = (tau_obs, loss_value, or_loss_value)
 
             # Train the quantile regression algorithm for confidence levels
@@ -161,10 +162,11 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
         # At this point all it's left is to record
         for clf_name, (tau_obs_val, cross_ent_loss, or_loss_value) in clf_odds_fitted.items():
             for clf_name_qr, cutoff_val in clf_cde_fitted[clf_name].items():
-                in_confint = (tau_obs_val >= cutoff_val).astype(int)
+                in_confint = (tau_obs_val[~true_param_row_idx] >= cutoff_val[~true_param_row_idx]).astype(float)
                 size_temp = np.mean(in_confint)
                 coverage = int(tau_obs_val[true_param_row_idx] >= cutoff_val[true_param_row_idx])
-                power = (in_confint.shape[0] - np.sum(in_confint) + coverage)/in_confint.shape[0]
+                power = 1 - in_confint if isinstance(in_confint, float) else (in_confint.shape[0] - 
+                                                                  np.sum(in_confint)) / in_confint.shape[0]
                 out_val.append([
                     d_obs, test_statistic, b_prime, b, clf_name, clf_name_qr, run, jj, sample_size_obs,
                     cross_ent_loss, t0_val, coverage, power,
@@ -175,7 +177,7 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
     # Saving the results
     out_df = pd.DataFrame.from_records(data=out_val, index=range(len(out_val)), columns=out_cols)
     out_dir = 'sims/classifier_power_multid/'
-    out_filename = 'classifier_reps_cov_pow_toy_d%s_%steststats_%sB_%sBprime_%s_%srep_alpha%s_sampleobs%s_t0val%s_%s_%s.csv' % (
+    out_filename = 'd%s_%steststats_%sB_%sBprime_%s_%srep_alpha%s_sampleobs%s_t0val%s_%s_%s.csv' % (
         d_obs, test_statistic, b, b_prime, run, rep,
         str(alpha).replace('.', '-'), sample_size_obs,
         str(t0_val).replace('.', '-'), classifier_cde,
@@ -225,8 +227,7 @@ if __name__ == '__main__':
                         help='Norm of the mean under the alternative -- to be used for toy_mvn_multid_simplehyp only.')
     argument_parsed = parser.parse_args()
 
-    #b_vec = [100, 500, 1000]
-    #for b_val in b_vec:
+    
     main(
         d_obs=argument_parsed.d_obs,
         run=argument_parsed.run,

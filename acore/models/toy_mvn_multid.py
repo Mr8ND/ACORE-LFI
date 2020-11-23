@@ -64,6 +64,7 @@ class ToyMVNMultiDLoader:
                 low=self.low_int, high=self.high_int, size=self.num_pred_grid).reshape(-1, self.d)
             self.pred_grid = np.vstack((self.true_param.reshape(1, self.d), pred_grid))
             self.idx_row_true_param = 0
+        self.acore_grid = self.pred_grid
 
     def sample_sim(self, sample_size, true_param):
         return multivariate_normal(mean=true_param, cov=self.true_cov).rvs(sample_size).reshape(sample_size, self.d_obs)
@@ -79,7 +80,7 @@ class ToyMVNMultiDLoader:
                                                   sample_size=1, true_param=row)).reshape(-1, self.d_obs)
 
         self.mean_instrumental = np.average(marginal_sample, axis=0)
-        self.cov_instrumental = np.diag(np.std(marginal_sample, axis=0))
+        self.cov_instrumental = np.diag(np.var(marginal_sample, axis=0))
         self.g_distribution = multivariate_normal(mean=self.mean_instrumental, cov=self.cov_instrumental)
 
     def generate_sample(self, sample_size, p=0.5, **kwargs):
