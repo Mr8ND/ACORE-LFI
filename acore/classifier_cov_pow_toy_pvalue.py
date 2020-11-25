@@ -24,7 +24,7 @@ model_dict = {
 }
 
 
-def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_statistic, mlp_comp=False,
+def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_statistic, mlp_comp=False, b_prime_prop_sample=0.33,
          monte_carlo_samples=500, debug=False, seed=7, size_check=1000, verbose=False, marginal=False,
          size_marginal=1000):
 
@@ -90,7 +90,7 @@ def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_statistic, m
                 tau_obs = np.array([
                     compute_bayesfactor_single_t0(
                         clf=clf_odds, obs_sample=x_obs, t0=theta_0, gen_param_fun=gen_param_fun,
-                        d=model_obj.d, d_obs=model_obj.d_obs) for theta_0 in t0_grid])
+                        d=model_obj.d, d_obs=model_obj.d_obs, log_out=False) for theta_0 in t0_grid])
             elif test_statistic == 'logavgacore':
                 tau_obs = np.array([
                     compute_bayesfactor_single_t0(
@@ -111,8 +111,70 @@ def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_statistic, m
             clf_odds_fitted[clf_name] = (tau_obs, loss_value, or_loss_value)
 
             # Generate a matrix with values for both the sampled thetas as the actual samples
-            theta_mat, sample_mat = msnh_sampling_func(b_prime=b_prime, sample_size=sample_size_obs)
-            full_mat = np.hstack((theta_mat, sample_mat))
+            # theta_mat, sample_mat = msnh_sampling_func(b_prime=b_prime, sample_size=sample_size_obs)
+
+            # Commenting the above -- we now sample a set of thetas from the parameter (set to be 25% of the b_prime)
+            # budget, then resample them according to the odds values, fit a gaussian and then sample the
+            # datasets from that.
+            b_prime_budget_sample = int(b_prime * b_prime_prop_sample)
+            b_prime_budget_left = b_prime - b_prime_budget_sample
+
+            theta_mat_sample = gen_param_fun(sample_size=b_prime_budget_sample)
+
+            if test_statistic == 'acore':
+                stats_sample = np.apply_along_axis(arr=theta_mat_sample.reshape(-1, 1), axis=1,
+                                                   func1d=lambda row: compute_statistics_single_t0(
+                                                                  clf=clf_odds,
+                                                                  obs_sample=x_obs,
+                                                                  t0=row,
+                                                                  grid_param_t1=grid_param,
+                                                                  d=model_obj.d,
+                                                                  d_obs=model_obj.d_obs
+                                                   ))
+            elif test_statistic == 'avgacore':
+                stats_sample = np.apply_along_axis(arr=theta_mat_sample.reshape(-1, 1), axis=1,
+                                                   func1d=lambda row: compute_bayesfactor_single_t0(
+                                                       clf=clf_odds,
+                                                       obs_sample=x_obs,
+                                                       t0=row,
+                                                       gen_param_fun=gen_param_fun,
+                                                       d=model_obj.d,
+                                                       d_obs=model_obj.d_obs,
+                                                       monte_carlo_samples=monte_carlo_samples
+                                                   ))
+            elif test_statistic == 'logavgacore':
+                stats_sample = np.apply_along_axis(arr=theta_mat_sample.reshape(-1, 1), axis=1,
+                                                   func1d=lambda row: compute_bayesfactor_single_t0(
+                                                       clf=clf_odds,
+                                                       obs_sample=x_obs,
+                                                       t0=row,
+                                                       gen_param_fun=gen_param_fun,
+                                                       d=model_obj.d,
+                                                       d_obs=model_obj.d_obs,
+                                                       monte_carlo_samples=monte_carlo_samples,
+                                                       log_out=True
+                                                   ))
+            else:
+                raise ValueError('The variable test_statistic needs to be either acore, avgacore, logavgacore.'
+                                 ' Currently %s' % test_statistic)
+
+            # If there are log-odds, then some of the values might be negative, so we need to exponentiate them
+            # so to make sure that the large negative numbers are counted correctly (i.e. as very low probability, not
+            # probabilities with large magnitudes).
+            if test_statistic in ['acore', 'logavgacore']:
+                stats_sample = np.exp(stats_sample)
+            stats_sample = stats_sample/np.sum(stats_sample)
+            theta_mat_gaussian_fit = np.random.choice(a=theta_mat_sample, p=stats_sample.reshape(-1, ),
+                                                      size=b_prime_budget_sample)
+            std_gaussian_fit = np.std(theta_mat_gaussian_fit) if np.std(theta_mat_gaussian_fit) == 0.0 else 1.0
+            theta_mat = np.clip(
+                a=np.random.normal(size=b_prime_budget_left, loc=np.mean(theta_mat_gaussian_fit),
+                                   scale=std_gaussian_fit),
+                a_min=model_obj.low_int, a_max=model_obj.high_int)
+            sample_mat = np.apply_along_axis(arr=theta_mat.reshape(-1, 1), axis=1,
+                                             func1d=lambda row: gen_obs_func(sample_size=sample_size_obs,
+                                                                             true_param=row))
+            full_mat = np.hstack((theta_mat.reshape(-1, 1), sample_mat))
 
             if test_statistic == 'acore':
                 stats_mat_generated = np.apply_along_axis(arr=full_mat, axis=1,
@@ -193,7 +255,7 @@ def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_statistic, m
 
                 # If there the indicator_vec is either all 0 or all 1, do not fit a classifier or sklearn will throw
                 # an error out. Just return the class.
-                if sum(indicator_vec) == 0 or sum(indicator_vec) == len(indicator_vec):
+                if sum(indicator_vec) == 0 or sum(indicator_vec) > len(indicator_vec) - 2:
                     pval_pred = np.repeat(sum(indicator_vec) / len(indicator_vec), b_prime)
                     loss_value_pval = np.nan
                 else:
