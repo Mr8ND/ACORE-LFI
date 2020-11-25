@@ -112,13 +112,11 @@ def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_statistic, m
 
             # Generate a matrix with values for both the sampled thetas as the actual samples
             # theta_mat, sample_mat = msnh_sampling_func(b_prime=b_prime, sample_size=sample_size_obs)
-
             # Commenting the above -- we now sample a set of thetas from the parameter (set to be 25% of the b_prime)
             # budget, then resample them according to the odds values, fit a gaussian and then sample the
             # datasets from that.
             b_prime_budget_sample = int(b_prime * b_prime_prop_sample)
             b_prime_budget_left = b_prime - b_prime_budget_sample
-
             theta_mat_sample = gen_param_fun(sample_size=b_prime_budget_sample)
 
             if test_statistic == 'acore':
@@ -255,7 +253,7 @@ def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_statistic, m
 
                 # If there the indicator_vec is either all 0 or all 1, do not fit a classifier or sklearn will throw
                 # an error out. Just return the class.
-                if sum(indicator_vec) == 0 or sum(indicator_vec) > len(indicator_vec) - 2:
+                if sum(indicator_vec) <= 1 or sum(indicator_vec) >= len(indicator_vec) - 1:
                     pval_pred = np.repeat(sum(indicator_vec) / len(indicator_vec), b_prime)
                     loss_value_pval = np.nan
                 else:

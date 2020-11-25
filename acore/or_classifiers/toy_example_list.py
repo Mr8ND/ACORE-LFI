@@ -15,8 +15,8 @@ classifier_dict = {
 
 classifier_pvalue_dict = {
     'MLP': MLPClassifier(alpha=0, max_iter=25000),
-    'QDA': QuadraticDiscriminantAnalysis(),
-    'XGBoost (d3, n500)': XGBClassifier(max_depth=3, n_estimators=500),
+'MLP2': MLPClassifier((64, 32, 32), activation='relu', alpha=0, max_iter=25000),
+    'XGBoost (d3, n500)': XGBClassifier(max_depth=3, n_estimators=500)
 }
 
 classifier_dict_mlpcomp = {
