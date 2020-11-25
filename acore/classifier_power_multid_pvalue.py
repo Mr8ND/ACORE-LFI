@@ -28,7 +28,7 @@ model_dict = {
 
 def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_statistic, alternative_norm,
          monte_carlo_samples=500, debug=False, seed=7, size_check=1000, verbose=False, marginal=False,
-         size_marginal=1000):
+         size_marginal=1000, b_prime_prop_sample=0.33):
     # Changing values if debugging
     b = b if not debug else 100
     b_prime = b_prime if not debug else 100
@@ -120,7 +120,69 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_stati
             clf_odds_fitted[clf_name] = (tau_obs, loss_value, or_loss_value)
 
             # Train the quantile regression algorithm for confidence levels
-            theta_mat, sample_mat = msnh_sampling_func(b_prime=b_prime, sample_size=sample_size_obs)
+            # theta_mat, sample_mat = msnh_sampling_func(b_prime=b_prime, sample_size=sample_size_obs)
+            # Commenting the above -- we now sample a set of thetas from the parameter (set to be 25% of the b_prime)
+            # budget, then resample them according to the odds values, fit a gaussian and then sample the
+            # datasets from that.
+
+            b_prime_budget_sample = int(b_prime * b_prime_prop_sample)
+            b_prime_budget_left = b_prime - b_prime_budget_sample
+            theta_mat_sample = gen_param_fun(sample_size=b_prime_budget_sample)
+
+            if test_statistic == 'acore':
+                stats_sample = np.apply_along_axis(arr=theta_mat_sample.reshape(-1, model_obj.d), axis=1,
+                                                   func1d=lambda row: compute_statistics_single_t0(
+                                                       clf=clf_odds,
+                                                       obs_sample=x_obs,
+                                                       t0=row,
+                                                       grid_param_t1=grid_param,
+                                                       d=model_obj.d,
+                                                       d_obs=model_obj.d_obs
+                                                   ))
+            elif test_statistic == 'avgacore':
+                stats_sample = np.apply_along_axis(arr=theta_mat_sample.reshape(-1, model_obj.d), axis=1,
+                                                   func1d=lambda row: compute_bayesfactor_single_t0(
+                                                       clf=clf_odds,
+                                                       obs_sample=x_obs,
+                                                       t0=row,
+                                                       gen_param_fun=gen_param_fun,
+                                                       d=model_obj.d,
+                                                       d_obs=model_obj.d_obs,
+                                                       monte_carlo_samples=monte_carlo_samples
+                                                   ))
+            elif test_statistic == 'logavgacore':
+                stats_sample = np.apply_along_axis(arr=theta_mat_sample.reshape(-1, model_obj.d), axis=1,
+                                                   func1d=lambda row: compute_bayesfactor_single_t0(
+                                                       clf=clf_odds,
+                                                       obs_sample=x_obs,
+                                                       t0=row,
+                                                       gen_param_fun=gen_param_fun,
+                                                       d=model_obj.d,
+                                                       d_obs=model_obj.d_obs,
+                                                       monte_carlo_samples=monte_carlo_samples,
+                                                       log_out=True
+                                                   ))
+            else:
+                raise ValueError('The variable test_statistic needs to be either acore, avgacore, logavgacore.'
+                                 ' Currently %s' % test_statistic)
+
+            # If there are log-odds, then some of the values might be negative, so we need to exponentiate them
+            # so to make sure that the large negative numbers are counted correctly (i.e. as very low probability, not
+            # probabilities with large magnitudes).
+            if test_statistic in ['acore', 'logavgacore']:
+                stats_sample = np.exp(stats_sample)
+            stats_sample = stats_sample / np.sum(stats_sample)
+            theta_mat_gaussian_fit_idx = np.random.choice(a=theta_mat_sample.shape[0], p=stats_sample.reshape(-1, ),
+                                                          size=b_prime_budget_sample)
+            theta_mat_gaussian_fit = theta_mat_sample[theta_mat_gaussian_fit_idx, :]
+            mean_gaussian_fit = np.mean(theta_mat_gaussian_fit, axis=0)
+            cov_gaussian_fit = np.cov(theta_mat_gaussian_fit, rowvar=False)
+            theta_mat = np.random.multivariate_normal(
+                size=b_prime_budget_left, mean=mean_gaussian_fit, cov=cov_gaussian_fit,).clip(
+                min=model_obj.low_int, max=model_obj.high_int)
+            sample_mat = np.apply_along_axis(arr=theta_mat.reshape(-1, model_obj.d), axis=1,
+                                             func1d=lambda row: gen_obs_func(sample_size=sample_size_obs,
+                                                                             true_param=row))
 
             if test_statistic == 'acore':
                 stats_mat_generated = np.array([compute_statistics_single_t0(
@@ -173,7 +235,7 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_stati
 
                 # If there the indicator_vec is either all 0 or all 1, do not fit a classifier or sklearn will throw
                 # an error out. Just return the class.
-                if sum(indicator_vec) == 0 or sum(indicator_vec) == len(indicator_vec):
+                if sum(indicator_vec) <= 1 or sum(indicator_vec) >= len(indicator_vec) - 1:
                     pval_pred = np.repeat(sum(indicator_vec)/len(indicator_vec), b_prime)
                     loss_value_pval = np.nan
                 else:
@@ -243,7 +305,7 @@ if __name__ == '__main__':
                         help='Type of ACORE test statistic to use.')
     parser.add_argument('--size_marginal', action="store", type=int, default=1000,
                         help='Sample size of the actual marginal distribution, if marginal is True.')
-    parser.add_argument('--monte_carlo_samples', action="store", type=int, default=1000,
+    parser.add_argument('--monte_carlo_samples', action="store", type=int, default=500,
                         help='Sample size for the calculation of the OR loss.')
     parser.add_argument('--alt_norm', action="store", type=float, default=5,
                         help='Norm of the mean under the alternative -- to be used for toy_mvn_multid_simplehyp only.')
