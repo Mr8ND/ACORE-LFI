@@ -7,16 +7,15 @@ import pandas as pd
 from tqdm.auto import tqdm
 from datetime import datetime
 from sklearn.metrics import log_loss
-import seaborn as sns
-import matplotlib.pyplot as plt
 
 from utils.functions import train_clf, compute_statistics_single_t0, clf_prob_value, compute_bayesfactor_single_t0, \
-    compute_averageodds_single_t0, odds_ratio_loss, compute_statistics_single_t0_multid
+    compute_averageodds_single_t0, odds_ratio_loss
 from models.toy_gmm_multid import ToyGMMMultiDLoader
 from models.toy_mvn import ToyMVNLoader
 from models.toy_mvn_simplehyp import ToyMVNSimpleHypLoader
 from models.toy_mvn_multid import ToyMVNMultiDLoader
 from models.toy_mvn_multid_simplehyp import ToyMVNMultiDSimpleHypLoader
+from models.inferno import InfernoToyLoader
 from utils.qr_functions import train_qr_algo
 from or_classifiers.toy_example_list import classifier_dict_multid as classifier_dict
 from qr_algorithms.complete_list import classifier_cde_dict
@@ -26,21 +25,26 @@ model_dict = {
     'mvn': ToyMVNLoader,
     'mvn_simplehyp': ToyMVNSimpleHypLoader,
     'mvn_multid': ToyMVNMultiDLoader,
-    'mvn_multid_simplehyp': ToyMVNMultiDSimpleHypLoader
+    'mvn_multid_simplehyp': ToyMVNMultiDSimpleHypLoader,
+    'inferno': InfernoToyLoader
 }
 
 
 def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier_cde, test_statistic, alternative_norm,
          monte_carlo_samples=500, debug=False, seed=7, size_check=1000, verbose=False, marginal=False,
-         size_marginal=1000):
+         size_marginal=1000, benchmark=1):
 
     # Changing values if debugging
     b = b if not debug else 100
     b_prime = b_prime if not debug else 100
     size_check = size_check if not debug else 100
     rep = rep if not debug else 2
+
+    # We pass as inputs all arguments necessary for all classes, but some of them will not be picked up if they are
+    # not necessary for a specific class
     model_obj = model_dict[run](
-        d_obs=d_obs, marginal=marginal, size_marginal=size_marginal, true_param=t0_val, alt_mu_norm=alternative_norm
+        d_obs=d_obs, marginal=marginal, size_marginal=size_marginal, true_param=t0_val, alt_mu_norm=alternative_norm,
+        benchmark=benchmark
     )
 
     # Get the correct functions
@@ -87,7 +91,11 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
                                  clf_name=clf_name, marginal=marginal, nn_square_root=True)
             if verbose:
                 print('----- %s Trained' % clf_name)
-            
+
+            if model_obj.nuisance_flag:
+                t0_grid = model_obj.calculate_nuisance_parameters_over_grid(
+                    t0_grid=model_obj.pred_grid, clf_odds=clf_odds, x_obs=x_obs)
+
             if test_statistic == 'acore':
                 tau_obs = np.array([
                     compute_statistics_single_t0(
@@ -162,7 +170,8 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
         # At this point all it's left is to record
         for clf_name, (tau_obs_val, cross_ent_loss, or_loss_value) in clf_odds_fitted.items():
             for clf_name_qr, cutoff_val in clf_cde_fitted[clf_name].items():
-                in_confint = (tau_obs_val[~true_param_row_idx] >= cutoff_val[~true_param_row_idx]).astype(float)
+                in_confint = (np.delete(tau_obs_val, [true_param_row_idx]) >=
+                              np.delete(cutoff_val, [true_param_row_idx])).astype(float)
                 size_temp = np.mean(in_confint)
                 coverage = int(tau_obs_val[true_param_row_idx] >= cutoff_val[true_param_row_idx])
                 power = 1 - in_confint if isinstance(in_confint, float) else (in_confint.shape[0] - 
@@ -225,6 +234,8 @@ if __name__ == '__main__':
                         help='Sample size for the calculation of the OR loss.')
     parser.add_argument('--alt_norm', action="store", type=float, default=5,
                         help='Norm of the mean under the alternative -- to be used for toy_mvn_multid_simplehyp only.')
+    parser.add_argument('--benchmark', action="store", type=int, default=1,
+                        help='Benchmark to use for the INFERNO class.')
     argument_parsed = parser.parse_args()
 
     
@@ -245,5 +256,6 @@ if __name__ == '__main__':
         classifier_cde=argument_parsed.class_cde,
         size_marginal=argument_parsed.size_marginal,
         monte_carlo_samples=argument_parsed.monte_carlo_samples,
-        alternative_norm=argument_parsed.alt_norm
+        alternative_norm=argument_parsed.alt_norm,
+        benchmark=argument_parsed.benchmark
     )
