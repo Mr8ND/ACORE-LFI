@@ -159,7 +159,8 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_stati
         # At this point all it's left is to record
         for clf_name, (tau_obs_val, cross_ent_loss, or_loss_value) in clf_odds_fitted.items():
             for clf_name_qr, cutoff_val in clf_cde_fitted[clf_name].items():
-                in_confint = (tau_obs_val[~true_param_row_idx] >= cutoff_val[~true_param_row_idx]).astype(float)
+                in_confint = (np.delete(tau_obs_val, [true_param_row_idx]) >=
+                              np.delete(cutoff_val, [true_param_row_idx])).astype(float)
                 size_temp = np.mean(in_confint)
                 coverage = int(tau_obs_val[true_param_row_idx] >= cutoff_val[true_param_row_idx])
                 power = 1 - in_confint if isinstance(in_confint, float) else (in_confint.shape[0] - 
