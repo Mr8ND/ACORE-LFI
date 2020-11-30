@@ -39,6 +39,7 @@ class ToyMVNLoader:
         self.pred_grid = np.linspace(start=self.low_int, stop=self.high_int, num=self.num_pred_grid).reshape(-1, 1)
         self.idx_row_true_param = self.pred_grid.tolist().index(np.array(self.true_param))
         self.acore_grid = self.pred_grid
+        self.nuisance_flag = False
 
         if marginal:
             self.compute_marginal_reference(size_marginal)
@@ -122,3 +123,6 @@ class ToyMVNLoader:
         ll_gmm_t0 = np.sum(np.log(self._compute_multivariate_onedspace_normal_pdf(x=x_obs, mu=t0)))
         ll_gmm_t1 = np.sum(np.log(self._compute_multivariate_onedspace_normal_pdf(x=x_obs, mu=mle)))
         return ll_gmm_t0 - ll_gmm_t1
+
+    def calculate_nuisance_parameters_over_grid(self, *args, **kwargs):
+        raise NotImplementedError('No nuisance parameter for this class.')

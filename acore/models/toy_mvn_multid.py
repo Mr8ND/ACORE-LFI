@@ -66,6 +66,8 @@ class ToyMVNMultiDLoader:
             self.idx_row_true_param = 0
         self.acore_grid = self.pred_grid
 
+        self.nuisance_flag = False
+
     def sample_sim(self, sample_size, true_param):
         return multivariate_normal(mean=true_param, cov=self.true_cov).rvs(sample_size).reshape(sample_size, self.d_obs)
 
@@ -144,3 +146,6 @@ class ToyMVNMultiDLoader:
         ll_gmm_t0 = np.sum(np.log(self._compute_multivariate_normal_pdf(x=x_obs, mu=t0)))
         ll_gmm_t1 = np.sum(np.log(self._compute_multivariate_normal_pdf(x=x_obs, mu=mle)))
         return ll_gmm_t0 - ll_gmm_t1
+
+    def calculate_nuisance_parameters_over_grid(self, *args, **kwargs):
+        raise NotImplementedError('No nuisance parameter for this class.')

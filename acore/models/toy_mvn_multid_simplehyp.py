@@ -46,6 +46,7 @@ class ToyMVNMultiDSimpleHypLoader:
         self.true_cov = true_std * np.eye(d_obs) if isinstance(true_std, float) else true_std
 
         self.alt_param = np.repeat(alt_mu_norm/sqrt(self.d), self.d)
+        self.nuisance_flag = False
 
         if marginal:
             self.compute_marginal_reference(size_marginal)
@@ -151,3 +152,6 @@ class ToyMVNMultiDSimpleHypLoader:
         ll_gmm_t0 = np.sum(np.log(self._compute_multivariate_normal_pdf(x=x_obs, mu=t0)))
         ll_gmm_t1 = np.sum(np.log(self._compute_multivariate_normal_pdf(x=x_obs, mu=mle)))
         return ll_gmm_t0 - ll_gmm_t1
+
+    def calculate_nuisance_parameters_over_grid(self, *args, **kwargs):
+        raise NotImplementedError('No nuisance parameter for this class.')
