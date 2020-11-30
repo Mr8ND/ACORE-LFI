@@ -428,3 +428,13 @@ def tensor_4d_mesh(a_tuple):
 #                           and odds_den2[ii] != np.inf and odds_den2[ii] > 0])
 #
 #     return first_term - 2 * second_term
+
+
+# from https://stackoverflow.com/questions/43554819/find-most-frequent-row-or-mode-of-a-matrix-of-vectors-python-numpy
+def mode_rows(a):
+    a = np.ascontiguousarray(a)
+    void_dt = np.dtype((np.void, a.dtype.itemsize * np.prod(a.shape[1:])))
+    _, ids, count = np.unique(a.view(void_dt).ravel(), return_index=1, return_counts=1)
+    largest_count_id = ids[count.argmax()]
+    most_frequent_row = a[largest_count_id]
+    return most_frequent_row
