@@ -86,7 +86,7 @@ def train_pvalue_clf(clf_model, X, y, clf_name='xgboost', cv_nn=5, nn_square_roo
 
 
 def train_clf(sample_size, gen_function, clf_model,
-              d=1, p=0.5, clf_name='xgboost', cv_nn=5, marginal=False, nn_square_root=False):
+              d=1, p=0.5, clf_name='xgboost', cv_nn=5, nn_square_root=False):
     '''
     This function works for multiple dimensions of the theta_parameters and the generated sample.
 
@@ -97,12 +97,11 @@ def train_clf(sample_size, gen_function, clf_model,
     :param p: probability of Algorithm 1: generate a point from G or F_theta
     :param clf_name: Name of the classifier used
     :param cv_nn: Number of folds to be used in CV for nearest neighbors
-    :param marginal: Whether or not we should attempt a parametric approximation of the marginal
     :param nn_square_root: If true, the number of neighbors for NN is chosen with the square root of the data
     :return: Trained classifier model
     '''
 
-    gen_sample = gen_function(sample_size=sample_size, p=p, marginal=marginal)
+    gen_sample = gen_function(sample_size=sample_size, p=p)
 
     col_selected = [el for el in range(gen_sample.shape[1]) if el != d]
     X, y = gen_sample[:, col_selected], gen_sample[:, d]

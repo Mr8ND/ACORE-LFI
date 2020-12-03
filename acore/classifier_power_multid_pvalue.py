@@ -13,6 +13,7 @@ from utils.functions import train_clf, compute_statistics_single_t0, clf_prob_va
     compute_averageodds_single_t0, odds_ratio_loss, train_pvalue_clf
 # from models.toy_gmm_multid import ToyGMMMultiDLoader
 from models.toy_mvn import ToyMVNLoader
+from models.toy_mvn_simplehyp import ToyMVNSimpleHypLoader
 from models.toy_mvn_multid import ToyMVNMultiDLoader
 from models.toy_mvn_multid_simplehyp import ToyMVNMultiDSimpleHypLoader
 from or_classifiers.toy_example_list import classifier_dict_multid as classifier_dict
@@ -21,6 +22,7 @@ from or_classifiers.toy_example_list import classifier_pvalue_dict
 model_dict = {
     # 'gmm': ToyGMMMultiDLoader,
     'mvn': ToyMVNLoader,
+    'mvn_simplehyp': ToyMVNSimpleHypLoader,
     'mvn_multid': ToyMVNMultiDLoader,
     'mvn_multid_simplehyp': ToyMVNMultiDSimpleHypLoader
 }
@@ -35,7 +37,8 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_stati
     size_check = size_check if not debug else 100
     rep = rep if not debug else 2
     model_obj = model_dict[run](
-        d_obs=d_obs, marginal=marginal, size_marginal=size_marginal, true_param=t0_val, alt_mu_norm=alternative_norm
+        d_obs=d_obs, marginal=marginal, size_marginal=size_marginal, empirical_marginal=empirical_marginal,
+        true_param=t0_val, alt_mu_norm=alternative_norm
     )
 
     # Get the correct functions
@@ -51,7 +54,7 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_stati
 
     # Creating sample to check entropy about
     np.random.seed(seed)
-    sample_check = gen_sample_func(sample_size=size_check, marginal=marginal)
+    sample_check = gen_sample_func(sample_size=size_check)
     theta_vec = sample_check[:, :model_obj.d]
     x_vec = sample_check[:, (model_obj.d + 1):]
     bern_vec = sample_check[:, model_obj.d]
@@ -79,7 +82,7 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_stati
         clf_pvalue_fitted = {}
         for clf_name, clf_model in sorted(classifier_dict.items(), key=lambda x: x[0]):
             clf_odds = train_clf(d=model_obj.d, sample_size=b, clf_model=clf_model, gen_function=gen_sample_func,
-                                 clf_name=clf_name, marginal=marginal, nn_square_root=True)
+                                 clf_name=clf_name, nn_square_root=True)
             if verbose:
                 print('----- %s Trained' % clf_name)
 
@@ -162,8 +165,17 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_stati
                                                        monte_carlo_samples=monte_carlo_samples,
                                                        log_out=True
                                                    ))
+            elif test_statistic == 'averageodds':
+                stats_sample = np.apply_along_axis(arr=theta_mat_sample.reshape(-1, model_obj.d), axis=1,
+                                                   func1d=lambda row: compute_averageodds_single_t0(
+                                                       clf=clf_odds,
+                                                       obs_sample=x_obs,
+                                                       t0=row,
+                                                       d=model_obj.d,
+                                                       d_obs=model_obj.d_obs
+                                                   ))
             else:
-                raise ValueError('The variable test_statistic needs to be either acore, avgacore, logavgacore.'
+                raise ValueError('The variable test_statistic needs to be either acore, avgacore, logavgacore or averageodds.'
                                  ' Currently %s' % test_statistic)
 
             # If there are log-odds, then some of the values might be negative, so we need to exponentiate them
@@ -176,10 +188,16 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_stati
                                                           size=b_prime_budget_sample)
             theta_mat_gaussian_fit = theta_mat_sample[theta_mat_gaussian_fit_idx, :]
             mean_gaussian_fit = np.mean(theta_mat_gaussian_fit, axis=0)
-            cov_gaussian_fit = np.cov(theta_mat_gaussian_fit, rowvar=False)
-            theta_mat = np.random.multivariate_normal(
-                size=b_prime_budget_left, mean=mean_gaussian_fit, cov=cov_gaussian_fit,).clip(
-                min=model_obj.low_int, max=model_obj.high_int)
+            if 'multid' in run:
+                cov_gaussian_fit = np.cov(theta_mat_gaussian_fit, rowvar=False)
+                theta_mat = np.random.multivariate_normal(
+                    size=b_prime_budget_left, mean=mean_gaussian_fit, cov=cov_gaussian_fit,).clip(
+                    min=model_obj.low_int, max=model_obj.high_int)
+            else:
+                std_gaussian_fit = np.std(theta_mat_gaussian_fit)
+                theta_mat = np.random.normal(
+                    size=b_prime_budget_left, loc=mean_gaussian_fit, scale=std_gaussian_fit).clip(
+                    min=model_obj.low_int, max=model_obj.high_int)
             sample_mat = np.apply_along_axis(arr=theta_mat.reshape(-1, model_obj.d), axis=1,
                                              func1d=lambda row: gen_obs_func(sample_size=sample_size_obs,
                                                                              true_param=row))
@@ -263,8 +281,10 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_stati
 
     # Saving the results
     out_df = pd.DataFrame.from_records(data=out_val, index=range(len(out_val)), columns=out_cols)
-    out_dir = 'sims/classifier_power_multid/'
-    out_filename = 'classifier_reps_cov_pow_toy_pvalue_d%s_%steststats_%sB_%sBprime_%s_%srep_alpha%s_sampleobs%s_t0val%s_%s.csv' % (
+    #out_dir = 'sims/classifier_power_multid/'
+    out_dir = 'sims/classifier_power_multid_pvalue/'
+    #out_filename = 'classifier_reps_cov_pow_toy_pvalue_d%s_%steststats_%sB_%sBprime_%s_%srep_alpha%s_sampleobs%s_t0val%s_%s.csv' % (
+    out_filename = 'pvalue_d%s_%steststats_%sB_%sBprime_%s_%srep_alpha%s_sampleobs%s_t0val%s_%s.csv' % (
         d_obs, test_statistic, b, b_prime, run, rep,
         str(alpha).replace('.', '-'), sample_size_obs,
         str(t0_val).replace('.', '-'),
@@ -288,6 +308,8 @@ if __name__ == '__main__':
     parser.add_argument('--marginal', action='store_true', default=False,
                         help='Whether we are using a parametric approximation of the marginal or'
                              'the baseline reference G')
+    parser.add_argument('--empirical_marginal', action='store_true', default=False,
+                        help='Whether we are sampling directly from the empirical marginal for G')
     parser.add_argument('--alpha', action="store", type=float, default=0.1,
                         help='Statistical confidence level')
     parser.add_argument('--t0_val', action="store", type=float, default=5.0,
@@ -318,6 +340,7 @@ if __name__ == '__main__':
         run=argument_parsed.run,
         rep=argument_parsed.rep,
         marginal=argument_parsed.marginal,
+        empirical_marginal=argument_parsed.empirical_marginal,
         b=argument_parsed.b,  # b_val,
         b_prime=argument_parsed.b_prime,
         alpha=argument_parsed.alpha,

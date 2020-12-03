@@ -10,7 +10,7 @@ class ToyMVNLoader:
     def __init__(self, d_obs, mean_instrumental=0.0, std_instrumental=4.0, low_int=0.0, high_int=10.0,
                  mean_prior=5.0, std_prior=2.0,
                  true_param=5.0, true_std=1.0, out_dir='toy_mvn/', prior_type='uniform',
-                 marginal=False, size_marginal=5000, **kwargs):
+                 marginal=False, size_marginal=5000, empirical_marginal=True, **kwargs):
 
         self.low_int = low_int
         self.high_int = high_int
@@ -43,6 +43,8 @@ class ToyMVNLoader:
 
         if marginal:
             self.compute_marginal_reference(size_marginal)
+        
+        self.empirical_marginal = empirical_marginal
 
     def sample_sim(self, sample_size, true_param):
         return np.random.normal(
@@ -63,15 +65,27 @@ class ToyMVNLoader:
         self.cov_instrumental = np.diag(np.var(marginal_sample, axis=0))
         self.g_distribution = multivariate_normal(mean=self.mean_instrumental, cov=self.cov_instrumental)
 
+    def sample_empirical_marginal(self, sample_size):
+        theta_vec_marg = self.sample_param_values(sample_size=sample_size)
+        return np.apply_along_axis(arr=theta_vec_marg.reshape(-1, self.d), axis=1,
+                                   func1d=lambda row: self.sample_sim(
+                                       sample_size=1, true_param=row)).reshape(-1, self.d_obs)
+
     def generate_sample(self, sample_size, p=0.5, **kwargs):
         theta_vec = self.sample_param_values(sample_size=sample_size)
         bern_vec = np.random.binomial(n=1, p=p, size=sample_size)
         concat_mat = np.hstack((theta_vec.reshape(-1, self.d), bern_vec.reshape(-1, 1)))
 
-        sample = np.apply_along_axis(arr=concat_mat, axis=1,
-                                     func1d=lambda row: self.sample_sim(
-                                         sample_size=1, true_param=row[:self.d]) if row[self.d]
-                                     else self.g_distribution.rvs(size=1))
+        if self.empirical_marginal:
+            sample = np.apply_along_axis(arr=concat_mat, axis=1,
+                                         func1d=lambda row: self.sample_sim(
+                                             sample_size=1, true_param=row[:self.d]) if row[self.d]
+                                         else self.sample_empirical_marginal(sample_size=1))
+        else:
+            sample = np.apply_along_axis(arr=concat_mat, axis=1,
+                                         func1d=lambda row: self.sample_sim(
+                                             sample_size=1, true_param=row[:self.d]) if row[self.d]
+                                         else self.g_distribution.rvs(size=1))
         return np.hstack((concat_mat, sample.reshape(sample_size, self.d_obs)))
 
     def sample_msnh_algo5(self, b_prime, sample_size):

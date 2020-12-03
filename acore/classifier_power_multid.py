@@ -32,7 +32,7 @@ model_dict = {
 
 def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier_cde, test_statistic, alternative_norm,
          monte_carlo_samples=500, debug=False, seed=7, size_check=1000, verbose=False, marginal=False,
-         size_marginal=1000, benchmark=1):
+         size_marginal=1000, empirical_marginal=True, benchmark=1):
 
     # Changing values if debugging
     b = b if not debug else 100
@@ -43,7 +43,8 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
     # We pass as inputs all arguments necessary for all classes, but some of them will not be picked up if they are
     # not necessary for a specific class
     model_obj = model_dict[run](
-        d_obs=d_obs, marginal=marginal, size_marginal=size_marginal, true_param=t0_val, alt_mu_norm=alternative_norm,
+        d_obs=d_obs, marginal=marginal, size_marginal=size_marginal, empirical_marginal=empirical_marginal,
+        true_param=t0_val, alt_mu_norm=alternative_norm,
         benchmark=benchmark
     )
 
@@ -60,7 +61,7 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
 
     # Creating sample to check entropy about
     np.random.seed(seed)
-    sample_check = gen_sample_func(sample_size=size_check, marginal=marginal)
+    sample_check = gen_sample_func(sample_size=size_check)
     theta_vec = sample_check[:, :model_obj.d]
     x_vec = sample_check[:, (model_obj.d + 1):]
     bern_vec = sample_check[:, model_obj.d]
@@ -88,7 +89,7 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
         clf_cde_fitted = {}
         for clf_name, clf_model in sorted(classifier_dict.items(), key=lambda x: x[0]):
             clf_odds = train_clf(d=model_obj.d, sample_size=b, clf_model=clf_model, gen_function=gen_sample_func,
-                                 clf_name=clf_name, marginal=marginal, nn_square_root=True)
+                                 clf_name=clf_name, nn_square_root=True)
             if verbose:
                 print('----- %s Trained' % clf_name)
 
@@ -211,6 +212,8 @@ if __name__ == '__main__':
     parser.add_argument('--marginal', action='store_true', default=False,
                         help='Whether we are using a parametric approximation of the marginal or'
                              'the baseline reference G')
+    parser.add_argument('--empirical_marginal', action='store_true', default=False,
+                        help='Whether we are sampling directly from the empirical marginal for G')
     parser.add_argument('--alpha', action="store", type=float, default=0.1,
                         help='Statistical confidence level')
     parser.add_argument('--t0_val', action="store", type=float, default=5.0,
@@ -244,6 +247,7 @@ if __name__ == '__main__':
         run=argument_parsed.run,
         rep=argument_parsed.rep,
         marginal=argument_parsed.marginal,
+        empirical_marginal=argument_parsed.empirical_marginal,
         b=argument_parsed.b,      # b_val,
         b_prime=argument_parsed.b_prime,
         alpha=argument_parsed.alpha,
