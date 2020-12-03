@@ -188,15 +188,15 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_stati
                                                           size=b_prime_budget_sample)
             theta_mat_gaussian_fit = theta_mat_sample[theta_mat_gaussian_fit_idx, :]
             mean_gaussian_fit = np.mean(theta_mat_gaussian_fit, axis=0)
-            if 'multid' in run:
-                cov_gaussian_fit = np.cov(theta_mat_gaussian_fit, rowvar=False)
-                theta_mat = np.random.multivariate_normal(
-                    size=b_prime_budget_left, mean=mean_gaussian_fit, cov=cov_gaussian_fit,).clip(
-                    min=model_obj.low_int, max=model_obj.high_int)
-            else:
+            if run in ['mvn', 'mvn_simplehyp']:
                 std_gaussian_fit = np.std(theta_mat_gaussian_fit)
                 theta_mat = np.random.normal(
                     size=b_prime_budget_left, loc=mean_gaussian_fit, scale=std_gaussian_fit).clip(
+                    min=model_obj.low_int, max=model_obj.high_int)
+            else:
+                cov_gaussian_fit = np.cov(theta_mat_gaussian_fit, rowvar=False)
+                theta_mat = np.random.multivariate_normal(
+                    size=b_prime_budget_left, mean=mean_gaussian_fit, cov=cov_gaussian_fit,).clip(
                     min=model_obj.low_int, max=model_obj.high_int)
             sample_mat = np.apply_along_axis(arr=theta_mat.reshape(-1, model_obj.d), axis=1,
                                              func1d=lambda row: gen_obs_func(sample_size=sample_size_obs,
