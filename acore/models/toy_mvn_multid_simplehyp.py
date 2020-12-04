@@ -7,11 +7,12 @@ sys.path.append('..')
 from scipy.stats import multivariate_normal, uniform, norm
 from scipy.optimize import Bounds
 from itertools import product
+from scipy.special import erf
 
 
 class ToyMVNMultiDSimpleHypLoader:
 
-    def __init__(self, alt_mu_norm=5, d_obs=2, mean_instrumental=0.0, std_instrumental=4.0, low_int=-5.0, high_int=5.0,
+    def __init__(self, alt_mu_norm=1, d_obs=2, mean_instrumental=0.0, std_instrumental=4.0, low_int=-5.0, high_int=5.0,
                  true_param=0.0, true_std=1.0, mean_prior=5.0, std_prior=2.0, uniform_grid_sample_size=2500,
                  out_dir='toy_mvn/', prior_type='uniform',
                  marginal=False, size_marginal=5000, empirical_marginal=True, **kwargs):
@@ -20,10 +21,10 @@ class ToyMVNMultiDSimpleHypLoader:
         self.d = d_obs
         self.d_obs = d_obs
         self.low_int = low_int
-        #self.high_int = alt_mu_norm / sqrt(self.d) + 5  # have to make sure we can sample param values where alt. is
         self.high_int = high_int
         self.bounds_opt = Bounds([self.low_int] * self.d, [self.high_int] * self.d)
-
+        
+        self.prior_type = prior_type
         if prior_type == 'uniform':
             self.prior_distribution = uniform(loc=self.low_int, scale=(self.high_int - self.low_int))
         elif prior_type == 'normal':
@@ -169,3 +170,30 @@ class ToyMVNMultiDSimpleHypLoader:
 
     def calculate_nuisance_parameters_over_grid(self, *args, **kwargs):
         raise NotImplementedError('No nuisance parameter for this class.')
+
+    def _compute_marginal_pdf(self, x_obs, prior_type='uniform'):
+        if prior_type == 'uniform':
+            density = np.array([1 / (2*(self.high_int - self.low_int)) * (erf((self.high_int-x) / np.sqrt(2)) -
+                                erf((self.low_int-x) / np.sqrt(2))) for x in x_obs])
+        else:
+            raise ValueError("The prior type needs to be 'uniform'. Currently %s" % self.prior_type)
+        return np.prod(density)
+    
+    def compute_exact_bayes_factor_with_marginal(self, theta_vec, x_vec):
+        if self.prior_type == 'uniform':
+            x_vec = x_vec.reshape(-1, self.d_obs)
+            theta_vec = theta_vec.reshape(-1, self.d)
+            
+            f_val = np.array([self._compute_multivariate_normal_pdf(
+                x=x, mu=theta_vec[ii, :]) for ii, x in enumerate(x_vec)]).reshape(-1, )
+            g_val = np.array([self._compute_marginal_pdf(x, prior_type='uniform') for x in x_vec]).reshape(-1, )
+        else:
+            raise ValueError("The prior type needs to be 'uniform'. Currently %s" % self.prior_type)
+        return f_val / g_val
+    
+    def compute_exact_bayes_factor_single_t0(self, obs_sample, t0):
+        results = np.array([self.compute_exact_bayes_factor_with_marginal(theta_vec=t0, x_vec=x)
+                            for x in obs_sample])        
+        exact_bayes_t0 = np.prod(results).astype(np.float64)
+        assert isinstance(exact_bayes_t0, float)
+        return exact_bayes_t0

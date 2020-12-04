@@ -29,7 +29,7 @@ model_dict = {
 
 def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_statistic, alternative_norm,
          monte_carlo_samples=500, debug=False, seed=7, size_check=1000, verbose=False, marginal=False,
-         size_marginal=1000):
+         size_marginal=1000, empirical_marginal=True):
 
     # Changing values if debugging
     b = b if not debug else 100
@@ -51,6 +51,7 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_stati
     tp_func = model_obj.compute_exact_prob
     t0_param_val = model_obj.true_param
     true_param_row_idx = model_obj.idx_row_true_param
+    compute_exact_bayes = model_obj.compute_exact_bayes_factor_single_t0
 
     # Creating sample to check entropy about
     np.random.seed(seed)
@@ -106,8 +107,12 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_stati
                     compute_averageodds_single_t0(
                         clf=clf_odds, obs_sample=x_obs, t0=theta_0, d=model_obj.d,
                         d_obs=model_obj.d_obs) for theta_0 in t0_grid])
+            elif test_statistic == 'bayesfactor':
+                tau_obs = np.array([
+                    compute_exact_bayes(t0=theta_0, obs_sample=x_obs) for theta_0 in t0_grid])
             else:
-                raise ValueError('The variable test_statistic needs to be either acore, avgacore, logavgacore, or averageodds.'
+                raise ValueError('The variable test_statistic needs to be either acore, avgacore, logavgacore, averageodds,'
+                                 'or bayesfactor.'
                                  ' Currently %s' % test_statistic)
 
             # Calculating cross-entropy
@@ -147,9 +152,14 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_stati
                 elif test_statistic == 'averageodds':
                     stats_mat = np.array([compute_averageodds_single_t0(clf=clf_odds, d=model_obj.d, d_obs=model_obj.d_obs,
                                           t0=theta_0, obs_sample=sample_mat[kk, :, :], ) for kk, theta_0 in enumerate(theta_mat)
-                                        ])
+                                         ])
+                elif test_statistic == 'bayesfactor':
+                    stats_mat = np.array([compute_exact_bayes(t0=theta_0, obs_sample=sample_mat[kk, :, :])
+                                          for kk, theta_0 in enumerate(theta_mat)
+                                         ])
                 else:
-                    raise ValueError('The variable test_statistic needs to be either acore, avgacore, logavgacore.'
+                    raise ValueError('The variable test_statistic needs to be either acore, avgacore, logavgacore, averageodds,'
+                                     'or bayesfactor.'
                                      ' Currently %s' % test_statistic)
 
                 t0_pred_vec = np.append(t0_pred_vec, np.quantile(a=stats_mat, q=alpha))
