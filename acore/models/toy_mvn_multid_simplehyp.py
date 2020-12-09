@@ -172,9 +172,15 @@ class ToyMVNMultiDSimpleHypLoader:
         raise NotImplementedError('No nuisance parameter for this class.')
 
     def _compute_marginal_pdf(self, x_obs, prior_type='uniform'):
+        '''
+        In this calculation we are assuming that the covariance matrix is diagonal with all entries being equal, so
+        we only consider the first element for every point.
+        '''
         if prior_type == 'uniform':
-            density = np.array([1 / (2*(self.high_int - self.low_int)) * (erf((self.high_int-x) / np.sqrt(2)) -
-                                erf((self.low_int-x) / np.sqrt(2))) for x in x_obs])
+            density = np.array([
+                1 / (2*(self.high_int - self.low_int)) * (erf((self.high_int-x) / (np.sqrt(2) * self.true_cov[0, 0])) -
+                erf((self.low_int-x) / (np.sqrt(2) * self.true_cov[0, 0]))) for x in x_obs
+            ])
         else:
             raise ValueError("The prior type needs to be 'uniform'. Currently %s" % self.prior_type)
         return np.prod(density)
