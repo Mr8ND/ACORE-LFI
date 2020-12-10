@@ -4,12 +4,10 @@ import sys
 sys.path.append('..')
 
 from functools import partial
-from utils.functions import tensor_4d_mesh, train_clf, mode_rows
+from utils.functions import tensor_4d_mesh, mode_rows
 from scipy.stats import multivariate_normal, poisson, rv_discrete, expon
 from scipy.linalg import sqrtm
 from scipy.optimize import Bounds, minimize
-from scipy.stats import mode
-from xgboost import XGBRFClassifier
 
 
 class InfernoToyLoader:
@@ -135,6 +133,7 @@ class InfernoToyLoader:
                                                    num=self.num_pred_grid),
                                        np.linspace(start=self.b_low, stop=self.b_high, num=self.num_acore_grid))),
             axis=0)[:, self.active_params_cols]
+        self.grid = self.acore_grid
 
         self.regen_flag = False
         self.out_directory = out_dir
@@ -145,7 +144,7 @@ class InfernoToyLoader:
         self.g_distribution = multivariate_normal(mean=self.mean_instrumental, cov=self.cov_instrumental)
 
         self.b_sample_vec = [50, 100, 500, 1000, 5000, 10000, 50000, 100000]
-        self.b_prime_vec = [100, 500, 1000, 5000, 10000, 50000, 100000]
+        self.b_prime_vec = [500, 1000, 5000, 10000, 50000]
         self.d_obs = 3
         self.nuisance_param_val = None
 
@@ -397,19 +396,22 @@ class InfernoToyLoader:
         return theta_mat, sample_mat
 
 # if __name__ == '__main__':
-#
-#     model_obj = InfernoToyLoader(benchmark=1, empirical_marginal=True)
-#
-#     sample = model_obj.generate_sample(sample_size=300)
-#     x_obs = model_obj.sample_sim(sample_size=10, true_param=model_obj.true_param)
-#     gen_sample_func = model_obj.generate_sample
-#     clf_odds = train_clf(sample_size=1000, clf_model=XGBRFClassifier(),
-#                          gen_function=gen_sample_func, clf_name='XGB', nn_square_root=True,
-#                          d=model_obj.d)
-#
-#     t0_grid = model_obj.calculate_nuisance_parameters_over_grid(
-#         t0_grid=model_obj.pred_grid, clf_odds=clf_odds, x_obs=x_obs)
-#
-#     theta_mat, sample_mat = model_obj.sample_msnh_algo5(b_prime=100, sample_size=10)
-#     print(theta_mat)
-#     print(sample_mat)
+
+    # from xgboost import XGBRFClassifier
+    # from utils.functions import train_clf
+    #
+    # model_obj = InfernoToyLoader(benchmark=1, empirical_marginal=True)
+    #
+    # sample = model_obj.generate_sample(sample_size=300)
+    # x_obs = model_obj.sample_sim(sample_size=10, true_param=model_obj.true_param)
+    # gen_sample_func = model_obj.generate_sample
+    # clf_odds = train_clf(sample_size=1000, clf_model=XGBRFClassifier(),
+    #                      gen_function=gen_sample_func, clf_name='XGB', nn_square_root=True,
+    #                      d=model_obj.d)
+    #
+    # t0_grid = model_obj.calculate_nuisance_parameters_over_grid(
+    #     t0_grid=model_obj.pred_grid, clf_odds=clf_odds, x_obs=x_obs)
+    #
+    # theta_mat, sample_mat = model_obj.sample_msnh_algo5(b_prime=100, sample_size=10)
+    # print(theta_mat)
+    # print(sample_mat)
