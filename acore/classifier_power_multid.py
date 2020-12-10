@@ -118,8 +118,8 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
                         clf=clf_odds, obs_sample=x_obs, t0=theta_0, d=model_obj.d,
                         d_obs=model_obj.d_obs) for theta_0 in t0_grid])
             else:
-                raise ValueError('The variable test_statistic needs to be either acore, avgacore, logavgacore, or averageodds.'
-                                 ' Currently %s' % test_statistic)
+                raise ValueError('The variable test_statistic needs to be either acore, avgacore, logavgacore, '
+                                 'or averageodds. Currently %s' % test_statistic)
 
             # Calculating cross-entropy
             est_prob_vec = clf_prob_value(clf=clf_odds, x_vec=x_vec, theta_vec=theta_vec, d=model_obj.d,
@@ -156,8 +156,8 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
                                       t0=theta_0, obs_sample=sample_mat[kk, :, :], ) for kk, theta_0 in enumerate(theta_mat)
                                     ])
             else:
-                raise ValueError('The variable test_statistic needs to be either acore, avgacore, logavgacore.'
-                                 ' Currently %s' % test_statistic)
+                raise ValueError('The variable test_statistic needs to be either acore, avgacore, logavgacore '
+                                 'or averageodds. Currently %s' % test_statistic)
 
             clf_cde_fitted[clf_name] = {}
             clf_name_qr = classifier_cde
