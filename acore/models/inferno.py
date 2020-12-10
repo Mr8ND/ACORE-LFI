@@ -144,7 +144,7 @@ class InfernoToyLoader:
         self.cov_instrumental = np.diag([5, 10, 5])
         self.g_distribution = multivariate_normal(mean=self.mean_instrumental, cov=self.cov_instrumental)
 
-        self.b_sample_vec = [50, 100, 500, 1000, 5000, 10000, 50000, 100000, 200000]
+        self.b_sample_vec = [50, 100, 500, 1000, 5000, 10000, 50000, 100000]
         self.b_prime_vec = [100, 500, 1000, 5000, 10000, 50000, 100000]
         self.d_obs = 3
         self.nuisance_param_val = None
