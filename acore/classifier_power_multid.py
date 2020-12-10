@@ -32,7 +32,7 @@ model_dict = {
 
 def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier_cde, test_statistic, alternative_norm,
          monte_carlo_samples=500, debug=False, seed=7, size_check=1000, verbose=False, marginal=False,
-         size_marginal=1000, empirical_marginal=True, benchmark=1):
+         size_marginal=1000, empirical_marginal=True, benchmark=1, nuisance_parameters=False):
 
     # Changing values if debugging
     b = b if not debug else 100
@@ -44,7 +44,7 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
     # not necessary for a specific class
     model_obj = model_dict[run](
         d_obs=d_obs, marginal=marginal, size_marginal=size_marginal, empirical_marginal=empirical_marginal,
-        true_param=t0_val, alt_mu_norm=alternative_norm,
+        true_param=t0_val, alt_mu_norm=alternative_norm, nuisance_parameters=nuisance_parameters,
         benchmark=benchmark
     )
 
@@ -77,7 +77,7 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
     out_val = []
     out_cols = ['d_obs', 'test_statistic', 'b_prime', 'b', 'classifier', 'classifier_cde', 'run', 'rep', 'sample_size_obs',
                 'cross_entropy_loss', 't0_true_val', 'coverage', 'power', 'size_CI', 'true_entropy', 'or_loss_value',
-                'monte_carlo_samples']
+                'monte_carlo_samples', 'benchmark', 'nuisance_parameters', 'alternative_mu_norm']
     pbar = tqdm(total=rep, desc='Toy Example for Simulations, n=%s, b=%s' % (sample_size_obs, b))
     for jj in range(rep):
 
@@ -180,7 +180,8 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
                 out_val.append([
                     d_obs, test_statistic, b_prime, b, clf_name, clf_name_qr, run, jj, sample_size_obs,
                     cross_ent_loss, t0_val, coverage, power,
-                    size_temp, entropy_est, or_loss_value, monte_carlo_samples
+                    size_temp, entropy_est, or_loss_value, monte_carlo_samples, benchmark, int(nuisance_parameters),
+                    alternative_norm
                 ])
         pbar.update(1)
 
@@ -239,6 +240,8 @@ if __name__ == '__main__':
                         help='Norm of the mean under the alternative -- to be used for toy_mvn_multid_simplehyp only.')
     parser.add_argument('--benchmark', action="store", type=int, default=1,
                         help='Benchmark to use for the INFERNO class.')
+    parser.add_argument('--nuisance', action='store_true', default=False,
+                        help='If true, uses nuisance parameters if available.')
     argument_parsed = parser.parse_args()
 
     
@@ -261,5 +264,6 @@ if __name__ == '__main__':
         size_marginal=argument_parsed.size_marginal,
         monte_carlo_samples=argument_parsed.monte_carlo_samples,
         alternative_norm=argument_parsed.alt_norm,
-        benchmark=argument_parsed.benchmark
+        benchmark=argument_parsed.benchmark,
+        nuisance_parameters=argument_parsed.nuisance
     )

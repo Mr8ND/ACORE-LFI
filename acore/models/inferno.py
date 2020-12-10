@@ -16,8 +16,8 @@ class InfernoToyLoader:
 
     def __init__(self, s_param=50, r_param=0.0, lambda_param=3.0, b_param=1000, benchmark=None,
                  nuisance_parameters=True, s_low=0, s_high=100, r_low=-5, r_high=5, lambda_low=0, lambda_high=10,
-                 b_low=700, b_high=1300, out_dir='inferno_toy/', num_acore_grid=21, num_pred_grid=21,
-                 *args, **kwargs):
+                 b_low=700, b_high=1300, out_dir='inferno_toy/', num_acore_grid=51, num_pred_grid=51,
+                 empirical_marginal=True, *args, **kwargs):
 
         self.true_s = s_param
         self.s_low = s_low
@@ -139,6 +139,7 @@ class InfernoToyLoader:
         self.regen_flag = False
         self.out_directory = out_dir
 
+        self.empirical_marginal = empirical_marginal
         self.mean_instrumental = np.array([1, 1, 2])
         self.cov_instrumental = np.diag([5, 10, 5])
         self.g_distribution = multivariate_normal(mean=self.mean_instrumental, cov=self.cov_instrumental)
@@ -161,6 +162,13 @@ class InfernoToyLoader:
         self.mean_instrumental = np.average(sample_mat_ref, axis=0)
         self.cov_instrumental = np.diag(np.std(sample_mat_ref, axis=0) ** 2)
         self.g_distribution = multivariate_normal(mean=self.mean_instrumental, cov=self.cov_instrumental)
+
+    def sample_empirical_marginal(self, sample_size):
+        theta_vec_marg = self.sample_param_values(sample_size=sample_size)
+        sample_mat = np.apply_along_axis(arr=theta_vec_marg.reshape(-1, self.d), axis=1,
+                                   func1d=lambda row: self.sample_sim(
+                                       sample_size=1, true_param=row)).reshape(-1, self.d_obs)
+        return sample_mat
 
     def sample_param_values(self, sample_size):
         full_mat = np.random.uniform(low=self.s_low, high=self.s_high, size=sample_size).reshape(-1, 1)
@@ -233,10 +241,16 @@ class InfernoToyLoader:
         if marginal:
             raise ValueError('Marginal not implemented for this example')
 
-        sample = np.apply_along_axis(arr=concat_mat, axis=1,
-                                     func1d=lambda row: self.sample_sim(
-                                         sample_size=1, true_param=row[:self.d]) if row[self.d] else
-                                     np.abs(self.g_distribution.rvs(size=1)).reshape(1, self.d_obs))
+        if self.empirical_marginal:
+            sample = np.apply_along_axis(arr=concat_mat, axis=1,
+                                         func1d=lambda row: self.sample_sim(
+                                             sample_size=1, true_param=row[:self.d]) if row[self.d]
+                                         else self.sample_empirical_marginal(sample_size=1))
+        else:
+            sample = np.apply_along_axis(arr=concat_mat, axis=1,
+                                         func1d=lambda row: self.sample_sim(
+                                             sample_size=1, true_param=row[:self.d]) if row[self.d] else
+                                         np.abs(self.g_distribution.rvs(size=1)).reshape(1, self.d_obs))
         return np.hstack((concat_mat, sample.reshape(-1, self.d_obs)))
 
     @staticmethod
@@ -384,13 +398,13 @@ class InfernoToyLoader:
 
 # if __name__ == '__main__':
 #
-#     model_obj = InfernoToyLoader(benchmark=3)
+#     model_obj = InfernoToyLoader(benchmark=1, empirical_marginal=True)
 #
 #     sample = model_obj.generate_sample(sample_size=300)
 #     x_obs = model_obj.sample_sim(sample_size=10, true_param=model_obj.true_param)
 #     gen_sample_func = model_obj.generate_sample
 #     clf_odds = train_clf(sample_size=1000, clf_model=XGBRFClassifier(),
-#                          gen_function=gen_sample_func, clf_name='XGB', marginal=False, nn_square_root=True,
+#                          gen_function=gen_sample_func, clf_name='XGB', nn_square_root=True,
 #                          d=model_obj.d)
 #
 #     t0_grid = model_obj.calculate_nuisance_parameters_over_grid(

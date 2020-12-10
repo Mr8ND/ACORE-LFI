@@ -18,19 +18,22 @@ from models.toy_mvn_multid import ToyMVNMultiDLoader
 from models.toy_mvn_multid_simplehyp import ToyMVNMultiDSimpleHypLoader
 from or_classifiers.toy_example_list import classifier_dict_multid as classifier_dict
 from or_classifiers.toy_example_list import classifier_pvalue_dict
+from models.inferno import InfernoToyLoader
 
 model_dict = {
     # 'gmm': ToyGMMMultiDLoader,
     'mvn': ToyMVNLoader,
     'mvn_simplehyp': ToyMVNSimpleHypLoader,
     'mvn_multid': ToyMVNMultiDLoader,
-    'mvn_multid_simplehyp': ToyMVNMultiDSimpleHypLoader
+    'mvn_multid_simplehyp': ToyMVNMultiDSimpleHypLoader,
+    'inferno': InfernoToyLoader
 }
 
 
 def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_statistic, alternative_norm,
          monte_carlo_samples=500, debug=False, seed=7, size_check=1000, verbose=False, marginal=False,
-         size_marginal=1000, b_prime_prop_sample=0.33):
+         size_marginal=1000, b_prime_prop_sample=0.33, empirical_marginal=False, benchmark=1,
+         nuisance_parameters=False):
     # Changing values if debugging
     b = b if not debug else 100
     b_prime = b_prime if not debug else 100
@@ -38,7 +41,8 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_stati
     rep = rep if not debug else 2
     model_obj = model_dict[run](
         d_obs=d_obs, marginal=marginal, size_marginal=size_marginal, empirical_marginal=empirical_marginal,
-        true_param=t0_val, alt_mu_norm=alternative_norm
+        true_param=t0_val, alt_mu_norm=alternative_norm, nuisance_parameters=nuisance_parameters,
+        benchmark=benchmark
     )
 
     # Get the correct functions
@@ -70,7 +74,8 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_stati
     out_val = []
     out_cols = ['d_obs', 'test_statistic', 'b_prime', 'b', 'classifier', 'classifier_pvalue', 'run', 'rep',
                 'sample_size_obs', 'cross_entropy_loss', 'cross_entropy_loss_pvalue', 't0_true_val', 'coverage',
-                'power', 'size_CI', 'true_entropy', 'or_loss_value', 'monte_carlo_samples']
+                'power', 'size_CI', 'true_entropy', 'or_loss_value', 'monte_carlo_samples',
+                'benchmark', 'nuisance_parameters', 'alternative_mu_norm']
     pbar = tqdm(total=rep, desc='Toy Example for Simulations, n=%s, b=%s' % (sample_size_obs, b))
     for jj in range(rep):
 
@@ -275,15 +280,14 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_stati
                 out_val.append([
                     d_obs, test_statistic, b_prime, b, clf_name, clf_name_qr, run, jj, sample_size_obs,
                     cross_ent_loss, pvalue_celoss_val, t0_val, coverage, power,
-                    size_temp, entropy_est, or_loss_value, monte_carlo_samples
+                    size_temp, entropy_est, or_loss_value, monte_carlo_samples,
+                    benchmark, int(nuisance_parameters), alternative_norm
                 ])
         pbar.update(1)
 
     # Saving the results
     out_df = pd.DataFrame.from_records(data=out_val, index=range(len(out_val)), columns=out_cols)
-    #out_dir = 'sims/classifier_power_multid/'
     out_dir = 'sims/classifier_power_multid_pvalue/'
-    #out_filename = 'classifier_reps_cov_pow_toy_pvalue_d%s_%steststats_%sB_%sBprime_%s_%srep_alpha%s_sampleobs%s_t0val%s_%s.csv' % (
     out_filename = 'pvalue_d%s_%steststats_%sB_%sBprime_%s_%srep_alpha%s_sampleobs%s_t0val%s_%s.csv' % (
         d_obs, test_statistic, b, b_prime, run, rep,
         str(alpha).replace('.', '-'), sample_size_obs,
@@ -331,6 +335,10 @@ if __name__ == '__main__':
                         help='Sample size for the calculation of the OR loss.')
     parser.add_argument('--alt_norm', action="store", type=float, default=5,
                         help='Norm of the mean under the alternative -- to be used for toy_mvn_multid_simplehyp only.')
+    parser.add_argument('--benchmark', action="store", type=int, default=1,
+                        help='Benchmark to use for the INFERNO class.')
+    parser.add_argument('--nuisance', action='store_true', default=False,
+                        help='If true, uses nuisance parameters if available.')
     argument_parsed = parser.parse_args()
 
     # b_vec = [100, 500, 1000]
@@ -352,5 +360,7 @@ if __name__ == '__main__':
         test_statistic=argument_parsed.test_statistic,
         size_marginal=argument_parsed.size_marginal,
         monte_carlo_samples=argument_parsed.monte_carlo_samples,
-        alternative_norm=argument_parsed.alt_norm
+        alternative_norm=argument_parsed.alt_norm,
+        benchmark=argument_parsed.benchmark,
+        nuisance_parameters=argument_parsed.nuisance
     )
