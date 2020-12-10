@@ -11,7 +11,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 
 from utils.functions import train_clf, compute_statistics_single_t0, clf_prob_value, compute_bayesfactor_single_t0, \
-    odds_ratio_loss
+    odds_ratio_loss, compute_averageodds_single_t0
 from models.toy_poisson import ToyPoissonLoader
 from models.toy_gmm import ToyGMMLoader
 from models.toy_gamma import ToyGammaLoader
@@ -28,14 +28,14 @@ model_dict = {
 
 def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier_cde, test_statistic, mlp_comp=False,
          monte_carlo_samples=500, debug=False, seed=7, size_check=1000, verbose=False, marginal=False,
-         size_marginal=1000):
+         size_marginal=1000, empirical_marginal=True):
 
     # Changing values if debugging
     b = b if not debug else 100
     b_prime = b_prime if not debug else 100
     size_check = size_check if not debug else 100
     rep = rep if not debug else 2
-    model_obj = model_dict[run](marginal=marginal, size_marginal=size_marginal)
+    model_obj = model_dict[run](marginal=marginal, size_marginal=size_marginal, empirical_marginal=empirical_marginal)
     classifier_dict_run = classifier_dict_mlpcomp if mlp_comp else classifier_dict
 
     # Get the correct functions
@@ -79,7 +79,7 @@ def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier_cde, t
         clf_cde_fitted = {}
         for clf_name, clf_model in sorted(classifier_dict_run.items(), key=lambda x: x[0]):
             clf_odds = train_clf(sample_size=b, clf_model=clf_model, gen_function=gen_sample_func,
-                                 clf_name=clf_name, marginal=marginal, nn_square_root=True)
+                                 clf_name=clf_name, nn_square_root=True)
             if verbose:
                 print('----- %s Trained' % clf_name)
 
@@ -98,9 +98,14 @@ def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier_cde, t
                     compute_bayesfactor_single_t0(
                         clf=clf_odds, obs_sample=x_obs, t0=theta_0, gen_param_fun=gen_param_fun,
                         d=model_obj.d, d_obs=model_obj.d_obs, log_out=True) for theta_0 in t0_grid])
+            elif test_statistic == 'averageodds':
+                tau_obs = np.array([
+                    compute_averageodds_single_t0(
+                        clf=clf_odds, obs_sample=x_obs, t0=theta_0, d=model_obj.d,
+                        d_obs=model_obj.d_obs) for theta_0 in t0_grid])
             else:
-                raise ValueError('The variable test_statistic needs to be either acore, avgacore, logavgacore.'
-                                 ' Currently %s' % test_statistic)
+                raise ValueError('The variable test_statistic needs to be either acore, avgacore, logavgacore, '
+                                 'or averageodds. Currently %s' % test_statistic)
 
             # Calculating cross-entropy
             est_prob_vec = clf_prob_value(clf=clf_odds, x_vec=x_vec, theta_vec=theta_vec, d=model_obj.d,
@@ -149,9 +154,18 @@ def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier_cde, t
                                                     monte_carlo_samples=monte_carlo_samples,
                                                     log_out=True
                                                 ))
+            elif test_statistic == 'averageodds':
+                stats_mat = np.apply_along_axis(arr=full_mat, axis=1,
+                                                func1d=lambda row: compute_averageodds_single_t0(
+                                                    clf=clf_odds,
+                                                    obs_sample=row[model_obj.d:],
+                                                    t0=row[:model_obj.d],
+                                                    d=model_obj.d,
+                                                    d_obs=model_obj.d_obs
+                                                ))
             else:
-                raise ValueError('The variable test_statistic needs to be either acore, avgacore, logavgacore.'
-                                 ' Currently %s' % test_statistic)
+                raise ValueError('The variable test_statistic needs to be either acore, avgacore, logavgacore '
+                                 'or averageodds. Currently %s' % test_statistic)
 
             if np.any(np.isnan(stats_mat)) or not np.all(np.isfinite(stats_mat)):
                 not_update_flag = True
@@ -261,9 +275,12 @@ if __name__ == '__main__':
     parser.add_argument('--monte_carlo_samples', action="store", type=int, default=500,
                         help='Sample size for the calculation of the avgacore and logavgacore statistic.')
     parser.add_argument('--test_statistic', action="store", type=str, default='acore',
-                        help='Test statistic to compute confidence intervals. Can be acore|avgacore|logavgacore')
+                        help='Test statistic to compute confidence intervals. '
+                             'Can be acore|avgacore|logavgacore|averageodds.')
     parser.add_argument('--mlp_comp', action='store_true', default=False,
                         help='If true, we compare different MLP training algorithm.')
+    parser.add_argument('--empirical_marginal', action='store_true', default=False,
+                        help='Whether we are sampling directly from the empirical marginal for G')
     argument_parsed = parser.parse_args()
 
     # b_vec = [100, 500, 1000]
@@ -284,5 +301,6 @@ if __name__ == '__main__':
         size_marginal=argument_parsed.size_marginal,
         monte_carlo_samples=argument_parsed.monte_carlo_samples,
         test_statistic=argument_parsed.test_statistic,
-        mlp_comp=argument_parsed.mlp_comp
+        mlp_comp=argument_parsed.mlp_comp,
+        empirical_marginal=argument_parsed.empirical_marginal
     )
