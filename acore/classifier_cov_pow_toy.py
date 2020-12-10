@@ -103,9 +103,14 @@ def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier_cde, t
                     compute_averageodds_single_t0(
                         clf=clf_odds, obs_sample=x_obs, t0=theta_0, d=model_obj.d,
                         d_obs=model_obj.d_obs) for theta_0 in t0_grid])
+            elif test_statistic == 'logaverageodds':
+                tau_obs = np.array([
+                    compute_averageodds_single_t0(
+                        clf=clf_odds, obs_sample=x_obs, t0=theta_0, d=model_obj.d,
+                        d_obs=model_obj.d_obs, apply_log=True) for theta_0 in t0_grid])
             else:
                 raise ValueError('The variable test_statistic needs to be either acore, avgacore, logavgacore, '
-                                 'or averageodds. Currently %s' % test_statistic)
+                                 'averageodds or logaverageodds. Currently %s' % test_statistic)
 
             # Calculating cross-entropy
             est_prob_vec = clf_prob_value(clf=clf_odds, x_vec=x_vec, theta_vec=theta_vec, d=model_obj.d,
@@ -163,9 +168,19 @@ def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier_cde, t
                                                     d=model_obj.d,
                                                     d_obs=model_obj.d_obs
                                                 ))
+            elif test_statistic == 'logaverageodds':
+                stats_mat = np.apply_along_axis(arr=full_mat, axis=1,
+                                                func1d=lambda row: compute_averageodds_single_t0(
+                                                    clf=clf_odds,
+                                                    obs_sample=row[model_obj.d:],
+                                                    t0=row[:model_obj.d],
+                                                    d=model_obj.d,
+                                                    d_obs=model_obj.d_obs,
+                                                    apply_log=True
+                                                ))
             else:
                 raise ValueError('The variable test_statistic needs to be either acore, avgacore, logavgacore '
-                                 'or averageodds. Currently %s' % test_statistic)
+                                 'averageodd or logaverageodds. Currently %s' % test_statistic)
 
             if np.any(np.isnan(stats_mat)) or not np.all(np.isfinite(stats_mat)):
                 not_update_flag = True
