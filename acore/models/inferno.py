@@ -14,7 +14,7 @@ class InfernoToyLoader:
 
     def __init__(self, s_param=50, r_param=0.0, lambda_param=3.0, b_param=1000, benchmark=None,
                  nuisance_parameters=False, s_low=0, s_high=100, r_low=-5, r_high=5, lambda_low=0, lambda_high=10,
-                 b_low=700, b_high=1300, out_dir='inferno_toy/', num_acore_grid=51, num_pred_grid=51,
+                 b_low=700, b_high=1300, out_dir='inferno_toy/', num_acore_grid=21, num_pred_grid=21,
                  empirical_marginal=True, *args, **kwargs):
 
         self.true_s = s_param
