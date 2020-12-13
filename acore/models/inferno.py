@@ -21,6 +21,8 @@ class InfernoToyLoader:
         self.s_low = s_low
         self.s_high = s_high
         self.sigmas_mat = [np.diag([5, 9]), np.diag([1, 1])]
+        self.low_int = -5
+        self.high_int = 1300
 
         if benchmark is not None:
             if benchmark not in [0, 1, 2, 3, 4]:
