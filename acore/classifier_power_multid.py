@@ -17,7 +17,7 @@ from models.toy_mvn_multid import ToyMVNMultiDLoader
 from models.toy_mvn_multid_simplehyp import ToyMVNMultiDSimpleHypLoader
 from models.inferno import InfernoToyLoader
 from utils.qr_functions import train_qr_algo
-from or_classifiers.toy_example_list import classifier_dict_multid as classifier_dict
+from or_classifiers.toy_example_list import classifier_dict_multid, classifier_inferno_dict
 from qr_algorithms.complete_list import classifier_cde_dict
 
 model_dict = {
@@ -39,6 +39,7 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
     b_prime = b_prime if not debug else 100
     size_check = size_check if not debug else 100
     rep = rep if not debug else 2
+    classifier_dict = classifier_dict_multid if 'inferno' not in run else classifier_inferno_dict
 
     # We pass as inputs all arguments necessary for all classes, but some of them will not be picked up if they are
     # not necessary for a specific class
