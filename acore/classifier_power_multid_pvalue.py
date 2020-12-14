@@ -91,6 +91,10 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_stati
             if verbose:
                 print('----- %s Trained' % clf_name)
 
+            if model_obj.nuisance_flag:
+                t0_grid = model_obj.calculate_nuisance_parameters_over_grid(
+                    t0_grid=model_obj.pred_grid, clf_odds=clf_odds, x_obs=x_obs)
+
             if test_statistic == 'acore':
                 tau_obs = np.array([
                     compute_statistics_single_t0(
