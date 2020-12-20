@@ -77,7 +77,7 @@ def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_statistic, m
         clf_pvalue_fitted = {}
         for clf_name, clf_model in sorted(classifier_dict_run.items(), key=lambda x: x[0]):
             clf_odds = train_clf(sample_size=b, clf_model=clf_model, gen_function=gen_sample_func,
-                                 clf_name=clf_name, marginal=marginal, nn_square_root=True)
+                                 clf_name=clf_name, nn_square_root=True)
             if verbose:
                 print('----- %s Trained' % clf_name)
 
