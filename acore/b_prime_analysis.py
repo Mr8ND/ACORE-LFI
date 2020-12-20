@@ -28,7 +28,7 @@ model_dict = {
 }
 
 
-def main(b, alpha, classifier, sample_size_obs, run, test_statistic, n_eval_grid=51,
+def main(b, alpha, classifier, sample_size_obs, run, test_statistic, n_eval_grid=51, classifier_name_savefile='',
          debug=False, seed=7, sample_size_check=1000, size_reference=1000, benchmark=1, empirical_marginal=False,
          nuisance_parameters=False):
 
@@ -192,7 +192,7 @@ def main(b, alpha, classifier, sample_size_obs, run, test_statistic, n_eval_grid
     out_df = pd.DataFrame.from_records(data=out_val, index=range(len(out_val)), columns=out_cols)
     out_dir = 'sims/%s' % model_obj.out_directory
     out_filename = 'b_prime_analysis_%s_%s_alpha%s_ngrid%s_sizecheck%s_bprimemax%s_logregint_%s_%s.csv' % (
-        classifier, run, str(alpha).replace('.', '-'),
+        classifier_name_savefile, run, str(alpha).replace('.', '-'),
         n_eval_grid, sample_size_check, np.max(b_prime_vec),
         test_statistic,
         datetime.strftime(datetime.today(), '%Y-%m-%d')
@@ -244,5 +244,6 @@ if __name__ == '__main__':
         test_statistic=argument_parsed.test_statistic,
         benchmark=argument_parsed.benchmark,
         empirical_marginal=argument_parsed.empirical_marginal,
-        nuisance_parameters=argument_parsed.nuisance
+        nuisance_parameters=argument_parsed.nuisance,
+        classifier_name_savefile=argument_parsed.classifier
     )
