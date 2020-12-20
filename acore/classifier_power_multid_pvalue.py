@@ -33,7 +33,7 @@ model_dict = {
 def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_statistic, alternative_norm,
          monte_carlo_samples=500, debug=False, seed=7, size_check=1000, verbose=False, marginal=False,
          size_marginal=1000, b_prime_prop_sample=0.33, empirical_marginal=False, benchmark=1,
-         nuisance_parameters=False):
+         nuisance_parameters=False, p_value_guided=False):
     # Changing values if debugging
     b = b if not debug else 100
     b_prime = b_prime if not debug else 100
@@ -76,7 +76,7 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_stati
     out_cols = ['d_obs', 'test_statistic', 'b_prime', 'b', 'classifier', 'classifier_pvalue', 'run', 'rep',
                 'sample_size_obs', 'cross_entropy_loss', 'cross_entropy_loss_pvalue', 't0_true_val', 'coverage',
                 'power', 'size_CI', 'true_entropy', 'or_loss_value', 'monte_carlo_samples',
-                'benchmark', 'nuisance_parameters', 'alternative_mu_norm']
+                'benchmark', 'nuisance_parameters', 'alternative_mu_norm', 'p_value_guided']
     pbar = tqdm(total=rep, desc='Toy Example for Simulations, n=%s, b=%s' % (sample_size_obs, b))
     for jj in range(rep):
 
@@ -132,85 +132,88 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_stati
             # or_loss_value = or_loss(clf=clf_odds, first_sample=first_term_sample, second_sample=second_term_sample)
             clf_odds_fitted[clf_name] = (tau_obs, loss_value, or_loss_value)
 
-            # Train the quantile regression algorithm for confidence levels
-            # theta_mat, sample_mat = msnh_sampling_func(b_prime=b_prime, sample_size=sample_size_obs)
-            # Commenting the above -- we now sample a set of thetas from the parameter (set to be 25% of the b_prime)
-            # budget, then resample them according to the odds values, fit a gaussian and then sample the
-            # datasets from that.
+            # Train the P-value regression algorithm for confidence levels
 
-            b_prime_budget_sample = int(b_prime * b_prime_prop_sample)
-            b_prime_budget_left = b_prime - b_prime_budget_sample
-            theta_mat_sample = gen_param_fun(sample_size=b_prime_budget_sample)
+            if p_value_guided:
+                # We now sample a set of thetas from the parameter (set to be 25% of the b_prime)
+                # budget, then resample them according to the odds values, fit a gaussian and then sample the
+                # datasets from that.
 
-            if test_statistic == 'acore':
-                stats_sample = np.apply_along_axis(arr=theta_mat_sample.reshape(-1, model_obj.d), axis=1,
-                                                   func1d=lambda row: compute_statistics_single_t0(
-                                                       clf=clf_odds,
-                                                       obs_sample=x_obs,
-                                                       t0=row,
-                                                       grid_param_t1=grid_param,
-                                                       d=model_obj.d,
-                                                       d_obs=model_obj.d_obs
-                                                   ))
-            elif test_statistic == 'avgacore':
-                stats_sample = np.apply_along_axis(arr=theta_mat_sample.reshape(-1, model_obj.d), axis=1,
-                                                   func1d=lambda row: compute_bayesfactor_single_t0(
-                                                       clf=clf_odds,
-                                                       obs_sample=x_obs,
-                                                       t0=row,
-                                                       gen_param_fun=gen_param_fun,
-                                                       d=model_obj.d,
-                                                       d_obs=model_obj.d_obs,
-                                                       monte_carlo_samples=monte_carlo_samples
-                                                   ))
-            elif test_statistic == 'logavgacore':
-                stats_sample = np.apply_along_axis(arr=theta_mat_sample.reshape(-1, model_obj.d), axis=1,
-                                                   func1d=lambda row: compute_bayesfactor_single_t0(
-                                                       clf=clf_odds,
-                                                       obs_sample=x_obs,
-                                                       t0=row,
-                                                       gen_param_fun=gen_param_fun,
-                                                       d=model_obj.d,
-                                                       d_obs=model_obj.d_obs,
-                                                       monte_carlo_samples=monte_carlo_samples,
-                                                       log_out=True
-                                                   ))
-            elif test_statistic == 'averageodds':
-                stats_sample = np.apply_along_axis(arr=theta_mat_sample.reshape(-1, model_obj.d), axis=1,
-                                                   func1d=lambda row: compute_averageodds_single_t0(
-                                                       clf=clf_odds,
-                                                       obs_sample=x_obs,
-                                                       t0=row,
-                                                       d=model_obj.d,
-                                                       d_obs=model_obj.d_obs
-                                                   ))
+                b_prime_budget_sample = int(b_prime * b_prime_prop_sample)
+                b_prime_budget_left = b_prime - b_prime_budget_sample
+                theta_mat_sample = gen_param_fun(sample_size=b_prime_budget_sample)
+
+                if test_statistic == 'acore':
+                    stats_sample = np.apply_along_axis(arr=theta_mat_sample.reshape(-1, model_obj.d), axis=1,
+                                                       func1d=lambda row: compute_statistics_single_t0(
+                                                           clf=clf_odds,
+                                                           obs_sample=x_obs,
+                                                           t0=row,
+                                                           grid_param_t1=grid_param,
+                                                           d=model_obj.d,
+                                                           d_obs=model_obj.d_obs
+                                                       ))
+                elif test_statistic == 'avgacore':
+                    stats_sample = np.apply_along_axis(arr=theta_mat_sample.reshape(-1, model_obj.d), axis=1,
+                                                       func1d=lambda row: compute_bayesfactor_single_t0(
+                                                           clf=clf_odds,
+                                                           obs_sample=x_obs,
+                                                           t0=row,
+                                                           gen_param_fun=gen_param_fun,
+                                                           d=model_obj.d,
+                                                           d_obs=model_obj.d_obs,
+                                                           monte_carlo_samples=monte_carlo_samples
+                                                       ))
+                elif test_statistic == 'logavgacore':
+                    stats_sample = np.apply_along_axis(arr=theta_mat_sample.reshape(-1, model_obj.d), axis=1,
+                                                       func1d=lambda row: compute_bayesfactor_single_t0(
+                                                           clf=clf_odds,
+                                                           obs_sample=x_obs,
+                                                           t0=row,
+                                                           gen_param_fun=gen_param_fun,
+                                                           d=model_obj.d,
+                                                           d_obs=model_obj.d_obs,
+                                                           monte_carlo_samples=monte_carlo_samples,
+                                                           log_out=True
+                                                       ))
+                elif test_statistic == 'averageodds':
+                    stats_sample = np.apply_along_axis(arr=theta_mat_sample.reshape(-1, model_obj.d), axis=1,
+                                                       func1d=lambda row: compute_averageodds_single_t0(
+                                                           clf=clf_odds,
+                                                           obs_sample=x_obs,
+                                                           t0=row,
+                                                           d=model_obj.d,
+                                                           d_obs=model_obj.d_obs
+                                                       ))
+                else:
+                    raise ValueError('The variable test_statistic needs to be either acore, avgacore,'
+                                     ' logavgacore or averageodds. Currently %s' % test_statistic)
+
+                # If there are log-odds, then some of the values might be negative, so we need to exponentiate them
+                # so to make sure that the large negative numbers are counted correctly (i.e. as very low probability,
+                # not probabilities with large magnitudes).
+                if test_statistic in ['acore', 'logavgacore']:
+                    stats_sample = np.exp(stats_sample)
+                stats_sample = stats_sample / np.sum(stats_sample)
+                theta_mat_gaussian_fit_idx = np.random.choice(a=theta_mat_sample.shape[0], p=stats_sample.reshape(-1, ),
+                                                              size=b_prime_budget_sample)
+                theta_mat_gaussian_fit = theta_mat_sample[theta_mat_gaussian_fit_idx, :]
+                mean_gaussian_fit = np.mean(theta_mat_gaussian_fit, axis=0)
+                if run in ['mvn', 'mvn_simplehyp']:
+                    std_gaussian_fit = np.std(theta_mat_gaussian_fit)
+                    theta_mat = np.random.normal(
+                        size=b_prime_budget_left, loc=mean_gaussian_fit, scale=std_gaussian_fit).clip(
+                        min=model_obj.low_int, max=model_obj.high_int)
+                else:
+                    cov_gaussian_fit = np.cov(theta_mat_gaussian_fit, rowvar=False)
+                    theta_mat = np.random.multivariate_normal(
+                        size=b_prime_budget_left, mean=mean_gaussian_fit, cov=cov_gaussian_fit,).clip(
+                        min=model_obj.low_int, max=model_obj.high_int)
+                sample_mat = np.apply_along_axis(arr=theta_mat.reshape(-1, model_obj.d), axis=1,
+                                                 func1d=lambda row: gen_obs_func(sample_size=sample_size_obs,
+                                                                                 true_param=row))
             else:
-                raise ValueError('The variable test_statistic needs to be either acore, avgacore, logavgacore or averageodds.'
-                                 ' Currently %s' % test_statistic)
-
-            # If there are log-odds, then some of the values might be negative, so we need to exponentiate them
-            # so to make sure that the large negative numbers are counted correctly (i.e. as very low probability, not
-            # probabilities with large magnitudes).
-            if test_statistic in ['acore', 'logavgacore']:
-                stats_sample = np.exp(stats_sample)
-            stats_sample = stats_sample / np.sum(stats_sample)
-            theta_mat_gaussian_fit_idx = np.random.choice(a=theta_mat_sample.shape[0], p=stats_sample.reshape(-1, ),
-                                                          size=b_prime_budget_sample)
-            theta_mat_gaussian_fit = theta_mat_sample[theta_mat_gaussian_fit_idx, :]
-            mean_gaussian_fit = np.mean(theta_mat_gaussian_fit, axis=0)
-            if run in ['mvn', 'mvn_simplehyp']:
-                std_gaussian_fit = np.std(theta_mat_gaussian_fit)
-                theta_mat = np.random.normal(
-                    size=b_prime_budget_left, loc=mean_gaussian_fit, scale=std_gaussian_fit).clip(
-                    min=model_obj.low_int, max=model_obj.high_int)
-            else:
-                cov_gaussian_fit = np.cov(theta_mat_gaussian_fit, rowvar=False)
-                theta_mat = np.random.multivariate_normal(
-                    size=b_prime_budget_left, mean=mean_gaussian_fit, cov=cov_gaussian_fit,).clip(
-                    min=model_obj.low_int, max=model_obj.high_int)
-            sample_mat = np.apply_along_axis(arr=theta_mat.reshape(-1, model_obj.d), axis=1,
-                                             func1d=lambda row: gen_obs_func(sample_size=sample_size_obs,
-                                                                             true_param=row))
+                theta_mat, sample_mat = msnh_sampling_func(b_prime=b_prime, sample_size=sample_size_obs)
 
             if test_statistic == 'acore':
                 stats_mat_generated = np.array([compute_statistics_single_t0(
@@ -286,7 +289,7 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_stati
                     d_obs, test_statistic, b_prime, b, clf_name, clf_name_qr, run, jj, sample_size_obs,
                     cross_ent_loss, pvalue_celoss_val, t0_val, coverage, power,
                     size_temp, entropy_est, or_loss_value, monte_carlo_samples,
-                    benchmark, int(nuisance_parameters), alternative_norm
+                    benchmark, int(nuisance_parameters), alternative_norm, int(p_value_guided)
                 ])
         pbar.update(1)
 
@@ -344,6 +347,8 @@ if __name__ == '__main__':
                         help='Benchmark to use for the INFERNO class.')
     parser.add_argument('--nuisance', action='store_true', default=False,
                         help='If true, uses nuisance parameters if available.')
+    parser.add_argument('--p_value_guided', action='store_true', default=False,
+                        help='If true, we guided the sampling for the B prime in order to get meaningful results.')
     argument_parsed = parser.parse_args()
 
     # b_vec = [100, 500, 1000]
@@ -367,5 +372,6 @@ if __name__ == '__main__':
         monte_carlo_samples=argument_parsed.monte_carlo_samples,
         alternative_norm=argument_parsed.alt_norm,
         benchmark=argument_parsed.benchmark,
-        nuisance_parameters=argument_parsed.nuisance
+        nuisance_parameters=argument_parsed.nuisance,
+        p_value_guided=argument_parsed.p_value_guided
     )
