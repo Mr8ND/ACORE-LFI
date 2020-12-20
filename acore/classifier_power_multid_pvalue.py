@@ -52,7 +52,7 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_stati
     gen_sample_func = model_obj.generate_sample
     gen_param_fun = model_obj.sample_param_values
     t0_grid = model_obj.pred_grid
-    grid_param = model_obj.pred_grid
+    grid_param = model_obj.acore_grid
     tp_func = model_obj.compute_exact_prob
     t0_param_val = model_obj.true_param
     true_param_row_idx = model_obj.idx_row_true_param
