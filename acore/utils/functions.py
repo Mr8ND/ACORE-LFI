@@ -330,7 +330,7 @@ def compute_statistics_single_t0(clf, obs_sample, t0, grid_param_t1, d=1, d_obs=
     return np.sum(odds_t0) - np.max(grouped_sum_t1)
 
 
-def _clf_odds_function(theta_param, clf, obs_sample, d=1, d_obs=1, mult_min=1):
+def _clf_odds_function(theta_param, clf, obs_sample, d=1, d_obs=1, mult_min=-1):
     predict_mat_t0 = np.hstack((np.tile(theta_param, obs_sample.shape[0]).reshape(-1, d),
                                 obs_sample.reshape(-1, d_obs)))
     prob_mat_t0 = clf.predict_proba(predict_mat_t0)

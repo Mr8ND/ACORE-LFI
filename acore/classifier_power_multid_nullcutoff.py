@@ -29,7 +29,7 @@ model_dict = {
 
 def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_statistic, alternative_norm,
          monte_carlo_samples=500, debug=False, seed=7, size_check=1000, verbose=False, marginal=False,
-         size_marginal=1000, empirical_marginal=True):
+         size_marginal=1000, empirical_marginal=True, nm_optim=False):
 
     # Changing values if debugging
     b = b if not debug else 100
@@ -88,10 +88,16 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_stati
                 print('----- %s Trained' % clf_name)
             
             if test_statistic == 'acore':
-                tau_obs = np.array([
-                    compute_statistics_single_t0(
-                        clf=clf_odds, obs_sample=x_obs, t0=theta_0, grid_param_t1=grid_param,
-                        d=model_obj.d, d_obs=model_obj.d_obs) for theta_0 in t0_grid])
+                if nm_optim:
+                    tau_obs = np.array([
+                        compute_statistics_single_t0_multid(
+                            clf=clf_odds, obs_sample=x_obs, t0=theta_0, bounds_opt=model_obj.bounds_opt,
+                            d=model_obj.d, d_obs=model_obj.d_obs) for theta_0 in t0_grid])
+                else:
+                    tau_obs = np.array([
+                        compute_statistics_single_t0(
+                            clf=clf_odds, obs_sample=x_obs, t0=theta_0, grid_param_t1=grid_param,
+                            d=model_obj.d, d_obs=model_obj.d_obs) for theta_0 in t0_grid])
             elif test_statistic == 'avgacore':
                 tau_obs = np.array([
                     compute_bayesfactor_single_t0(
@@ -133,10 +139,16 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_stati
                                                                true_param=row[:model_obj.d])).reshape(b_prime, sample_size_obs, d_obs)
 
                 if test_statistic == 'acore':
-                    stats_mat = np.array([compute_statistics_single_t0(
-                        clf=clf_odds, d=model_obj.d, d_obs=model_obj.d_obs, grid_param_t1=grid_param,
-                        t0=theta_0, obs_sample=sample_mat[kk, :, :]) for kk, theta_0 in enumerate(theta_mat)
-                    ])
+                    if nm_optim:
+                        stats_mat = np.array([compute_statistics_single_t0_multid(
+                            clf=clf_odds, d=model_obj.d, d_obs=model_obj.d_obs, bounds_opt=model_obj.bounds_opt,
+                            t0=theta_0, obs_sample=sample_mat[kk, :, :]) for kk, theta_0 in enumerate(theta_mat)
+                        ])
+                    else:
+                        stats_mat = np.array([compute_statistics_single_t0(
+                            clf=clf_odds, d=model_obj.d, d_obs=model_obj.d_obs, grid_param_t1=grid_param,
+                            t0=theta_0, obs_sample=sample_mat[kk, :, :]) for kk, theta_0 in enumerate(theta_mat)
+                        ])
                 elif test_statistic == 'avgacore':
                     stats_mat = np.array([compute_bayesfactor_single_t0(
                                           clf=clf_odds, d=model_obj.d, d_obs=model_obj.d_obs, gen_param_fun=gen_param_fun,
@@ -234,6 +246,9 @@ if __name__ == '__main__':
                         help='Sample size for the calculation of the OR loss.')
     parser.add_argument('--alt_norm', action="store", type=float, default=5,
                         help='Norm of the mean under the alternative -- to be used for toy_mvn_multid_simplehyp only.')
+    parser.add_argument('--nm_optim', action='store_true', default=False,
+                        help='If true, rather than minimizing ACORE over a grid, it minimizes it solving a '
+                             'minimization problem, using scipy.')
     argument_parsed = parser.parse_args()
 
     
@@ -254,5 +269,6 @@ if __name__ == '__main__':
         test_statistic=argument_parsed.test_statistic,
         size_marginal=argument_parsed.size_marginal,
         monte_carlo_samples=argument_parsed.monte_carlo_samples,
-        alternative_norm=argument_parsed.alt_norm
+        alternative_norm=argument_parsed.alt_norm,
+        nm_optim=argument_parsed.nm_optim
     )
