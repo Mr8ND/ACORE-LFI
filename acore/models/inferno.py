@@ -137,7 +137,8 @@ class InfernoToyLoader:
                                                        num=self.num_pred_grid),
                                            np.linspace(start=self.b_low, stop=self.b_high, num=self.num_pred_grid))),
                 axis=0)[:, self.active_params_cols]
-            self.idx_row_true_param = np.where((self.pred_grid == self.true_param[:self.d]).all(axis=1))[0][0]
+            self.idx_row_true_param = np.where((self.pred_grid == self.true_param[self.active_params_cols]).all(
+                axis=1))[0][0]
         self.acore_grid = np.unique(
             tensor_4d_mesh(np.meshgrid(np.linspace(start=self.s_low, stop=self.s_high, num=self.num_pred_grid),
                                        np.linspace(start=self.r_low, stop=self.r_high, num=self.num_pred_grid),
