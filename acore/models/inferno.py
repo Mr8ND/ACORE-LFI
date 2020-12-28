@@ -379,7 +379,7 @@ class InfernoToyLoader:
         nuisance_param_grid = np.apply_along_axis(arr=t0_grid.reshape(-1, 1), axis=1,
                                                   func1d=lambda row: minimize(
             fun=partial(self._nuisance_parameter_func, x_obs=x_obs, target_params=row, clf_odds=clf_odds),
-            x0=np.array([0, 5, 1000]).reshape(1, 3)[:, self.nuisance_parameters_cols].reshape(-1,),
+            x0=np.array([np.nan, 0, 5, 1000]).reshape(1, 4)[:, self.nuisance_parameters_cols].reshape(-1,),
             method='trust-constr', options={'verbose': 0}, bounds=self.bounds_opt).x)
 
         most_frequent_nuisance_param = mode_rows(nuisance_param_grid)
