@@ -79,6 +79,16 @@ class InfernoToyLoader:
                 self.lambda_high = 6.0
                 self.b_low = b_low
                 self.b_high = b_high
+            if benchmark == 5:
+                self.true_r = 0.0
+                self.true_lambda = 3.0
+                self.true_b = b_param
+                self.r_low = 0.0
+                self.r_high = 0.0
+                self.lambda_low = 3.0
+                self.lambda_high = 3.0
+                self.b_low = b_low
+                self.b_high = b_high
         else:
             self.true_r = r_param
             self.true_lambda = lambda_param
