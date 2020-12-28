@@ -25,7 +25,7 @@ class InfernoToyLoader:
         self.high_int = 1300
 
         if benchmark is not None:
-            if benchmark not in [0, 1, 2, 3, 4]:
+            if benchmark not in [0, 1, 2, 3, 4, 5]:
                 raise ValueError('benchmark variable needs to be an integer between 0 and 4, corresponding '
                                  'to the setup of the INFERNO paper by de Castro and Dorigo (2018). '
                                  'Currently %s.' % benchmark)
