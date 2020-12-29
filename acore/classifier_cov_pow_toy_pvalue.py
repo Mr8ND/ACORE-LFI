@@ -64,7 +64,7 @@ def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_statistic, m
     out_cols = ['test_statistic', 'b_prime', 'b', 'classifier', 'classifier_pvalue', 'run', 'rep', 'sample_size_obs',
                 'cross_entropy_loss', 'cross_entropy_loss_pvalue', 't0_true_val', 'theta_0_current', 'on_true_t0',
                 'estimated_pvalue', 'in_confint', 'out_confint', 'size_CI', 'true_entropy', 'or_loss_value',
-                'monte_carlo_samples', 'guided_sim']
+                'monte_carlo_samples', 'guided_sim', 'empirical_marginal']
     pbar = tqdm(total=rep, desc='Toy Example for Simulations, n=%s, b=%s' % (sample_size_obs, b))
     rep_counter = 0
     not_update_flag = False
@@ -282,7 +282,7 @@ def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_statistic, m
                         cross_ent_loss, pvalue_celoss_val, t0_val, theta_0_current, int(t0_val == theta_0_current),
                         pvalue_val[kk], int(pvalue_val[kk] > alpha),
                         int(pvalue_val[kk] <= alpha), size_temp, entropy_est, or_loss_value,
-                        monte_carlo_samples, int(guided_sim)
+                        monte_carlo_samples, int(guided_sim), int(empirical_marginal)
                     ])
         pbar.update(1)
         rep_counter += 1
@@ -290,10 +290,11 @@ def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_statistic, m
     # Saving the results
     out_df = pd.DataFrame.from_records(data=out_val, index=range(len(out_val)), columns=out_cols)
     out_dir = 'sims/classifier_cov_pow_toy/'
-    out_filename = 'classifier_reps_cov_pow_toy_pvalues_%steststats_%s_%sB_%sBprime_%s_%srep_alpha%s_sampleobs%s_t0val%s_%s.csv' % (
+    out_filename = 'classifier_reps_cov_pow_toy_pvalues_%steststats_%s_%sB_%sBprime_%s_%srep_alpha%s_sampleobs%s_t0val%s%s_%s.csv' % (
         test_statistic, 'mlp_comp' if mlp_comp else 'toyclassifiers', b, b_prime, run, rep,
         str(alpha).replace('.', '-'), sample_size_obs,
         str(t0_val).replace('.', '-'),
+        '_empirmarg' if empirical_marginal else '',
         datetime.strftime(datetime.today(), '%Y-%m-%d-%H-%M')
     )
     out_df.to_csv(out_dir + out_filename)
