@@ -64,7 +64,7 @@ def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_statistic, m
     out_cols = ['test_statistic', 'b_prime', 'b', 'classifier', 'classifier_pvalue', 'run', 'rep', 'sample_size_obs',
                 'cross_entropy_loss', 'cross_entropy_loss_pvalue', 't0_true_val', 'theta_0_current', 'on_true_t0',
                 'estimated_pvalue', 'in_confint', 'out_confint', 'size_CI', 'true_entropy', 'or_loss_value',
-                'monte_carlo_samples', 'guided_sim', 'empirical_marginal']
+                'monte_carlo_samples', 'guided_sim', 'empirical_marginal', 'guided_sample']
     pbar = tqdm(total=rep, desc='Toy Example for Simulations, n=%s, b=%s' % (sample_size_obs, b))
     rep_counter = 0
     not_update_flag = False
@@ -282,7 +282,7 @@ def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_statistic, m
                         cross_ent_loss, pvalue_celoss_val, t0_val, theta_0_current, int(t0_val == theta_0_current),
                         pvalue_val[kk], int(pvalue_val[kk] > alpha),
                         int(pvalue_val[kk] <= alpha), size_temp, entropy_est, or_loss_value,
-                        monte_carlo_samples, int(guided_sim), int(empirical_marginal)
+                        monte_carlo_samples, int(guided_sim), int(empirical_marginal), guided_sample
                     ])
         pbar.update(1)
         rep_counter += 1

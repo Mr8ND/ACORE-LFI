@@ -76,7 +76,7 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_stati
     out_cols = ['d_obs', 'test_statistic', 'b_prime', 'b', 'classifier', 'classifier_pvalue', 'run', 'rep',
                 'sample_size_obs', 'cross_entropy_loss', 'cross_entropy_loss_pvalue', 't0_true_val', 'coverage',
                 'power', 'size_CI', 'true_entropy', 'or_loss_value', 'monte_carlo_samples',
-                'benchmark', 'nuisance_parameters', 'alternative_mu_norm', 'guided_sim']
+                'benchmark', 'nuisance_parameters', 'alternative_mu_norm', 'guided_sim', 'guided_sample']
     pbar = tqdm(total=rep, desc='Toy Example for Simulations, n=%s, b=%s' % (sample_size_obs, b))
     for jj in range(rep):
 
@@ -286,7 +286,7 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_stati
                     d_obs, test_statistic, b_prime, b, clf_name, clf_name_qr, run, jj, sample_size_obs,
                     cross_ent_loss, pvalue_celoss_val, t0_val, coverage, power,
                     size_temp, entropy_est, or_loss_value, monte_carlo_samples,
-                    benchmark, int(nuisance_parameters), alternative_norm, int(guided_sim)
+                    benchmark, int(nuisance_parameters), alternative_norm, int(guided_sim), guided_sample
                 ])
         pbar.update(1)
 
