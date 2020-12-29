@@ -138,7 +138,6 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_stati
                 # We now sample a set of thetas from the parameter (set to be 25% of the b_prime)
                 # budget, then resample them according to the odds values, fit a gaussian and then sample the
                 # datasets from that.
-
                 theta_mat_sample = gen_param_fun(sample_size=guided_sample)
 
                 if test_statistic == 'acore':
@@ -194,7 +193,7 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_stati
                     stats_sample = np.exp(stats_sample)
                 stats_sample = stats_sample / np.sum(stats_sample)
                 theta_mat_gaussian_fit_idx = np.random.choice(a=theta_mat_sample.shape[0], p=stats_sample.reshape(-1, ),
-                                                              size=b_prime)
+                                                              size=guided_sample)
                 theta_mat_gaussian_fit = theta_mat_sample[theta_mat_gaussian_fit_idx, :]
                 mean_gaussian_fit = np.mean(theta_mat_gaussian_fit, axis=0)
                 if run in ['mvn', 'mvn_simplehyp']:

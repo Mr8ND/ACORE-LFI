@@ -24,9 +24,9 @@ model_dict = {
 }
 
 
-def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_statistic, mlp_comp=False, b_prime_prop_sample=0.33,
+def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_statistic, mlp_comp=False,
          monte_carlo_samples=500, debug=False, seed=7, size_check=1000, verbose=False, marginal=False,
-         size_marginal=1000, p_value_guided=False):
+         size_marginal=1000, guided_sim=False, guided_sample=1000):
 
     # Changing values if debugging
     b = b if not debug else 100
@@ -64,7 +64,7 @@ def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_statistic, m
     out_cols = ['test_statistic', 'b_prime', 'b', 'classifier', 'classifier_pvalue', 'run', 'rep', 'sample_size_obs',
                 'cross_entropy_loss', 'cross_entropy_loss_pvalue', 't0_true_val', 'theta_0_current', 'on_true_t0',
                 'estimated_pvalue', 'in_confint', 'out_confint', 'size_CI', 'true_entropy', 'or_loss_value',
-                'monte_carlo_samples']
+                'monte_carlo_samples', 'guided_sim']
     pbar = tqdm(total=rep, desc='Toy Example for Simulations, n=%s, b=%s' % (sample_size_obs, b))
     rep_counter = 0
     not_update_flag = False
@@ -112,13 +112,11 @@ def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_statistic, m
 
             # Train the P-value regression algorithm for confidence levels
 
-            if p_value_guided:
+            if guided_sim:
                 # Commenting the above -- we now sample a set of thetas from the parameter (set to be 25% of the b_prime)
                 # budget, then resample them according to the odds values, fit a gaussian and then sample the
                 # datasets from that.
-                b_prime_budget_sample = int(b_prime * b_prime_prop_sample)
-                b_prime_budget_left = b_prime - b_prime_budget_sample
-                theta_mat_sample = gen_param_fun(sample_size=b_prime_budget_sample)
+                theta_mat_sample = gen_param_fun(sample_size=guided_sample)
 
                 if test_statistic == 'acore':
                     stats_sample = np.apply_along_axis(arr=theta_mat_sample.reshape(-1, 1), axis=1,
@@ -164,10 +162,10 @@ def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_statistic, m
                     stats_sample = np.exp(stats_sample)
                 stats_sample = stats_sample/np.sum(stats_sample)
                 theta_mat_gaussian_fit = np.random.choice(a=theta_mat_sample, p=stats_sample.reshape(-1, ),
-                                                          size=b_prime_budget_sample)
+                                                          size=guided_sample)
                 std_gaussian_fit = np.std(theta_mat_gaussian_fit) if np.std(theta_mat_gaussian_fit) == 0.0 else 1.0
                 theta_mat = np.clip(
-                    a=np.random.normal(size=b_prime_budget_left, loc=np.mean(theta_mat_gaussian_fit),
+                    a=np.random.normal(size=b_prime, loc=np.mean(theta_mat_gaussian_fit),
                                        scale=std_gaussian_fit),
                     a_min=model_obj.low_int, a_max=model_obj.high_int)
                 sample_mat = np.apply_along_axis(arr=theta_mat.reshape(-1, 1), axis=1,
@@ -284,7 +282,7 @@ def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_statistic, m
                         cross_ent_loss, pvalue_celoss_val, t0_val, theta_0_current, int(t0_val == theta_0_current),
                         pvalue_val[kk], int(pvalue_val[kk] > alpha),
                         int(pvalue_val[kk] <= alpha), size_temp, entropy_est, or_loss_value,
-                        monte_carlo_samples
+                        monte_carlo_samples, int(guided_sim)
                     ])
         pbar.update(1)
         rep_counter += 1
@@ -367,6 +365,10 @@ if __name__ == '__main__':
                         help='If true, we compare different MLP training algorithm.')
     parser.add_argument('--p_value_guided', action='store_true', default=False,
                         help='If true, we guided the sampling for the B prime in order to get meaningful results.')
+    parser.add_argument('--guided_sim', action='store_true', default=False,
+                        help='If true, we guided the sampling for the B prime in order to get meaningful results.')
+    parser.add_argument('--guided_sample', action="store", type=int, default=2500,
+                        help='The sample size to be used for the guided simulation. Only used if guided_sim is True.')
     argument_parsed = parser.parse_args()
 
     # b_vec = [100, 500, 1000]
@@ -387,5 +389,6 @@ if __name__ == '__main__':
         monte_carlo_samples=argument_parsed.monte_carlo_samples,
         test_statistic=argument_parsed.test_statistic,
         mlp_comp=argument_parsed.mlp_comp,
-        p_value_guided=argument_parsed.p_value_guided
+        guided_sim=argument_parsed.guided_sim,
+        guided_sample=argument_parsed.guided_sample
     )
