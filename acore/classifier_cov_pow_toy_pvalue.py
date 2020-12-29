@@ -26,14 +26,14 @@ model_dict = {
 
 def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_statistic, mlp_comp=False,
          monte_carlo_samples=500, debug=False, seed=7, size_check=1000, verbose=False, marginal=False,
-         size_marginal=1000, guided_sim=False, guided_sample=1000):
+         size_marginal=1000, guided_sim=False, guided_sample=1000, empirical_marginal=True):
 
     # Changing values if debugging
     b = b if not debug else 100
     b_prime = b_prime if not debug else 100
     size_check = size_check if not debug else 100
     rep = rep if not debug else 2
-    model_obj = model_dict[run](marginal=marginal, size_marginal=size_marginal)
+    model_obj = model_dict[run](marginal=marginal, size_marginal=size_marginal, empirical_marginal=empirical_marginal)
     classifier_dict_run = classifier_dict_mlpcomp if mlp_comp else classifier_dict
 
     # Get the correct functions
@@ -113,7 +113,7 @@ def main(run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_statistic, m
             # Train the P-value regression algorithm for confidence levels
 
             if guided_sim:
-                # Commenting the above -- we now sample a set of thetas from the parameter (set to be 25% of the b_prime)
+                # Commenting the above -- we now sample a set of thetas from the parameter (of size guided_sample)
                 # budget, then resample them according to the odds values, fit a gaussian and then sample the
                 # datasets from that.
                 theta_mat_sample = gen_param_fun(sample_size=guided_sample)
@@ -363,8 +363,8 @@ if __name__ == '__main__':
                         help='Test statistic to compute confidence intervals. Can be acore|avgacore|logavgacore')
     parser.add_argument('--mlp_comp', action='store_true', default=False,
                         help='If true, we compare different MLP training algorithm.')
-    parser.add_argument('--p_value_guided', action='store_true', default=False,
-                        help='If true, we guided the sampling for the B prime in order to get meaningful results.')
+    parser.add_argument('--empirical_marginal', action='store_true', default=False,
+                        help='Whether we are sampling directly from the empirical marginal for G')
     parser.add_argument('--guided_sim', action='store_true', default=False,
                         help='If true, we guided the sampling for the B prime in order to get meaningful results.')
     parser.add_argument('--guided_sample', action="store", type=int, default=2500,
@@ -389,6 +389,7 @@ if __name__ == '__main__':
         monte_carlo_samples=argument_parsed.monte_carlo_samples,
         test_statistic=argument_parsed.test_statistic,
         mlp_comp=argument_parsed.mlp_comp,
+        empirical_marginal=argument_parsed.empirical_marginal,
         guided_sim=argument_parsed.guided_sim,
         guided_sample=argument_parsed.guided_sample
     )
