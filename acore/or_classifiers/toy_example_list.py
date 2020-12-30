@@ -14,7 +14,7 @@ classifier_dict = {
 }
 
 classifier_inferno_dict = {
-    'XGBoost \n (d3, n100)': XGBClassifier(n_estimators=100)
+    'MLP4': MLPClassifier((128, 64, 32,  32), activation='relu', alpha=0, max_iter=25000)
 }
 
 classifier_pvalue_dict = {
