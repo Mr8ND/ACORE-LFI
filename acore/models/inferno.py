@@ -4,28 +4,28 @@ import sys
 sys.path.append('..')
 
 from functools import partial
-from utils.functions import tensor_4d_mesh, train_clf, mode_rows
+from utils.functions import tensor_4d_mesh, mode_rows
 from scipy.stats import multivariate_normal, poisson, rv_discrete, expon
 from scipy.linalg import sqrtm
 from scipy.optimize import Bounds, minimize
-from scipy.stats import mode
-from xgboost import XGBRFClassifier
 
 
 class InfernoToyLoader:
 
     def __init__(self, s_param=50, r_param=0.0, lambda_param=3.0, b_param=1000, benchmark=None,
-                 nuisance_parameters=True, s_low=0, s_high=100, r_low=-5, r_high=5, lambda_low=0, lambda_high=10,
+                 nuisance_parameters=False, s_low=0, s_high=100, r_low=-5, r_high=5, lambda_low=0, lambda_high=10,
                  b_low=700, b_high=1300, out_dir='inferno_toy/', num_acore_grid=21, num_pred_grid=21,
-                 *args, **kwargs):
+                 empirical_marginal=True, *args, **kwargs):
 
         self.true_s = s_param
         self.s_low = s_low
         self.s_high = s_high
         self.sigmas_mat = [np.diag([5, 9]), np.diag([1, 1])]
+        self.low_int = -5
+        self.high_int = 1300
 
         if benchmark is not None:
-            if benchmark not in [0, 1, 2, 3, 4]:
+            if benchmark not in [0, 1, 2, 3, 4, 5]:
                 raise ValueError('benchmark variable needs to be an integer between 0 and 4, corresponding '
                                  'to the setup of the INFERNO paper by de Castro and Dorigo (2018). '
                                  'Currently %s.' % benchmark)
@@ -79,6 +79,16 @@ class InfernoToyLoader:
                 self.lambda_high = 6.0
                 self.b_low = b_low
                 self.b_high = b_high
+            if benchmark == 5:
+                self.true_r = 0.0
+                self.true_lambda = 3.0
+                self.true_b = b_param
+                self.r_low = 0.0
+                self.r_high = 0.0
+                self.lambda_low = 3.0
+                self.lambda_high = 3.0
+                self.b_low = b_low
+                self.b_high = b_high
         else:
             self.true_r = r_param
             self.true_lambda = lambda_param
@@ -127,7 +137,8 @@ class InfernoToyLoader:
                                                        num=self.num_pred_grid),
                                            np.linspace(start=self.b_low, stop=self.b_high, num=self.num_pred_grid))),
                 axis=0)[:, self.active_params_cols]
-            self.idx_row_true_param = np.where((self.pred_grid == self.true_param[:self.d]).all(axis=1))[0][0]
+            self.idx_row_true_param = np.where((self.pred_grid == self.true_param[self.active_params_cols]).all(
+                axis=1))[0][0]
         self.acore_grid = np.unique(
             tensor_4d_mesh(np.meshgrid(np.linspace(start=self.s_low, stop=self.s_high, num=self.num_pred_grid),
                                        np.linspace(start=self.r_low, stop=self.r_high, num=self.num_pred_grid),
@@ -135,16 +146,18 @@ class InfernoToyLoader:
                                                    num=self.num_pred_grid),
                                        np.linspace(start=self.b_low, stop=self.b_high, num=self.num_acore_grid))),
             axis=0)[:, self.active_params_cols]
+        self.grid = self.acore_grid
 
         self.regen_flag = False
         self.out_directory = out_dir
 
+        self.empirical_marginal = empirical_marginal
         self.mean_instrumental = np.array([1, 1, 2])
         self.cov_instrumental = np.diag([5, 10, 5])
         self.g_distribution = multivariate_normal(mean=self.mean_instrumental, cov=self.cov_instrumental)
 
-        self.b_sample_vec = [50, 100, 500, 1000, 5000, 10000, 50000, 100000, 200000]
-        self.b_prime_vec = [100, 500, 1000, 5000, 10000, 50000, 100000]
+        self.b_sample_vec = [50, 100, 500, 1000, 5000, 10000, 50000, 100000]
+        self.b_prime_vec = [500, 1000, 5000, 10000, 50000]
         self.d_obs = 3
         self.nuisance_param_val = None
 
@@ -161,6 +174,13 @@ class InfernoToyLoader:
         self.mean_instrumental = np.average(sample_mat_ref, axis=0)
         self.cov_instrumental = np.diag(np.std(sample_mat_ref, axis=0) ** 2)
         self.g_distribution = multivariate_normal(mean=self.mean_instrumental, cov=self.cov_instrumental)
+
+    def sample_empirical_marginal(self, sample_size):
+        theta_vec_marg = self.sample_param_values(sample_size=sample_size)
+        sample_mat = np.apply_along_axis(arr=theta_vec_marg.reshape(-1, self.d), axis=1,
+                                   func1d=lambda row: self.sample_sim(
+                                       sample_size=1, true_param=row)).reshape(-1, self.d_obs)
+        return sample_mat
 
     def sample_param_values(self, sample_size):
         full_mat = np.random.uniform(low=self.s_low, high=self.s_high, size=sample_size).reshape(-1, 1)
@@ -187,7 +207,7 @@ class InfernoToyLoader:
     def sample_sim(self, sample_size, true_param):
         if len(true_param) < 4:
             true_param = self._create_complete_param_vec(true_param)
-        mixing_param = true_param[3] / (true_param[0] + true_param[3])
+        mixing_param = np.clip(true_param[3] / (true_param[0] + true_param[3]), 0, 1)
         cluster = np.random.binomial(n=1, p=mixing_param, size=sample_size)
 
         # Normal samples
@@ -233,10 +253,16 @@ class InfernoToyLoader:
         if marginal:
             raise ValueError('Marginal not implemented for this example')
 
-        sample = np.apply_along_axis(arr=concat_mat, axis=1,
-                                     func1d=lambda row: self.sample_sim(
-                                         sample_size=1, true_param=row[:self.d]) if row[self.d] else
-                                     np.abs(self.g_distribution.rvs(size=1)).reshape(1, self.d_obs))
+        if self.empirical_marginal:
+            sample = np.apply_along_axis(arr=concat_mat, axis=1,
+                                         func1d=lambda row: self.sample_sim(
+                                             sample_size=1, true_param=row[:self.d]) if row[self.d]
+                                         else self.sample_empirical_marginal(sample_size=1))
+        else:
+            sample = np.apply_along_axis(arr=concat_mat, axis=1,
+                                         func1d=lambda row: self.sample_sim(
+                                             sample_size=1, true_param=row[:self.d]) if row[self.d] else
+                                         np.abs(self.g_distribution.rvs(size=1)).reshape(1, self.d_obs))
         return np.hstack((concat_mat, sample.reshape(-1, self.d_obs)))
 
     @staticmethod
@@ -353,7 +379,7 @@ class InfernoToyLoader:
         nuisance_param_grid = np.apply_along_axis(arr=t0_grid.reshape(-1, 1), axis=1,
                                                   func1d=lambda row: minimize(
             fun=partial(self._nuisance_parameter_func, x_obs=x_obs, target_params=row, clf_odds=clf_odds),
-            x0=np.array([0, 5, 1000]).reshape(1, 3)[:, self.nuisance_parameters_cols].reshape(-1,),
+            x0=np.array([np.nan, 0, 5, 1000]).reshape(1, 4)[:, self.nuisance_parameters_cols].reshape(-1,),
             method='trust-constr', options={'verbose': 0}, bounds=self.bounds_opt).x)
 
         most_frequent_nuisance_param = mode_rows(nuisance_param_grid)
@@ -383,19 +409,22 @@ class InfernoToyLoader:
         return theta_mat, sample_mat
 
 # if __name__ == '__main__':
-#
-#     model_obj = InfernoToyLoader(benchmark=3)
-#
-#     sample = model_obj.generate_sample(sample_size=300)
-#     x_obs = model_obj.sample_sim(sample_size=10, true_param=model_obj.true_param)
-#     gen_sample_func = model_obj.generate_sample
-#     clf_odds = train_clf(sample_size=1000, clf_model=XGBRFClassifier(),
-#                          gen_function=gen_sample_func, clf_name='XGB', marginal=False, nn_square_root=True,
-#                          d=model_obj.d)
-#
-#     t0_grid = model_obj.calculate_nuisance_parameters_over_grid(
-#         t0_grid=model_obj.pred_grid, clf_odds=clf_odds, x_obs=x_obs)
-#
-#     theta_mat, sample_mat = model_obj.sample_msnh_algo5(b_prime=100, sample_size=10)
-#     print(theta_mat)
-#     print(sample_mat)
+
+    # from xgboost import XGBRFClassifier
+    # from utils.functions import train_clf
+    #
+    # model_obj = InfernoToyLoader(benchmark=1, empirical_marginal=True)
+    #
+    # sample = model_obj.generate_sample(sample_size=300)
+    # x_obs = model_obj.sample_sim(sample_size=10, true_param=model_obj.true_param)
+    # gen_sample_func = model_obj.generate_sample
+    # clf_odds = train_clf(sample_size=1000, clf_model=XGBRFClassifier(),
+    #                      gen_function=gen_sample_func, clf_name='XGB', nn_square_root=True,
+    #                      d=model_obj.d)
+    #
+    # t0_grid = model_obj.calculate_nuisance_parameters_over_grid(
+    #     t0_grid=model_obj.pred_grid, clf_odds=clf_odds, x_obs=x_obs)
+    #
+    # theta_mat, sample_mat = model_obj.sample_msnh_algo5(b_prime=100, sample_size=10)
+    # print(theta_mat)
+    # print(sample_mat)

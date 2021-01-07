@@ -12,16 +12,18 @@ from or_classifiers.complete_list import classifier_dict as classifier_dict_full
 from or_classifiers.small_list import classifier_dict as classifier_dict_small
 from models.camelus_wl import CamelusSimLoader
 from models.sen_poisson import SenPoissonLoader
+from models.inferno import InfernoToyLoader
 from utils.functions import clf_prob_value, train_clf
 
 
 model_dict = {
     'camelus': CamelusSimLoader,
-    'poisson': SenPoissonLoader
+    'poisson': SenPoissonLoader,
+    'inferno': InfernoToyLoader
 }
 
 
-def main(alpha, run, debug=False, seed=7, size_check=1000, size_reference=10000):
+def main(alpha, run, debug=False, seed=7, size_check=1000, size_reference=10000, benchmark=1, empirical_marginal=False):
 
     # Setup the variables, also to account for debug runs
     np.random.seed(seed)
@@ -29,7 +31,7 @@ def main(alpha, run, debug=False, seed=7, size_check=1000, size_reference=10000)
 
     # Create the loader object, which drives most
     print('----- Loading Simulations In')
-    model_obj = model_dict[run]()
+    model_obj = model_dict[run](benchmark=benchmark, empirical_marginal=empirical_marginal)
 
     # Also, get the mean and std of the reference distribution
     model_obj.set_reference_g(size_reference=size_reference)
@@ -68,7 +70,7 @@ def main(alpha, run, debug=False, seed=7, size_check=1000, size_reference=10000)
 
             clf_model = classifier_dict[clf_name]
             clf = train_clf(sample_size=b_val, clf_model=clf_model, gen_function=gen_sample_func,
-                            d=model_obj.d, clf_name=clf_name, marginal=False, nn_square_root=True)
+                            d=model_obj.d, clf_name=clf_name, nn_square_root=True)
 
             est_prob_vec = clf_prob_value(clf=clf, x_vec=x_vec, theta_vec=theta_vec,
                                           d=model_obj.d, d_obs=model_obj.d_obs)
@@ -105,9 +107,13 @@ if __name__ == '__main__':
                         help='Statistical confidence level')
     parser.add_argument('--run', action="store", type=str, default='camelus',
                         help='Model type to be passed in')
+    parser.add_argument('--benchmark', action="store", type=int, default=1,
+                        help='Benchmark to use for the INFERNO class.')
     parser.add_argument('--debug', action='store_true', default=False,
                         help='If true, a very small value for the sample sizes is fit to make sure the'
                              'file can run quickly for debugging purposes')
+    parser.add_argument('--empirical_marginal', action='store_true', default=False,
+                        help='Whether we are sampling directly from the empirical marginal for G')
     argument_parsed = parser.parse_args()
 
     main(
@@ -116,5 +122,7 @@ if __name__ == '__main__':
         seed=argument_parsed.seed,
         run=argument_parsed.run,
         size_check=argument_parsed.size_check,
-        size_reference=argument_parsed.size_reference
+        size_reference=argument_parsed.size_reference,
+        benchmark=argument_parsed.benchmark,
+        empirical_marginal=argument_parsed.empirical_marginal
     )

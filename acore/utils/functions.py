@@ -195,7 +195,7 @@ def pinball_loss(y_true, y_pred, alpha):
     return np.average(np.max(diff_mat, axis=1))
 
 
-def compute_averageodds_single_t0(clf, obs_sample, t0, d=1, d_obs=1):
+def compute_averageodds_single_t0(clf, obs_sample, t0, d=1, d_obs=1, apply_log=False):
 
     n = obs_sample.shape[0]
 
@@ -216,7 +216,7 @@ def compute_averageodds_single_t0(clf, obs_sample, t0, d=1, d_obs=1):
     assert isinstance(odds_t0, float)
 
     # return the average odds directly
-    return odds_t0
+    return odds_t0 if not apply_log else np.log(odds_t0)
 
 
 def compute_bayesfactor_single_t0(clf, obs_sample, t0, gen_param_fun,
@@ -330,7 +330,7 @@ def compute_statistics_single_t0(clf, obs_sample, t0, grid_param_t1, d=1, d_obs=
     return np.sum(odds_t0) - np.max(grouped_sum_t1)
 
 
-def _clf_odds_function(theta_param, clf, obs_sample, d=1, d_obs=1, mult_min=1):
+def _clf_odds_function(theta_param, clf, obs_sample, d=1, d_obs=1, mult_min=-1):
     predict_mat_t0 = np.hstack((np.tile(theta_param, obs_sample.shape[0]).reshape(-1, d),
                                 obs_sample.reshape(-1, d_obs)))
     prob_mat_t0 = clf.predict_proba(predict_mat_t0)
