@@ -11,7 +11,7 @@ from scipy.special import erf
 class ToyMVNSimpleHypLoader:
 
     def __init__(self, alt_mu_norm=1, d_obs=2, mean_instrumental=0.0, std_instrumental=4.0, low_int=-5.0, high_int=5.0,
-                 true_param=0.0, true_std=1.0, mean_prior=5.0, std_prior=2.0, uniform_grid_sample_size=2500,
+                 true_param=0.0, true_std=1.0, mean_prior=0.0, std_prior=2.0, uniform_grid_sample_size=2500,
                  out_dir='toy_mvn/', prior_type='uniform',
                  marginal=False, size_marginal=5000, empirical_marginal=True, **kwargs):
         
@@ -20,9 +20,12 @@ class ToyMVNSimpleHypLoader:
         self.d_obs = d_obs
         self.low_int = low_int
         self.high_int = high_int
+        
         self.true_param = true_param
         self.true_std = true_std
-        self.alt_param = alt_mu_norm/sqrt(self.d_obs)
+        
+        #self.alt_param = alt_mu_norm/sqrt(self.d_obs)
+        self.alt_param = alt_mu_norm
         
         self.mean_instrumental = np.repeat(mean_instrumental, self.d_obs) if isinstance(mean_instrumental, float) \
             else mean_instrumental
@@ -52,9 +55,13 @@ class ToyMVNSimpleHypLoader:
         self.empirical_marginal = empirical_marginal
 
     def sample_sim(self, sample_size, true_param):
-        return np.random.normal(
-            loc=true_param, scale=self.true_std, size=sample_size * self.d_obs).reshape(
-            sample_size, self.d_obs)
+        #return np.random.normal(
+        #    loc=true_param, scale=self.true_std, size=sample_size * self.d_obs).reshape(
+        #    sample_size, self.d_obs)
+        use_mean = np.zeros(self.d_obs)
+        use_mean[0] = true_param
+        use_cov = self.true_std * np.diag(np.ones(self.d_obs))
+        return multivariate_normal(mean=use_mean, cov=use_cov).rvs(sample_size).reshape(sample_size, self.d_obs)
 
     def sample_param_values(self, sample_size):
         unique_theta = self.prior_distribution.rvs(size=sample_size * self.d)
@@ -65,7 +72,6 @@ class ToyMVNSimpleHypLoader:
         marginal_sample = np.apply_along_axis(arr=theta_vec_marg.reshape(-1, self.d), axis=1,
                                               func1d=lambda row: self.sample_sim(
                                                   sample_size=1, true_param=row)).reshape(-1, self.d_obs)
-
         self.mean_instrumental = np.average(marginal_sample, axis=0)
         self.cov_instrumental = np.diag(np.var(marginal_sample, axis=0))
         self.g_distribution = multivariate_normal(mean=self.mean_instrumental, cov=self.cov_instrumental)

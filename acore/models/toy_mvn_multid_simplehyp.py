@@ -13,7 +13,7 @@ from scipy.special import erf
 class ToyMVNMultiDSimpleHypLoader:
 
     def __init__(self, alt_mu_norm=1, d_obs=2, mean_instrumental=0.0, std_instrumental=4.0, low_int=-5.0, high_int=5.0,
-                 true_param=0.0, true_std=1.0, mean_prior=5.0, std_prior=2.0, uniform_grid_sample_size=2500,
+                 true_param=0.0, true_std=1.0, mean_prior=0.0, std_prior=2.0, uniform_grid_sample_size=125000,
                  out_dir='toy_mvn/', prior_type='uniform',
                  marginal=False, size_marginal=5000, empirical_marginal=True, **kwargs):
 
@@ -55,8 +55,8 @@ class ToyMVNMultiDSimpleHypLoader:
         self.empirical_marginal = empirical_marginal
             
         # If it's too high-dimensional, rather than gridding the parameter space we randomly sample (just for ACORE grid)
-        if self.d < 3:
-            self.num_pred_grid = 21
+        if self.d <= 3:
+            self.num_pred_grid = 50
             t0_grid = np.round(np.linspace(start=self.low_int, stop=self.high_int, num=self.num_pred_grid), 2)
             pred_iter_list = [t0_grid] * d_obs
             list_full_product = list(product(*pred_iter_list))
@@ -193,7 +193,7 @@ class ToyMVNMultiDSimpleHypLoader:
     
     def compute_exact_bayes_factor_single_t0(self, obs_sample, t0):
         results = np.array([self.compute_exact_bayes_factor_with_marginal(theta_vec=t0, x_vec=x)
-                            for x in obs_sample])        
-        exact_bayes_t0 = np.prod(results).astype(np.float64)
+                            for x in obs_sample])
+        exact_bayes_t0 = np.sum(np.log(results)).astype(np.float64)
         assert isinstance(exact_bayes_t0, float)
         return exact_bayes_t0
