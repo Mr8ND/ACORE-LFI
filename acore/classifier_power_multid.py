@@ -17,7 +17,7 @@ from models.toy_mvn_multid import ToyMVNMultiDLoader
 from models.toy_mvn_multid_simplehyp import ToyMVNMultiDSimpleHypLoader
 from models.inferno import InfernoToyLoader
 from utils.qr_functions import train_qr_algo
-from or_classifiers.toy_example_list import classifier_dict_multid, classifier_inferno_dict
+from or_classifiers.toy_example_list import classifier_dict_multid, classifier_inferno_dict, classifier_dict_multid_power
 from qr_algorithms.complete_list import classifier_cde_dict
 
 model_dict = {
@@ -32,7 +32,7 @@ model_dict = {
 
 def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier_cde, test_statistic, alternative_norm,
          monte_carlo_samples=500, debug=False, seed=7, size_check=1000, verbose=False, marginal=False,
-         size_marginal=1000, empirical_marginal=True, benchmark=1, nuisance_parameters=False,
+         size_marginal=1000, empirical_marginal=True, benchmark=1, nuisance_parameters=False, nuisance_confint=False,
          guided_sim=False, guided_sample=1000):
 
     # Changing values if debugging
@@ -40,7 +40,8 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
     b_prime = b_prime if not debug else 100
     size_check = size_check if not debug else 100
     rep = rep if not debug else 2
-    classifier_dict = classifier_dict_multid if 'inferno' not in run else classifier_inferno_dict
+    #classifier_dict = classifier_dict_multid if 'inferno' not in run else classifier_inferno_dict
+    classifier_dict = classifier_dict_multid_power if 'inferno' not in run else classifier_inferno_dict
 
     # We pass as inputs all arguments necessary for all classes, but some of them will not be picked up if they are
     # not necessary for a specific class
@@ -262,6 +263,23 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
                     size_temp, entropy_est, or_loss_value, monte_carlo_samples, benchmark, int(nuisance_parameters),
                     alternative_norm, int(guided_sim), guided_sample
                 ])
+                
+                #### RECORD for each tau_obs_val point: its location (d1, d2), tau value, cutoff value, decision (1 or 0)
+                if nuisance_confint:
+                    plot_df = pd.DataFrame.from_dict({
+                        'theta1': t0_grid[:,0],
+                        'theta2': t0_grid[:,1],
+                        'tau_statistic': tau_obs_val,
+                        'cutoff': cutoff_val,
+                        'decision': (tau_obs_val >= cutoff_val).astype(float)
+                        })
+                    pkl_dir = 'sims/classifier_power_multid/plot_df/'
+                    pkl_filename = 'nuisance_%s_d%s_%s_%sB_%sBprime_%s.pkl' % (
+                        run, d_obs, test_statistic, b, b_prime,
+                        datetime.strftime(datetime.today(), '%Y-%m-%d-%H-%M')
+                    )
+                    plot_df.to_pickle(pkl_dir + pkl_filename)
+                
         pbar.update(1)
 
     # Saving the results
@@ -321,6 +339,8 @@ if __name__ == '__main__':
                         help='Benchmark to use for the INFERNO class.')
     parser.add_argument('--nuisance', action='store_true', default=False,
                         help='If true, uses nuisance parameters if available.')
+    parser.add_argument('--nuisance_confint', action='store_true', default=False,
+                        help='If true, stores plot_df to visualize confidence interval.')
     parser.add_argument('--guided_sim', action='store_true', default=False,
                         help='If true, we guided the sampling for the B prime in order to get meaningful results.')
     parser.add_argument('--guided_sample', action="store", type=int, default=2500,
@@ -349,6 +369,7 @@ if __name__ == '__main__':
         alternative_norm=argument_parsed.alt_norm,
         benchmark=argument_parsed.benchmark,
         nuisance_parameters=argument_parsed.nuisance,
+        nuisance_confint=argument_parsed.nuisance_confint,
         guided_sim=argument_parsed.guided_sim,
         guided_sample=argument_parsed.guided_sample
     )

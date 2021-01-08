@@ -6,14 +6,18 @@ sys.path.append('..')
 from scipy.stats import multivariate_normal, uniform, norm
 from scipy.optimize import Bounds
 from itertools import product
+from functools import partial
+from utils.functions import mode_rows
+from scipy.optimize import Bounds, minimize
 
 
 class ToyMVNMultiDLoader:
 
-    def __init__(self, d_obs=2, mean_instrumental=0.0, std_instrumental=4.0, low_int=0.0, high_int=10.0,
-                 true_param=5.0, true_std=1.0, mean_prior=5.0, std_prior=2.0, uniform_grid_sample_size=2500,
+    def __init__(self, d_obs=2, mean_instrumental=0.0, std_instrumental=4.0, low_int=-5.0, high_int=5.0,
+                 true_param=1.0, true_std=1.0, mean_prior=5.0, std_prior=2.0, uniform_grid_sample_size=125000,
                  out_dir='toy_mvn/', prior_type='uniform',
-                 marginal=False, size_marginal=5000, empirical_marginal=True, **kwargs):
+                 marginal=False, size_marginal=5000, empirical_marginal=True,
+                 nuisance_parameters=False, **kwargs):
 
         self.low_int = low_int
         self.high_int = high_int
@@ -42,33 +46,51 @@ class ToyMVNMultiDLoader:
             raise ValueError('The true_param variable passed is not of the right dimension. '
                              'Currently %s, while it has to be %s.' % (self.true_param.shape[0], self.d))
         self.true_cov = true_std * np.eye(d_obs) if isinstance(true_std, float) else true_std
+        
+        # these are bounds for profiling the likelihood (for d-2 nuisance params)
+        low_bounds = np.repeat(self.low_int, self.d-2)
+        high_bounds = np.repeat(self.high_int, self.d-2)
+        self.bounds_opt = Bounds(low_bounds, high_bounds)
 
+        # first 2 params are of interest
+        self.target_params_cols = [0,1] # target parameter is always the signal
+        
         if marginal:
             self.compute_marginal_reference(size_marginal)
         
         self.empirical_marginal = empirical_marginal
-
-        # If it's too high-dimensional, rather than gridding the parameter space we randomly sample
-        if self.d < 3:
-            self.num_pred_grid = 21
+        
+        # If nuisance parameters are treated as such, then determine which columns are nuisance parameters and
+        # which are not
+        self.nuisance_flag = self.d > 1 and nuisance_parameters
+        self.nuisance_params_cols = np.arange(2, self.d) if self.nuisance_flag else None
+        
+        if self.nuisance_flag:
+            self.num_pred_grid = 51
             t0_grid = np.round(np.linspace(start=self.low_int, stop=self.high_int, num=self.num_pred_grid), 2)
-            pred_iter_list = [t0_grid] * d_obs
+            pred_iter_list = [t0_grid] * 2  # 2 true params, d-2 nuisance params
             list_full_product = list(product(*pred_iter_list))
             self.pred_grid = np.array(list_full_product)
-            self.idx_row_true_param = list_full_product.index(tuple(self.true_param.tolist()))
+            self.idx_row_true_param = list_full_product.index(tuple(self.true_param[self.target_params_cols].tolist()))
         else:
-            if not uniform_grid_sample_size % self.d == 0:
-                self.num_pred_grid = ceil(uniform_grid_sample_size/self.d) * self.d
+            # If it's too high-dimensional, rather than gridding the parameter space we randomly sample
+            if self.d < 3:
+                self.num_pred_grid = 51
+                t0_grid = np.round(np.linspace(start=self.low_int, stop=self.high_int, num=self.num_pred_grid), 2)
+                pred_iter_list = [t0_grid] * d_obs
+                list_full_product = list(product(*pred_iter_list))
+                self.pred_grid = np.array(list_full_product)
+                self.idx_row_true_param = list_full_product.index(tuple(self.true_param.tolist()))
             else:
-                self.num_pred_grid = uniform_grid_sample_size
-
-            pred_grid = np.random.uniform(
-                low=self.low_int, high=self.high_int, size=self.num_pred_grid).reshape(-1, self.d)
-            self.pred_grid = np.vstack((self.true_param.reshape(1, self.d), pred_grid))
-            self.idx_row_true_param = 0
+                if not uniform_grid_sample_size % self.d == 0:
+                    self.num_pred_grid = ceil(uniform_grid_sample_size/self.d) * self.d
+                else:
+                    self.num_pred_grid = uniform_grid_sample_size
+                pred_grid = np.random.uniform(
+                    low=self.low_int, high=self.high_int, size=self.num_pred_grid).reshape(-1, self.d)
+                self.pred_grid = np.vstack((self.true_param.reshape(1, self.d), pred_grid))
+                self.idx_row_true_param = 0
         self.acore_grid = self.pred_grid
-
-        self.nuisance_flag = False
 
     def sample_sim(self, sample_size, true_param):
         return multivariate_normal(mean=true_param, cov=self.true_cov).rvs(sample_size).reshape(sample_size, self.d_obs)
@@ -109,15 +131,6 @@ class ToyMVNMultiDLoader:
                                              sample_size=1, true_param=row[:self.d]) if row[self.d]
                                          else self.g_distribution.rvs(size=1))
         return np.hstack((concat_mat, sample.reshape(sample_size, self.d_obs)))
-
-    def sample_msnh_algo5(self, b_prime, sample_size):
-        theta_mat = self.sample_param_values(sample_size=b_prime).reshape(-1, self.d)
-        assert theta_mat.shape == (b_prime, self.d)
-        
-        sample_mat = np.apply_along_axis(arr=theta_mat, axis=1,
-                                         func1d=lambda row: self.sample_sim(
-                                             sample_size=sample_size, true_param=row[:self.d]))
-        return theta_mat, sample_mat.reshape(b_prime, sample_size, self.d_obs)
 
     def _compute_multivariate_normal_pdf(self, x, mu):
         return multivariate_normal.pdf(x=x, mean=mu, cov=self.true_cov)
@@ -160,6 +173,47 @@ class ToyMVNMultiDLoader:
         ll_gmm_t0 = np.sum(np.log(self._compute_multivariate_normal_pdf(x=x_obs, mu=t0)))
         ll_gmm_t1 = np.sum(np.log(self._compute_multivariate_normal_pdf(x=x_obs, mu=mle)))
         return ll_gmm_t0 - ll_gmm_t1
+        
+    def _nuisance_parameter_func(self, nu_params, x_obs, target_params, clf_odds):
+        param_mat = np.hstack((
+            np.tile(np.concatenate((target_params.reshape(-1,), nu_params.reshape(-1,))),
+                    x_obs.shape[0]).reshape(-1, self.d),
+            x_obs.reshape(-1, self.d_obs)
+        ))
+        pred_mat = clf_odds.predict_proba(param_mat)
+        return -1 * (np.prod(pred_mat[:, 1] / pred_mat[:, 0]))
 
-    def calculate_nuisance_parameters_over_grid(self, *args, **kwargs):
-        raise NotImplementedError('No nuisance parameter for this class.')
+    def calculate_nuisance_parameters_over_grid(self, t0_grid, clf_odds, x_obs):
+        # in this toy example, there is always 2 params of interest
+        nuisance_param_grid = np.apply_along_axis(arr=t0_grid.reshape(-1, 2), axis=1,
+                                                  func1d=lambda row: minimize(
+            fun=partial(self._nuisance_parameter_func, x_obs=x_obs, target_params=row, clf_odds=clf_odds),
+            x0=np.repeat(0, self.d).reshape(1, self.d)[:, self.nuisance_params_cols].reshape(-1,),
+            method='trust-constr', options={'verbose': 0}, bounds=self.bounds_opt).x)
+
+        most_frequent_nuisance_param = mode_rows(nuisance_param_grid)
+        self.nuisance_param_val = np.array(most_frequent_nuisance_param)
+        t0_grid_nuisance = np.hstack((
+            t0_grid.reshape(-1, 2),
+            np.tile(self.nuisance_param_val, t0_grid.shape[0]).reshape(
+                t0_grid.shape[0], self.nuisance_param_val.shape[0])
+        ))
+        return t0_grid_nuisance
+
+    def _complete_theta_param_nuisance(self, t0_val):
+        return np.concatenate((np.array(t0_val).reshape(-1,), self.nuisance_param_val.reshape(-1,)))
+    
+    def sample_msnh_algo5(self, b_prime, sample_size):
+        theta_mat = self.sample_param_values(sample_size=b_prime).reshape(-1, self.d)
+        assert theta_mat.shape == (b_prime, self.d)
+        
+        # If we have nuisance parameters, we replace the values of those parameters with the parameter sampled
+        # with the nuisance parameters
+        if self.nuisance_flag:
+            theta_mat = np.apply_along_axis(arr=theta_mat, axis=1,
+                                            func1d=lambda row: self._complete_theta_param_nuisance(t0_val=row[self.target_params_cols]))
+        
+        sample_mat = np.apply_along_axis(arr=theta_mat, axis=1,
+                                         func1d=lambda row: self.sample_sim(sample_size=sample_size, true_param=row[:self.d]))
+        return theta_mat, sample_mat.reshape(b_prime, sample_size, self.d_obs)
+    
