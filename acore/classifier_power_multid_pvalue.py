@@ -8,15 +8,16 @@ import pandas as pd
 from tqdm.auto import tqdm
 from datetime import datetime
 from sklearn.metrics import log_loss
+from functools import partial
 
 from utils.functions import train_clf, compute_statistics_single_t0, clf_prob_value, compute_bayesfactor_single_t0, \
-    compute_averageodds_single_t0, odds_ratio_loss, train_pvalue_clf
+    compute_averageodds_single_t0, odds_ratio_loss, train_pvalue_clf, sample_from_matrix
 # from models.toy_gmm_multid import ToyGMMMultiDLoader
 from models.toy_mvn import ToyMVNLoader
 from models.toy_mvn_simplehyp import ToyMVNSimpleHypLoader
 from models.toy_mvn_multid import ToyMVNMultiDLoader
 from models.toy_mvn_multid_simplehyp import ToyMVNMultiDSimpleHypLoader
-from or_classifiers.toy_example_list import classifier_dict_multid, classifier_inferno_dict
+from or_classifiers.toy_example_list import classifier_dict_multid_power, classifier_inferno_dict
 from or_classifiers.toy_example_list import classifier_pvalue_dict
 from models.inferno import InfernoToyLoader
 
@@ -39,7 +40,8 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_stati
     b_prime = b_prime if not debug else 100
     size_check = size_check if not debug else 100
     rep = rep if not debug else 2
-    classifier_dict = classifier_dict_multid if 'inferno' not in run else classifier_inferno_dict
+    # classifier_dict = classifier_dict_multid if 'inferno' not in run else classifier_inferno_dict
+    classifier_dict = classifier_dict_multid_power if 'inferno' not in run else classifier_inferno_dict
     model_obj = model_dict[run](
         d_obs=d_obs, marginal=marginal, size_marginal=size_marginal, empirical_marginal=empirical_marginal,
         true_param=t0_val, alt_mu_norm=alternative_norm, nuisance_parameters=nuisance_parameters,
@@ -93,8 +95,12 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_stati
                 print('----- %s Trained' % clf_name)
 
             if model_obj.nuisance_flag:
-                t0_grid = model_obj.calculate_nuisance_parameters_over_grid(
+                t0_grid, acore_grid = model_obj.calculate_nuisance_parameters_over_grid(
                     t0_grid=model_obj.pred_grid, clf_odds=clf_odds, x_obs=x_obs)
+                gen_param_fun = partial(sample_from_matrix, t0_grid=t0_grid)
+                grid_param = acore_grid
+
+            print(t0_grid.shape, grid_param.shape)
 
             if test_statistic == 'acore':
                 tau_obs = np.array([
