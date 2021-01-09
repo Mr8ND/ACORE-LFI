@@ -4,7 +4,6 @@ import sys
 sys.path.append('..')
 
 from scipy.stats import multivariate_normal, uniform, norm
-from scipy.optimize import Bounds
 from itertools import product
 from functools import partial
 from utils.functions import mode_rows
@@ -53,11 +52,11 @@ class ToyMVNMultiDLoader:
         self.bounds_opt = Bounds(low_bounds, high_bounds)
 
         # first 2 params are of interest
-        self.target_params_cols = [0,1] # target parameter is always the signal
-        
+        self.target_params_cols = [0, 1]  # target parameter is always the signal
+
+        # Saves a Gaussian marginal and whether one needs to use the empirical distribution
         if marginal:
             self.compute_marginal_reference(size_marginal)
-        
         self.empirical_marginal = empirical_marginal
         
         # If nuisance parameters are treated as such, then determine which columns are nuisance parameters and
@@ -211,9 +210,10 @@ class ToyMVNMultiDLoader:
         # with the nuisance parameters
         if self.nuisance_flag:
             theta_mat = np.apply_along_axis(arr=theta_mat, axis=1,
-                                            func1d=lambda row: self._complete_theta_param_nuisance(t0_val=row[self.target_params_cols]))
+                                            func1d=lambda row: self._complete_theta_param_nuisance(
+                                             t0_val=row[self.target_params_cols]))
         
         sample_mat = np.apply_along_axis(arr=theta_mat, axis=1,
-                                         func1d=lambda row: self.sample_sim(sample_size=sample_size, true_param=row[:self.d]))
+                                         func1d=lambda row: self.sample_sim(sample_size=sample_size,
+                                                                            true_param=row[:self.d]))
         return theta_mat, sample_mat.reshape(b_prime, sample_size, self.d_obs)
-    
