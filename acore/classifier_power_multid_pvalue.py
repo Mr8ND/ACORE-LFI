@@ -100,8 +100,6 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_stati
                 gen_param_fun = partial(sample_from_matrix, t0_grid=t0_grid)
                 grid_param = acore_grid
 
-            print(t0_grid.shape, grid_param.shape)
-
             if test_statistic == 'acore':
                 tau_obs = np.array([
                     compute_statistics_single_t0(
