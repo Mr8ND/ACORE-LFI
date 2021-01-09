@@ -2,7 +2,7 @@ import numpy as np
 import sys
 import warnings
 warnings.filterwarnings('ignore')
-import pdb
+
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.model_selection import GridSearchCV
 from functools import partial
@@ -437,3 +437,8 @@ def mode_rows(a):
     largest_count_id = ids[count.argmax()]
     most_frequent_row = a[largest_count_id]
     return most_frequent_row
+
+
+def sample_from_matrix(t0_grid, sample_size):
+    # Random sampling a sample_size number of rows from a t0_grid matrix with replacement
+    return t0_grid[np.random.choice(a=t0_grid.shape[0], size=sample_size, replace=True)]

@@ -7,9 +7,10 @@ import pandas as pd
 from tqdm.auto import tqdm
 from datetime import datetime
 from sklearn.metrics import log_loss
+from functools import partial
 
 from utils.functions import train_clf, compute_statistics_single_t0, clf_prob_value, compute_bayesfactor_single_t0, \
-    compute_averageodds_single_t0, odds_ratio_loss
+    compute_averageodds_single_t0, odds_ratio_loss, sample_from_matrix
 from models.toy_gmm_multid import ToyGMMMultiDLoader
 from models.toy_mvn import ToyMVNLoader
 from models.toy_mvn_simplehyp import ToyMVNSimpleHypLoader
@@ -98,8 +99,10 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
                 print('----- %s Trained' % clf_name)
 
             if model_obj.nuisance_flag:
-                t0_grid = model_obj.calculate_nuisance_parameters_over_grid(
+                t0_grid, acore_grid = model_obj.calculate_nuisance_parameters_over_grid(
                     t0_grid=model_obj.pred_grid, clf_odds=clf_odds, x_obs=x_obs)
+                gen_param_fun = partial(sample_from_matrix, t0_grid=t0_grid)
+                grid_param = acore_grid
 
             if test_statistic == 'acore':
                 tau_obs = np.array([

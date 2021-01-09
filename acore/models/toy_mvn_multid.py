@@ -6,7 +6,7 @@ sys.path.append('..')
 from scipy.stats import multivariate_normal, uniform, norm
 from itertools import product
 from functools import partial
-from utils.functions import mode_rows
+from utils.functions import sample_from_matrix
 from scipy.optimize import Bounds, minimize
 
 
@@ -63,6 +63,8 @@ class ToyMVNMultiDLoader:
         # which are not
         self.nuisance_flag = self.d > 1 and nuisance_parameters
         self.nuisance_params_cols = np.arange(2, self.d) if self.nuisance_flag else None
+        self.t0_grid_nuisance = None
+        self.nuisance_global_param_val = None
         
         if self.nuisance_flag:
             self.num_pred_grid = 51
@@ -71,6 +73,7 @@ class ToyMVNMultiDLoader:
             list_full_product = list(product(*pred_iter_list))
             self.pred_grid = np.array(list_full_product)
             self.idx_row_true_param = list_full_product.index(tuple(self.true_param[self.target_params_cols].tolist()))
+            self.acore_grid = None
         else:
             # If it's too high-dimensional, rather than gridding the parameter space we randomly sample
             if self.d < 3:
@@ -89,7 +92,7 @@ class ToyMVNMultiDLoader:
                     low=self.low_int, high=self.high_int, size=self.num_pred_grid).reshape(-1, self.d)
                 self.pred_grid = np.vstack((self.true_param.reshape(1, self.d), pred_grid))
                 self.idx_row_true_param = 0
-        self.acore_grid = self.pred_grid
+            self.acore_grid = self.pred_grid
 
     def sample_sim(self, sample_size, true_param):
         return multivariate_normal(mean=true_param, cov=self.true_cov).rvs(sample_size).reshape(sample_size, self.d_obs)
@@ -180,39 +183,53 @@ class ToyMVNMultiDLoader:
             x_obs.reshape(-1, self.d_obs)
         ))
         pred_mat = clf_odds.predict_proba(param_mat)
-        return -1 * (np.prod(pred_mat[:, 1] / pred_mat[:, 0]))
+        return -1 * (np.exp(np.sum(np.log(pred_mat[:, 1] / pred_mat[:, 0]))))
+
+    def nuisance_parameter_minimization(self, x_obs, target_params, clf_odds):
+        res_min = minimize(
+            fun=partial(self._nuisance_parameter_func, x_obs=x_obs,
+                        target_params=target_params, clf_odds=clf_odds),
+            x0=np.zeros((1, self.d))[:, self.nuisance_params_cols].reshape(-1, ),
+            method='trust-constr', options={'verbose': 0}, bounds=self.bounds_opt)
+
+        return np.concatenate((np.array(res_min.x), np.array([-1 * res_min.fun])))
 
     def calculate_nuisance_parameters_over_grid(self, t0_grid, clf_odds, x_obs):
         # in this toy example, there is always 2 params of interest
-        nuisance_param_grid = np.apply_along_axis(arr=t0_grid.reshape(-1, 2), axis=1,
-                                                  func1d=lambda row: minimize(
-            fun=partial(self._nuisance_parameter_func, x_obs=x_obs, target_params=row, clf_odds=clf_odds),
-            x0=np.repeat(0, self.d).reshape(1, self.d)[:, self.nuisance_params_cols].reshape(-1,),
-            method='trust-constr', options={'verbose': 0}, bounds=self.bounds_opt).x)
+        nuisance_param_grid = np.apply_along_axis(
+            arr=t0_grid.reshape(-1, 2), axis=1,
+            func1d=lambda row: self.nuisance_parameter_minimization(
+                x_obs=x_obs, target_params=row, clf_odds=clf_odds))
 
-        most_frequent_nuisance_param = mode_rows(nuisance_param_grid)
-        self.nuisance_param_val = np.array(most_frequent_nuisance_param)
-        t0_grid_nuisance = np.hstack((
-            t0_grid.reshape(-1, 2),
-            np.tile(self.nuisance_param_val, t0_grid.shape[0]).reshape(
-                t0_grid.shape[0], self.nuisance_param_val.shape[0])
+        # Now we create the full parameter matrix + likelihood values in the last column
+        t0_grid_lik_values = np.hstack((
+            t0_grid.reshape(-1, 2), nuisance_param_grid.reshape(-1, (self.d - 2) + 1)
         ))
-        return t0_grid_nuisance
+        idx_global_max = np.argmax(t0_grid_lik_values[:, -1].reshape(-1, ))
+        self.nuisance_global_param_val = nuisance_param_grid[idx_global_max, :-1]
+
+        # Return the grids necessary to various sampling and ACORE grid
+        t0_grid_out = t0_grid_lik_values[:, :-1]
+        self.t0_grid_nuisance = t0_grid_out
+        acore_grid_out = np.hstack((
+            t0_grid.reshape(-1, 2),
+            np.tile(self.nuisance_global_param_val, t0_grid.shape[0]).reshape(
+                t0_grid.shape[0], self.nuisance_global_param_val.shape[0])
+        ))
+        return t0_grid_out, acore_grid_out
 
     def _complete_theta_param_nuisance(self, t0_val):
-        return np.concatenate((np.array(t0_val).reshape(-1,), self.nuisance_param_val.reshape(-1,)))
+        return np.concatenate((np.array(t0_val).reshape(-1,), self.nuisance_global_param_val.reshape(-1,)))
     
     def sample_msnh_algo5(self, b_prime, sample_size):
-        theta_mat = self.sample_param_values(sample_size=b_prime).reshape(-1, self.d)
-        assert theta_mat.shape == (b_prime, self.d)
-        
         # If we have nuisance parameters, we replace the values of those parameters with the parameter sampled
         # with the nuisance parameters
         if self.nuisance_flag:
-            theta_mat = np.apply_along_axis(arr=theta_mat, axis=1,
-                                            func1d=lambda row: self._complete_theta_param_nuisance(
-                                             t0_val=row[self.target_params_cols]))
-        
+            theta_mat = sample_from_matrix(t0_grid=self.t0_grid_nuisance, sample_size=b_prime).reshape(-1, self.d)
+        else:
+            theta_mat = self.sample_param_values(sample_size=b_prime).reshape(-1, self.d)
+        assert theta_mat.shape == (b_prime, self.d)
+
         sample_mat = np.apply_along_axis(arr=theta_mat, axis=1,
                                          func1d=lambda row: self.sample_sim(sample_size=sample_size,
                                                                             true_param=row[:self.d]))
