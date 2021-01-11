@@ -234,3 +234,13 @@ class ToyMVNMultiDLoader:
                                          func1d=lambda row: self.sample_sim(sample_size=sample_size,
                                                                             true_param=row[:self.d]))
         return theta_mat, sample_mat.reshape(b_prime, sample_size, self.d_obs)
+    
+    def compute_exactodds_nuisance_single_t0(self, obs_sample, t0):
+        # always 2 target params, d-2 nuisance params in this example        
+        target_sample = obs_sample[:, :2]
+        target_mle = target_sample.mean(axis=0)
+        t1 = np.append(target_mle, t0[2:])
+        odds_t0 = self.compute_exact_or(t0=t0, t1=t1, x_obs=obs_sample)
+        assert isinstance(odds_t0, float)
+        return odds_t0
+    

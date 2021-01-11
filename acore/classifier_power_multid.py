@@ -62,6 +62,8 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
     tp_func = model_obj.compute_exact_prob
     t0_param_val = model_obj.true_param
     true_param_row_idx = model_obj.idx_row_true_param
+    if run == 'mvn_multid' and nuisance_parameters:
+        compute_exactodds_nuisance_single_t0 = model_obj.compute_exactodds_nuisance_single_t0
 
     # Creating sample to check entropy about
     np.random.seed(seed)
@@ -124,9 +126,13 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
                     compute_averageodds_single_t0(
                         clf=clf_odds, obs_sample=x_obs, t0=theta_0, d=model_obj.d,
                         d_obs=model_obj.d_obs) for theta_0 in t0_grid])
+            elif test_statistic == 'exactodds_nuisance':
+                tau_obs = np.array([
+                    compute_exactodds_nuisance_single_t0(
+                        obs_sample=x_obs, t0=theta_0) for theta_0 in t0_grid])
             else:
                 raise ValueError('The variable test_statistic needs to be either acore, avgacore, logavgacore, '
-                                 'or averageodds. Currently %s' % test_statistic)
+                                 'or exactodds_nuisance. Currently %s' % test_statistic)
 
             # Calculating cross-entropy
             est_prob_vec = clf_prob_value(clf=clf_odds, x_vec=x_vec, theta_vec=theta_vec, d=model_obj.d,
@@ -187,9 +193,15 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
                                                            d=model_obj.d,
                                                            d_obs=model_obj.d_obs
                                                        ))
+                elif test_statistic == 'exactodds_nuisance':
+                    stats_sample = np.apply_along_axis(arr=theta_mat_sample.reshape(-1, model_obj.d), axis=1,
+                                                       func1d=lambda row: compute_exactodds_nuisance_single_t0(
+                                                           obs_sample=x_obs,
+                                                           t0=row
+                                                       ))
                 else:
                     raise ValueError('The variable test_statistic needs to be either acore, avgacore,'
-                                     ' logavgacore or averageodds. Currently %s' % test_statistic)
+                                     ' logavgacore, or exactodds_nuisance. Currently %s' % test_statistic)
 
                 # If there are log-odds, then some of the values might be negative, so we need to exponentiate them
                 # so to make sure that the large negative numbers are counted correctly (i.e. as very low probability,
@@ -238,9 +250,13 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
                 stats_mat = np.array([compute_averageodds_single_t0(clf=clf_odds, d=model_obj.d, d_obs=model_obj.d_obs,
                                       t0=theta_0, obs_sample=sample_mat[kk, :, :], ) for kk, theta_0 in enumerate(theta_mat)
                                     ])
+            elif test_statistic == 'exactodds_nuisance':
+                stats_mat = np.array([compute_exactodds_nuisance_single_t0(t0=theta_0,
+                                      obs_sample=sample_mat[kk, :, :], ) for kk, theta_0 in enumerate(theta_mat)
+                                    ])
             else:
                 raise ValueError('The variable test_statistic needs to be either acore, avgacore, logavgacore '
-                                 'or averageodds. Currently %s' % test_statistic)
+                                 'or exactodds_nuisance. Currently %s' % test_statistic)
 
             clf_cde_fitted[clf_name] = {}
             clf_name_qr = classifier_cde
