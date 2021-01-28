@@ -13,7 +13,7 @@ from or_classifiers.small_list import classifier_dict as classifier_dict_small
 from models.camelus_wl import CamelusSimLoader
 from models.sen_poisson import SenPoissonLoader
 from models.inferno import InfernoToyLoader
-from utils.functions import clf_prob_value, train_clf
+from utils.functions import clf_prob_value, train_clf, odds_ratio_loss
 
 
 model_dict = {
@@ -45,7 +45,8 @@ def main(alpha, run, debug=False, seed=7, size_check=1000, size_reference=10000,
     # Loop to check different values of B
     b_vec = model_obj.b_sample_vec if not debug else [100, 1000]
     out_val = []
-    out_cols = ['b', 'classifier', 'entropy_loss', 'alpha', 'run', 'size_check', 'size_marginal']
+    out_cols = ['b', 'classifier', 'entropy_loss', 'or_loss_value', 'alpha', 'run', 'size_check', 'size_marginal',
+                'benchmark']
     for b_val in np.array(b_vec).astype(np.int):
 
         if b_val > 100000 and model_obj.regen_flag:
@@ -75,9 +76,13 @@ def main(alpha, run, debug=False, seed=7, size_check=1000, size_reference=10000,
             est_prob_vec = clf_prob_value(clf=clf, x_vec=x_vec, theta_vec=theta_vec,
                                           d=model_obj.d, d_obs=model_obj.d_obs)
             loss_value = log_loss(y_true=bern_vec, y_pred=est_prob_vec)
+
+            # Calculating or loss
+            or_loss_value = odds_ratio_loss(clf=clf, x_vec=x_vec, theta_vec=theta_vec,
+                                            bern_vec=bern_vec, d=model_obj.d, d_obs=model_obj.d_obs)
             out_val.append([
                 b_val, clf_name.replace('\n', '').replace(' ', '-'),
-                loss_value, alpha, run, size_check, size_reference
+                loss_value, or_loss_value, alpha, run, size_check, size_reference, benchmark
             ])
 
             if debug:
