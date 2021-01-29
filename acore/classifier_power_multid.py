@@ -66,7 +66,7 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
         compute_exactodds_nuisance_single_t0 = model_obj.compute_exactodds_nuisance_single_t0
 
     # Specific case for INFERNO with exact LR and nuisance parameters
-    if run == 'inferno' and test_statistic == 'exactlr_nuisance' and nuisance_parameters:
+    if run == 'inferno' and test_statistic == 'exactlr_nuisance':
         compute_exactlr_nuisance_single_t0 = model_obj.compute_exactlr_nuisance_single_t0
 
     # Creating sample to check entropy about
