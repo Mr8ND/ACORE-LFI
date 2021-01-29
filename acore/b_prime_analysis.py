@@ -44,7 +44,7 @@ def main(b, alpha, classifier, sample_size_obs, run, test_statistic, n_eval_grid
                                 nuisance_parameters=nuisance_parameters)
 
     # Also, calculate the reference distribution
-    model_obj.set_reference_g(size_reference=size_reference)
+    #model_obj.set_reference_g(size_reference=size_reference)
 
     # Get the correct functions
     msnh_sampling_func = model_obj.sample_msnh_algo5
@@ -154,7 +154,7 @@ def main(b, alpha, classifier, sample_size_obs, run, test_statistic, n_eval_grid
             average_coverage = np.average(pred_cov_mean)
 
             # Calculate the upper limit
-            x = theta_vec.reshape(-1, 2)
+            x = theta_vec.reshape(-1, model_obj.d)
             y = in_vec.reshape(-1,)
             # estimate the model
             X = sm.add_constant(x)
