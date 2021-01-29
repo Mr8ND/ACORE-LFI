@@ -14,7 +14,7 @@ class InfernoToyLoader:
 
     def __init__(self, s_param=50, r_param=0.0, lambda_param=3.0, b_param=1000, benchmark=None,
                  nuisance_parameters=False, s_low=0, s_high=100, r_low=-5, r_high=5, lambda_low=0, lambda_high=10,
-                 b_low=700, b_high=1300, out_dir='inferno_toy/', num_acore_grid=21, num_pred_grid=21,
+                 b_low=700, b_high=1300, out_dir='inferno_toy/', num_acore_grid=51, num_pred_grid=51,
                  empirical_marginal=True, *args, **kwargs):
 
         self.true_s = s_param
@@ -354,6 +354,65 @@ class InfernoToyLoader:
 
         # Avoid straight up product for underflow
         return np.exp(np.sum(np.log(numerator)) - np.sum(np.log(denominator)))
+
+    def compute_exactlr_nuisance_single_t0(self, obs_sample, t0_grid, grid_param):
+
+        if t0_grid.shape[1] < 4:
+            t0 = self._create_complete_param_vec(t0)
+        if grid_param.shape[1] < 4:
+            grid_param = np.apply_along_axis(func1d=lambda row: self._create_complete_param_vec(row),
+                                             axis=1, arr=grid_param)
+        assert t0_grid.shape[1] == 4
+        assert grid_param.shape[1] == 4
+
+        # Compute the numerator values
+        n = obs_sample.shape[0]
+        n_t0 = t0_grid.shape[0]
+        grid_t0_obs = np.hstack((
+            np.repeat(t0_grid, n, axis=0),
+            np.tile(obs_sample, (n_t0, 1))
+        ))
+        assert grid_t0_obs.shape[0] == n * n_t0
+
+        lik_mat = np.apply_along_axis(arr=grid_t0_obs, axis=1,
+                                      func1d=lambda row: self._mixture_likelihood_manual(
+                                          x=row[4:], mu_vec=self._compute_mean_vec(row[1]),
+                                          sigma_mats=self.sigmas_mat,
+                                          mixing_param=self._compute_mixing_param(s_param=row[0], b_param=row[3]),
+                                          lambda_param=row[2])).reshape(-1, )
+        assert lik_mat.shape[0] == n * n_t0
+
+        # Now group and find the maximum
+        grouped_sum_t0 = np.array(
+            [np.sum(lik_mat[n * ii:(n * (ii + 1))]) for ii in range(n_t0)])
+        assert grouped_sum_t0.shape[0] == n_t0
+
+        if np.array_equal(t0_grid, grid_param):
+            max_val = np.max(grouped_sum_t0)
+        else:
+            # Compute the denominator value
+            n_grid = grid_param.shape[0]
+            grid_param_obs = np.hstack((
+                np.repeat(grid_param, n, axis=0),
+                np.tile(obs_sample, (n_grid, 1))
+            ))
+            assert grid_param_obs.shape[0] == n * n_grid
+
+            lik_mat = np.apply_along_axis(arr=grid_param_obs, axis=1,
+                                          func1d=lambda row: self._mixture_likelihood_manual(
+                                                x=row[4:], mu_vec=self._compute_mean_vec(row[1]),
+                                                sigma_mats=self.sigmas_mat,
+                                                mixing_param=self._compute_mixing_param(s_param=row[0], b_param=row[3]),
+                                                lambda_param=row[2])).reshape(-1, )
+            assert lik_mat.shape[0] == n * n_grid
+
+            # Now group and find the maximum
+            grouped_sum_t1 = np.array(
+                [np.sum(lik_mat[n * ii:(n * (ii + 1))]) for ii in range(n_grid)])
+            assert grouped_sum_t1.shape[0] == n_grid
+            max_val = np.max(grouped_sum_t1)
+
+        return grouped_sum_t0/max_val
 
     # def compute_exact_tau(self, x_obs, t0_val, meshgrid):
     #     return np.min(np.array([np.sum(np.log(self.compute_exact_or(
