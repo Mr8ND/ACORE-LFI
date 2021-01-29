@@ -9,7 +9,7 @@ classifier_cde_dict = {
     # 'xgb_d10_n250': ('xgb', {'max_depth': 10, 'n_estimators': 100}),
     # 'RF100': ('rf', {'n_estimators': 100}),
     # 'RF250': ('rf', {'n_estimators': 250}),
-    'RF500': ('rf', {'n_estimators': 500}),
+    # 'RF500': ('rf', {'n_estimators': 500}),
     'lgb': ('lgb', {'num_leaves': 128, 'learning_rate': 0.1, 'n_estimators': 100,
                     'reg_sqrt': True, 'max_depth': 5}),
     'pytorch': ('pytorch', {'epochs': 500, 'batch_size': 50}, {'neur_shapes': (64, 64)}),
