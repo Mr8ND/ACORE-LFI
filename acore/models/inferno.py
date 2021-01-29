@@ -359,7 +359,8 @@ class InfernoToyLoader:
     def compute_exactlr_nuisance_single_t0(self, obs_sample, t0_grid, grid_param):
 
         if t0_grid.shape[1] < 4:
-            t0 = self._create_complete_param_vec(t0)
+            t0_grid = np.apply_along_axis(func1d=lambda row: self._create_complete_param_vec(row),
+                                          axis=1, arr=t0_grid)
         if grid_param.shape[1] < 4:
             grid_param = np.apply_along_axis(func1d=lambda row: self._create_complete_param_vec(row),
                                              axis=1, arr=grid_param)
