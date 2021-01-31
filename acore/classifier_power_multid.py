@@ -66,8 +66,8 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
         compute_exactodds_nuisance_single_t0 = model_obj.compute_exactodds_nuisance_single_t0
 
     # Specific case for INFERNO with exact LR and nuisance parameters
-    if run == 'inferno' and test_statistic == 'exactlr_nuisance':
-        compute_exactlr_nuisance_single_t0 = model_obj.compute_exactlr_nuisance_single_t0
+    if run == 'inferno' and test_statistic == 'exactlr':
+        compute_exactlr_single_t0 = model_obj.compute_exactlr_single_t0
         compute_exactlr_msnh_t0 = model_obj.compute_exactlr_msnh_t0
 
     # Creating sample to check entropy about
@@ -135,12 +135,12 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
                 tau_obs = np.array([
                     compute_exactodds_nuisance_single_t0(
                         obs_sample=x_obs, t0=theta_0) for theta_0 in t0_grid])
-            elif test_statistic == 'exactlr_nuisance':
-                tau_obs = compute_exactlr_nuisance_single_t0(
+            elif test_statistic == 'exactlr':
+                tau_obs = compute_exactlr_single_t0(
                         obs_sample=x_obs, t0_grid=t0_grid, grid_param=grid_param)
             else:
                 raise ValueError('The variable test_statistic needs to be either acore, avgacore, logavgacore, '
-                                 'exactodds_nuisance, exactlr_nuisance. Currently %s' % test_statistic)
+                                 'exactodds_nuisance, exactlr. Currently %s' % test_statistic)
 
             # Calculating cross-entropy
             est_prob_vec = clf_prob_value(clf=clf_odds, x_vec=x_vec, theta_vec=theta_vec, d=model_obj.d,
@@ -207,12 +207,12 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
                                                            obs_sample=x_obs,
                                                            t0=row
                                                        ))
-                elif test_statistic == 'exactlr_nuisance':
-                    stats_sample = compute_exactlr_nuisance_single_t0(
+                elif test_statistic == 'exactlr':
+                    stats_sample = compute_exactlr_single_t0(
                         obs_sample=x_obs, t0_grid=theta_mat_sample.reshape(-1, model_obj.d), grid_param=grid_param)
                 else:
                     raise ValueError('The variable test_statistic needs to be either acore, avgacore,'
-                                     ' logavgacore, exactodds_nuisance or exactlr_nuisance. '
+                                     ' logavgacore, exactodds_nuisance or exactlr. '
                                      'Currently %s' % test_statistic)
 
                 # If there are log-odds, then some of the values might be negative, so we need to exponentiate them
@@ -266,12 +266,12 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
                 stats_mat = np.array([compute_exactodds_nuisance_single_t0(t0=theta_0,
                                       obs_sample=sample_mat[kk, :, :], ) for kk, theta_0 in enumerate(theta_mat)
                                     ])
-            elif test_statistic == 'exactlr_nuisance':
+            elif test_statistic == 'exactlr':
                 stats_mat = compute_exactlr_msnh_t0(
                     t0_grid=theta_mat, sample_mat=sample_mat, grid_param=grid_param)
             else:
                 raise ValueError('The variable test_statistic needs to be either acore, avgacore, logavgacore, '
-                                 'exactodds_nuisance or exactlr_nuisance. Currently %s' % test_statistic)
+                                 'exactodds_nuisance or exactlr. Currently %s' % test_statistic)
 
             clf_cde_fitted[clf_name] = {}
             clf_name_qr = classifier_cde

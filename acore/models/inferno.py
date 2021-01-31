@@ -356,7 +356,7 @@ class InfernoToyLoader:
         # Avoid straight up product for underflow
         return np.exp(np.sum(np.log(numerator)) - np.sum(np.log(denominator)))
 
-    def compute_exactlr_nuisance_single_t0(self, obs_sample, t0_grid, grid_param):
+    def compute_exactlr_single_t0(self, obs_sample, t0_grid, grid_param):
 
         if t0_grid.shape[1] < 4:
             t0_grid = np.apply_along_axis(func1d=lambda row: self._create_complete_param_vec(row),
