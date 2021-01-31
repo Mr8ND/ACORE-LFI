@@ -416,6 +416,73 @@ class InfernoToyLoader:
 
         return grouped_sum_t0/max_val
 
+    def compute_exactlr_msnh_t0(self, t0_grid, sample_mat, grid_param):
+
+        if t0_grid.shape[1] < 4:
+            t0_grid = np.apply_along_axis(func1d=lambda row: self._create_complete_param_vec(row),
+                                          axis=1, arr=t0_grid)
+        if grid_param.shape[1] < 4:
+            grid_param = np.apply_along_axis(func1d=lambda row: self._create_complete_param_vec(row),
+                                             axis=1, arr=grid_param)
+
+        n_t0 = t0_grid.shape[0]
+        n_grid = grid_param.shape[0]
+        b_prime = sample_mat.shape[0]
+        n = sample_mat.shape[1]
+        assert sample_mat.shape[2] == self.d_obs
+
+        # Get the sample_matrix to go from a 3D array of size (b_prime, n, d_obs) to a (b_prime * n, d_obs)
+        sample_mat_flatten = sample_mat.reshape(-1, self.d_obs)
+
+        # NUMERATOR
+        # Then we can concatenate this with a t0_grid which has been duplicate n times
+        grid_t0_bprime = np.hstack((
+            np.repeat(t0_grid, n, axis=0),
+            sample_mat_flatten
+        ))
+        lik_mat = np.apply_along_axis(arr=grid_t0_bprime, axis=1,
+                                      func1d=lambda row: self._mixture_likelihood_manual(
+                                          x=row[4:], mu_vec=self._compute_mean_vec(row[1]),
+                                          sigma_mats=self.sigmas_mat,
+                                          mixing_param=self._compute_mixing_param(s_param=row[0], b_param=row[3]),
+                                          lambda_param=row[2])).reshape(-1, )
+        assert lik_mat.shape[0] == b_prime * n
+
+        # And now aggregate them
+        grouped_sum_t0 = np.array(
+            [np.sum(lik_mat[n * ii:(n * (ii + 1))]) for ii in range(n_t0)]).reshape(-1, )
+        assert grouped_sum_t0.shape[0] == b_prime
+
+        # DENOMINATOR
+        # We compute the maximum over the denominator for all the cases now
+        grid_param_obs = np.hstack((
+            np.repeat(grid_param, b_prime * n, axis=0),
+            np.tile(sample_mat_flatten, (n_grid, 1))
+        ))
+        lik_mat_denom = np.apply_along_axis(arr=grid_param_obs, axis=1,
+                                            func1d=lambda row: self._mixture_likelihood_manual(
+                                                x=row[4:], mu_vec=self._compute_mean_vec(row[1]),
+                                                sigma_mats=self.sigmas_mat,
+                                                mixing_param=self._compute_mixing_param(s_param=row[0], b_param=row[3]),
+                                                lambda_param=row[2])).reshape(-1, )
+        assert lik_mat_denom.shape[0] == b_prime * n_grid * n
+
+        # We first sum across the sample size (so over n)
+        grouped_sum_t0_denom = np.array(
+            [np.sum(lik_mat_denom[n * ii:(n * (ii + 1))]) for ii in range(b_prime * n_grid)]).reshape(-1, )
+        assert grouped_sum_t0_denom.shape[0] == b_prime * n_grid
+
+        # And then we take the maximum across each of the denominators
+        max_t0_denon = np.array(
+            [lik_mat_denom[n_grid * ii:(n_grid * (ii + 1))].max() for ii in range(b_prime)]).reshape(-1, )
+        assert max_t0_denon.shape[0] == b_prime
+
+        # And now we finally take the elementwise ratio between the numerator and denominator
+        lr_mat = np.divide(grouped_sum_t0, max_t0_denon).reshape(-1, )
+        assert lr_mat.shape[0] == b_prime
+
+        return lr_mat
+
     # def compute_exact_tau(self, x_obs, t0_val, meshgrid):
     #     return np.min(np.array([np.sum(np.log(self.compute_exact_or(
     #         x_obs=x_obs, t0=t0_val, t1=t1))) for t1 in meshgrid]))

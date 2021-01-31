@@ -68,6 +68,7 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
     # Specific case for INFERNO with exact LR and nuisance parameters
     if run == 'inferno' and test_statistic == 'exactlr_nuisance':
         compute_exactlr_nuisance_single_t0 = model_obj.compute_exactlr_nuisance_single_t0
+        compute_exactlr_msnh_t0 = model_obj.compute_exactlr_msnh_t0
 
     # Creating sample to check entropy about
     np.random.seed(seed)
@@ -266,9 +267,8 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
                                       obs_sample=sample_mat[kk, :, :], ) for kk, theta_0 in enumerate(theta_mat)
                                     ])
             elif test_statistic == 'exactlr_nuisance':
-                stats_mat = np.array([compute_exactlr_nuisance_single_t0(
-                    t0_grid=theta_0.reshape(-1, model_obj.d), obs_sample=sample_mat[kk, :, :],
-                    grid_param=grid_param) for kk, theta_0 in enumerate(theta_mat)])
+                stats_mat = compute_exactlr_msnh_t0(
+                    t0_grid=theta_mat, sample_mat=sample_mat, grid_param=grid_param)
             else:
                 raise ValueError('The variable test_statistic needs to be either acore, avgacore, logavgacore, '
                                  'exactodds_nuisance or exactlr_nuisance. Currently %s' % test_statistic)
