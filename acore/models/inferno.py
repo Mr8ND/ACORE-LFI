@@ -124,7 +124,7 @@ class InfernoToyLoader:
         self.nuisance_global_param_val = None
 
         # Prediction grids have to be mindful of how many parameters are active
-        if not self.nuisance_flags and self.d > 1:
+        if not self.nuisance_flag and self.d > 1:
             self.num_pred_grid = 11
             self.num_acore_grid = 11
         else:
