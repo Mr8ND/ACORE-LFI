@@ -478,7 +478,7 @@ class InfernoToyLoader:
 
         # And then we take the maximum across each of the denominators
         max_t0_denon = np.array(
-            [lik_mat_denom[n_grid * ii:(n_grid * (ii + 1))].max() for ii in range(b_prime)]).reshape(-1, )
+            [grouped_sum_t0_denom[n_grid * ii:(n_grid * (ii + 1))].max() for ii in range(b_prime)]).reshape(-1, )
         assert max_t0_denon.shape[0] == b_prime
 
         # And now we finally take the elementwise ratio between the numerator and denominator
@@ -486,6 +486,49 @@ class InfernoToyLoader:
         assert lr_mat.shape[0] == b_prime
 
         return lr_mat
+
+    def compute_exactlr_distribution_t0(self, prediction_grid, monte_carlo_samples, sample_size_obs, alpha):
+
+        n_grid = prediction_grid.shape[0]
+        if prediction_grid.shape[1] < 4:
+            prediction_grid = np.apply_along_axis(func1d=lambda row: self._create_complete_param_vec(row),
+                                                  axis=1, arr=prediction_grid)
+
+        # Create a sample mat
+        sample_mat = np.apply_along_axis(arr=prediction_grid, axis=1,
+                                         func1d=lambda row: self.sample_sim(
+                                             sample_size=monte_carlo_samples * sample_size_obs, true_param=row))
+        sample_mat = sample_mat.reshape(-1, self.d_obs)
+
+        # Extend the full matrix
+        full_prediction_grid = np.repeat(prediction_grid, sample_size_obs * monte_carlo_samples, axis=0)
+        assert full_prediction_grid.shape[0] == sample_size_obs * monte_carlo_samples * n_grid
+
+        # Combine matrices together
+        grid_param_obs = np.hstack((
+            full_prediction_grid,
+            sample_mat
+        ))
+        lik_mat = np.apply_along_axis(arr=grid_param_obs, axis=1,
+                                      func1d=lambda row: self._mixture_likelihood_manual(
+                                        x=row[4:], mu_vec=self._compute_mean_vec(row[1]),
+                                        sigma_mats=self.sigmas_mat,
+                                        mixing_param=self._compute_mixing_param(s_param=row[0], b_param=row[3]),
+                                        lambda_param=row[2])).reshape(-1, )
+
+        # We first sum across the sample size (so over n)
+        grouped_sum_t0 = np.array(
+            [np.sum(lik_mat[sample_size_obs * ii:(sample_size_obs * (ii + 1))])
+             for ii in range(monte_carlo_samples * n_grid)]).reshape(-1, )
+        assert grouped_sum_t0.shape[0] == monte_carlo_samples * n_grid
+
+        # And then we take the percentile across the the remainder
+        quantile_t0 = np.array(
+            [np.quantile(a=grouped_sum_t0[monte_carlo_samples * ii:(monte_carlo_samples * (ii + 1))],
+                         q=alpha) for ii in range(n_grid)]).reshape(-1, )
+        assert quantile_t0.shape[0] == n_grid
+
+        return quantile_t0
 
     # def compute_exact_tau(self, x_obs, t0_val, meshgrid):
     #     return np.min(np.array([np.sum(np.log(self.compute_exact_or(
