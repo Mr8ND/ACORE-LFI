@@ -488,8 +488,13 @@ class InfernoToyLoader:
         return lr_mat
 
     def compute_exactlr_distribution_t0(self, prediction_grid, monte_carlo_samples, sample_size_obs, alpha):
+        '''
+        In this function we assume that the prediction_grid is used both for the various theta0 at the numerator
+        # and the theta_0 at the denominator.
+        '''
 
         n_grid = prediction_grid.shape[0]
+
         if prediction_grid.shape[1] < 4:
             prediction_grid = np.apply_along_axis(func1d=lambda row: self._create_complete_param_vec(row),
                                                   axis=1, arr=prediction_grid)
@@ -500,7 +505,7 @@ class InfernoToyLoader:
                                              sample_size=monte_carlo_samples * sample_size_obs, true_param=row))
         sample_mat = sample_mat.reshape(-1, self.d_obs)
 
-        # Extend the full matrix
+        # Extend the full matrix for both numerator and denominator
         full_prediction_grid = np.repeat(prediction_grid, sample_size_obs * monte_carlo_samples, axis=0)
         assert full_prediction_grid.shape[0] == sample_size_obs * monte_carlo_samples * n_grid
 
@@ -516,15 +521,27 @@ class InfernoToyLoader:
                                         mixing_param=self._compute_mixing_param(s_param=row[0], b_param=row[3]),
                                         lambda_param=row[2])).reshape(-1, )
 
-        # We first sum across the sample size (so over n)
+        # We first sum across the sample size (so over n) -- this would be the value at the numerator
         grouped_sum_t0 = np.array(
             [np.sum(lik_mat[sample_size_obs * ii:(sample_size_obs * (ii + 1))])
              for ii in range(monte_carlo_samples * n_grid)]).reshape(-1, )
         assert grouped_sum_t0.shape[0] == monte_carlo_samples * n_grid
 
+        # For the denominator, for each sample we need to collect the likelihood value of each parameter
+        # and then take the maximum
+        grouped_max_t0 = np.array([
+            np.array([lik_mat[((monte_carlo_samples * ii) + kk)] for ii in range(n_grid)]).max()
+            for kk in range(monte_carlo_samples)
+        ])
+        grouped_max_t0 = np.tile(grouped_max_t0, n_grid).reshape(-1, )
+        assert grouped_max_t0.shape[0] == monte_carlo_samples * n_grid
+
+        # Now compute the likelihood ratio
+        lik_ratio_vec = np.divide(grouped_sum_t0, grouped_max_t0)
+
         # And then we take the percentile across the the remainder
         quantile_t0 = np.array(
-            [np.quantile(a=grouped_sum_t0[monte_carlo_samples * ii:(monte_carlo_samples * (ii + 1))],
+            [np.quantile(a=lik_ratio_vec[monte_carlo_samples * ii:(monte_carlo_samples * (ii + 1))],
                          q=alpha) for ii in range(n_grid)]).reshape(-1, )
         assert quantile_t0.shape[0] == n_grid
 
