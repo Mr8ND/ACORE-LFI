@@ -281,11 +281,11 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
             clf_cde_fitted[clf_name] = {}
             clf_name_qr = classifier_cde
             clf_params = classifier_cde_dict[classifier_cde]
-            if test_statistic != 'exactlr':
-                t0_pred_vec = train_qr_algo(model_obj=model_obj, theta_mat=theta_mat, stats_mat=stats_mat,
-                                            algo_name=clf_params[0], learner_kwargs=clf_params[1],
-                                            pytorch_kwargs=clf_params[2] if len(clf_params) > 2 else None,
-                                            alpha=alpha, prediction_grid=t0_grid)
+            # if test_statistic != 'exactlr':
+            t0_pred_vec = train_qr_algo(model_obj=model_obj, theta_mat=theta_mat, stats_mat=stats_mat,
+                                        algo_name=clf_params[0], learner_kwargs=clf_params[1],
+                                        pytorch_kwargs=clf_params[2] if len(clf_params) > 2 else None,
+                                        alpha=alpha, prediction_grid=t0_grid)
             clf_cde_fitted[clf_name][clf_name_qr] = t0_pred_vec
 
         # At this point all it's left is to record
