@@ -390,7 +390,7 @@ class InfernoToyLoader:
 
         # Now group and find the maximum
         grouped_sum_t0 = np.array(
-            [np.sum(lik_mat[n * ii:(n * (ii + 1))]) for ii in range(n_t0)])
+            [np.sum(np.log(lik_mat[n * ii:(n * (ii + 1))])) for ii in range(n_t0)])
         assert grouped_sum_t0.shape[0] == n_t0
 
         if np.array_equal(t0_grid, grid_param):
@@ -414,11 +414,11 @@ class InfernoToyLoader:
 
             # Now group and find the maximum
             grouped_sum_t1 = np.array(
-                [np.sum(lik_mat[n * ii:(n * (ii + 1))]) for ii in range(n_grid)])
+                [np.sum(np.log(lik_mat[n * ii:(n * (ii + 1))])) for ii in range(n_grid)])
             assert grouped_sum_t1.shape[0] == n_grid
             max_val = np.max(grouped_sum_t1)
 
-        return grouped_sum_t0/max_val
+        return grouped_sum_t0 - max_val
 
     def compute_exactlr_msnh_t0(self, t0_grid, sample_mat, grid_param):
 
@@ -454,7 +454,7 @@ class InfernoToyLoader:
 
         # And now aggregate them
         grouped_sum_t0 = np.array(
-            [np.sum(lik_mat[n * ii:(n * (ii + 1))]) for ii in range(n_t0)]).reshape(-1, )
+            [np.sum(np.log(lik_mat[n * ii:(n * (ii + 1))])) for ii in range(n_t0)]).reshape(-1, )
         assert grouped_sum_t0.shape[0] == b_prime
 
         # DENOMINATOR
@@ -473,7 +473,7 @@ class InfernoToyLoader:
 
         # We first sum across the sample size (so over n)
         grouped_sum_t0_denom = np.array(
-            [np.sum(lik_mat_denom[n * ii:(n * (ii + 1))]) for ii in range(b_prime * n_grid)]).reshape(-1, )
+            [np.sum(np.log(lik_mat_denom[n * ii:(n * (ii + 1))])) for ii in range(b_prime * n_grid)]).reshape(-1, )
         assert grouped_sum_t0_denom.shape[0] == b_prime * n_grid
 
         # And then we take the maximum across each of the denominators
@@ -482,7 +482,7 @@ class InfernoToyLoader:
         assert max_t0_denon.shape[0] == b_prime
 
         # And now we finally take the elementwise ratio between the numerator and denominator
-        lr_mat = np.divide(grouped_sum_t0, max_t0_denon).reshape(-1, )
+        lr_mat = np.subtract(grouped_sum_t0, max_t0_denon).reshape(-1, )
         assert lr_mat.shape[0] == b_prime
 
         return lr_mat
@@ -494,7 +494,6 @@ class InfernoToyLoader:
         '''
 
         n_grid = prediction_grid.shape[0]
-
         if prediction_grid.shape[1] < 4:
             prediction_grid = np.apply_along_axis(func1d=lambda row: self._create_complete_param_vec(row),
                                                   axis=1, arr=prediction_grid)
@@ -503,9 +502,12 @@ class InfernoToyLoader:
         sample_mat = np.apply_along_axis(arr=prediction_grid, axis=1,
                                          func1d=lambda row: self.sample_sim(
                                              sample_size=monte_carlo_samples * sample_size_obs, true_param=row))
+        sample_mat_denom = sample_mat.reshape(monte_carlo_samples * n_grid, sample_size_obs, self.d_obs)
         sample_mat = sample_mat.reshape(-1, self.d_obs)
+        assert sample_mat.shape[0] == sample_size_obs * monte_carlo_samples * n_grid
 
-        # Extend the full matrix for both numerator and denominator
+        # NUMERATOR
+        # Extend the full matrix for the numerator
         full_prediction_grid = np.repeat(prediction_grid, sample_size_obs * monte_carlo_samples, axis=0)
         assert full_prediction_grid.shape[0] == sample_size_obs * monte_carlo_samples * n_grid
 
@@ -523,25 +525,43 @@ class InfernoToyLoader:
 
         # We first sum across the sample size (so over n) -- this would be the value at the numerator
         grouped_sum_t0 = np.array(
-            [np.sum(lik_mat[sample_size_obs * ii:(sample_size_obs * (ii + 1))])
+            [np.sum(np.log(lik_mat[sample_size_obs * ii:(sample_size_obs * (ii + 1))]))
              for ii in range(monte_carlo_samples * n_grid)]).reshape(-1, )
         assert grouped_sum_t0.shape[0] == monte_carlo_samples * n_grid
 
-        # For the denominator, for each sample we need to collect the likelihood value of each parameter
-        # and then take the maximum
-        grouped_max_t0 = np.array([
-            np.array([lik_mat[((monte_carlo_samples * ii) + kk)] for ii in range(n_grid)]).max()
-            for kk in range(monte_carlo_samples)
-        ])
-        grouped_max_t0 = np.tile(grouped_max_t0, n_grid).reshape(-1, )
-        assert grouped_max_t0.shape[0] == monte_carlo_samples * n_grid
+        # DENOMINATOR
+        # For the denominator we have to loop through each samples
+        grouped_sum_max = []
+        for kk in range(n_grid * monte_carlo_samples):
+            temp_sample_mat = sample_mat_denom[kk, :, :].reshape(-1, self.d_obs)
+
+            temp_denom_mat = np.hstack((
+                np.repeat(prediction_grid, sample_size_obs, axis=0),
+                np.tile(temp_sample_mat, (n_grid, 1))
+            ))
+
+            lik_mat_denom = np.apply_along_axis(arr=temp_denom_mat, axis=1,
+                                                func1d=lambda row: self._mixture_likelihood_manual(
+                                                    x=row[4:], mu_vec=self._compute_mean_vec(row[1]),
+                                                    sigma_mats=self.sigmas_mat,
+                                                    mixing_param=self._compute_mixing_param(
+                                                        s_param=row[0], b_param=row[3]),
+                                                    lambda_param=row[2])).reshape(-1, )
+
+            temp_sum_denom = np.array(
+                [np.sum(np.log(lik_mat_denom[sample_size_obs * ii:(sample_size_obs * (ii + 1))]))
+                 for ii in range(n_grid)]).reshape(-1, )
+            grouped_sum_max.append(temp_sum_denom.max())
+
+        grouped_sum_max = np.array(grouped_sum_max)
+        assert grouped_sum_max.shape[0] == monte_carlo_samples * n_grid
 
         # Now compute the likelihood ratio
-        lik_ratio_vec = np.divide(grouped_sum_t0, grouped_max_t0)
+        lik_ratio_vec = np.subtract(grouped_sum_t0, grouped_sum_max)
 
         # And then we take the percentile across the the remainder
         quantile_t0 = np.array(
-            [np.quantile(a=lik_ratio_vec[monte_carlo_samples * ii:(monte_carlo_samples * (ii + 1))],
+            [np.quantile(a=np.sort(lik_ratio_vec[monte_carlo_samples * ii:(monte_carlo_samples * (ii + 1))]),
                          q=alpha) for ii in range(n_grid)]).reshape(-1, )
         assert quantile_t0.shape[0] == n_grid
 
