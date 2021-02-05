@@ -146,7 +146,9 @@ def main(sample_size, save_out=True, mixing_param=0.5, downsampling=20):
             final_sample.shape[0], downsampling, mixing_param,
             datetime.strftime(datetime.today(), '%Y-%m-%d-%H-%M')
         )
-        pickle.dump(obj={'param_mat': param_mat,
+        pickle.dump(obj={'prior_mat': np.hstack((alpha_prior_sample.reshape(-1, 1),
+                                                 lambda_prior_sample.reshape(-1, 1))),
+                         'param_mat': param_mat,
                          'galaxies_generated': final_sample},
                     file=open(outfile_name, 'wb'), protocol=3)
     else:
