@@ -1,8 +1,8 @@
-import galsim
+#import galsim
 import argparse
 import numpy as np
 import math
-import coord
+#import coord
 import pickle
 from datetime import datetime
 from tqdm.auto import tqdm
@@ -28,19 +28,33 @@ def downsample(myarr, factor, estimator=np.nanmean):
 
 def sample_from_prior(sample_size):
     alpha_prior_sample = np.random.uniform(-math.pi, math.pi, size=sample_size)
-    lambda_prior_sample = np.random.uniform(0, 1, size=sample_size)
+    # lambda_prior_sample = np.random.uniform(0, 1, size=sample_size)
+    bern_sample = np.random.binomial(n=1, p=0.1, size=sample_size)
+    lambda_prior_sample = np.array([0.9, 0.1])[bern_sample]
 
     return alpha_prior_sample, lambda_prior_sample
 
 
 def sample_true_values(alpha_prior_sample, lambda_prior_sample, mixing_param=0.5):
-    alpha_sample_uncl = mixing_param * np.random.normal(loc=alpha_prior_sample, scale=math.pi / 4) + \
-                        (1 - mixing_param) * np.random.normal(loc=alpha_prior_sample, scale=math.pi / 400)
-    alpha_sample = np.clip(a=alpha_sample_uncl, a_min=-math.pi, a_max=math.pi)
 
-    lambda_sample_uncl = mixing_param * np.random.normal(loc=lambda_prior_sample - 0.1, scale=0.01) + \
-                         (1 - mixing_param) * np.random.normal(loc=lambda_prior_sample + 0.1, scale=0.01)
-    lambda_sample = np.clip(a=lambda_sample_uncl, a_min=1e-6, a_max=1 - 1e-6)
+    assert alpha_prior_sample.shape[0] == lambda_prior_sample.shape[0]
+
+    alpha_sample = []
+    for alpha_val, lambda_val in zip(alpha_prior_sample, lambda_prior_sample):
+
+        lambda_sample.append(lambda_val)
+        initial_alpha_val = np.random.laplace(loc=0.0, scale=0.5, size=1)
+        if lambda_val == 0.9:
+            alpha_val_sampled = np.random.laplace(loc=initial_alpha_val, scale=0.05, size=1)
+        elif lambda_val == 0.1:
+            alpha_val_sampled = np.random.laplace(loc=initial_alpha_val, scale=5e-4, size=1)
+        else:
+            raise ValueError('lambda_prior_sample needs to be either 0.9 or 0.1. Currently %s.' % lambda_val)
+
+        alpha_sample.append(alpha_val_sampled)
+
+    alpha_sample = np.clip(a=np.array(alpha_sample), a_min=-math.pi, a_max=math.pi)
+    lambda_sample = np.array(lambda_prior_sample)
 
     return alpha_sample, lambda_sample
 
