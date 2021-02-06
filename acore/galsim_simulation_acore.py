@@ -134,7 +134,7 @@ def main(sample_size, sample_size_obs, save_out=True, mixing_param=0.5, downsamp
                 res_dict[(alpha_val, lambda_val)].append(galaxy_sample)
                 sample_n += 1
                 pbar.update(1)
-            except:
+            except MemoryError:
                 continue
 
         idx += 1
