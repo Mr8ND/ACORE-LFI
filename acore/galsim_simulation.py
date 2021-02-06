@@ -41,13 +41,11 @@ def sample_true_values(alpha_prior_sample, lambda_prior_sample, mixing_param=0.5
 
     alpha_sample = []
     for alpha_val, lambda_val in zip(alpha_prior_sample, lambda_prior_sample):
-
-        lambda_sample.append(lambda_val)
-        initial_alpha_val = np.random.laplace(loc=0.0, scale=0.5, size=1)
         if lambda_val == 0.9:
-            alpha_val_sampled = np.random.laplace(loc=initial_alpha_val, scale=0.05, size=1)
+            alpha_val_sampled = np.random.laplace(loc=alpha_val, scale=0.05, size=1)
         elif lambda_val == 0.1:
-            alpha_val_sampled = np.random.laplace(loc=initial_alpha_val, scale=5e-4, size=1)
+            alpha_val_sampled = 0.5 * np.random.laplace(loc=alpha_val, scale=5e-4, size=1) + \
+                                0.5 * np.random.laplace(loc=alpha_val, scale=0.05, size=1)
         else:
             raise ValueError('lambda_prior_sample needs to be either 0.9 or 0.1. Currently %s.' % lambda_val)
 
