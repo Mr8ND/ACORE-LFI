@@ -146,7 +146,7 @@ def main(sample_size, sample_size_obs, save_out=True, mixing_param=0.5, downsamp
 
     if save_out:
         outfile_name = 'data/acore_galsim_simulated_%s_%sssobs_downsampling%s_%smixingparam_%s.pkl' % (
-            '%sparams' % sample_size if central_param else 'central_param',
+            '%sparams' % sample_size if not central_param else 'central_param',
             sample_size_obs, downsampling, mixing_param,
             datetime.strftime(datetime.today(), '%Y-%m-%d-%H-%M')
         )
