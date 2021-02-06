@@ -26,26 +26,26 @@ def downsample(myarr, factor, estimator=np.nanmean):
     return dsarr
 
 
-def sample_from_prior(sample_size):
+def sample_from_prior(sample_size, main_peak):
     alpha_prior_sample = np.random.uniform(-math.pi, math.pi, size=sample_size)
     # lambda_prior_sample = np.random.uniform(0, 1, size=sample_size)
     bern_sample = np.random.binomial(n=1, p=0.1, size=sample_size)
-    lambda_prior_sample = np.array([0.9, 0.1])[bern_sample]
+    lambda_prior_sample = np.array([main_peak, 0.1])[bern_sample]
 
     return alpha_prior_sample, lambda_prior_sample
 
 
-def sample_true_values(alpha_prior_sample, lambda_prior_sample, mixing_param=0.5):
+def sample_true_values(alpha_prior_sample, lambda_prior_sample, main_peak, mixing_param=0.5):
 
     assert alpha_prior_sample.shape[0] == lambda_prior_sample.shape[0]
 
     alpha_sample = []
     for alpha_val, lambda_val in zip(alpha_prior_sample, lambda_prior_sample):
-        if lambda_val == 0.9:
+        if lambda_val == main_peak:
             alpha_val_sampled = np.random.laplace(loc=alpha_val, scale=0.05, size=1)
         elif lambda_val == 0.1:
-            alpha_val_sampled = 0.5 * np.random.laplace(loc=alpha_val, scale=5e-4, size=1) + \
-                                0.5 * np.random.laplace(loc=alpha_val, scale=0.05, size=1)
+            alpha_val_sampled = mixing_param * np.random.laplace(loc=alpha_val, scale=5e-4, size=1) + \
+                                (1 - mixing_param) * np.random.laplace(loc=alpha_val, scale=0.05, size=1)
         else:
             raise ValueError('lambda_prior_sample needs to be either 0.9 or 0.1. Currently %s.' % lambda_val)
 
@@ -129,14 +129,15 @@ def generate_synthetic_galaxy(alpha_val, lambda_val, downsampling=0):
     return image_array
 
 
-def main(sample_size, save_out=True, mixing_param=0.5, downsampling=20):
+def main(sample_size, main_peak, save_out=True, mixing_param=0.5, downsampling=20):
     # Sample from the prior first
-    alpha_prior_sample, lambda_prior_sample = sample_from_prior(sample_size=sample_size)
+    alpha_prior_sample, lambda_prior_sample = sample_from_prior(
+        sample_size=sample_size, main_peak=main_peak)
 
     # Sample to get the true values
     alpha_sample, lambda_sample = sample_true_values(alpha_prior_sample=alpha_prior_sample,
                                                      lambda_prior_sample=lambda_prior_sample,
-                                                     mixing_param=mixing_param)
+                                                     mixing_param=mixing_param, main_peak=main_peak)
 
     # Generate images
     param_mat = np.hstack((alpha_sample.reshape(-1, 1), lambda_sample.reshape(-1, 1)))
@@ -174,9 +175,12 @@ if __name__ == '__main__':
                         help='Simulated sample size.')
     parser.add_argument('--downsampling', action="store", type=int, default=20,
                         help='Shape of the downsampled image.')
+    parser.add_argument('--main_peak', action="store", type=float, default=0.9,
+                        help='Value of the main peak for the galaxies axis ratio.')
     argument_parsed = parser.parse_args()
 
     main(
         sample_size=argument_parsed.sample_size,
-        downsampling=argument_parsed.downsampling
+        downsampling=argument_parsed.downsampling,
+        main_peak=argument_parsed.main_peak
     )
