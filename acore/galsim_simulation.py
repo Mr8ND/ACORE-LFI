@@ -1,8 +1,8 @@
-#import galsim
+import galsim
 import argparse
 import numpy as np
 import math
-#import coord
+import coord
 import pickle
 from datetime import datetime
 from tqdm.auto import tqdm
