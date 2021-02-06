@@ -155,14 +155,16 @@ def main(sample_size, main_peak, save_out=True, mixing_param=0.5, downsampling=2
 
     final_sample = np.array(final_sample)
     if save_out:
-        outfile_name = 'data/galsim_simulated_%sgals_downsampling%s_%smixingparam_%s.pkl' % (
-            final_sample.shape[0], downsampling, mixing_param,
+        outfile_name = 'data/galsim_simulated_%sgals_%smainpeak_downsampling%s_%smixingparam_%s.pkl' % (
+            final_sample.shape[0], str(main_peak).replace('.', '-'), downsampling, mixing_param,
             datetime.strftime(datetime.today(), '%Y-%m-%d-%H-%M')
         )
         pickle.dump(obj={'prior_mat': np.hstack((alpha_prior_sample.reshape(-1, 1),
                                                  lambda_prior_sample.reshape(-1, 1))),
                          'param_mat': param_mat,
-                         'galaxies_generated': final_sample},
+                         'galaxies_generated': final_sample,
+                         'downsampling': downsampling,
+                         'main_peak': main_peak},
                     file=open(outfile_name, 'wb'), protocol=3)
     else:
         return final_sample
