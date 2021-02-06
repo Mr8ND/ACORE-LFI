@@ -130,7 +130,7 @@ def main(sample_size, sample_size_obs, save_out=True, mixing_param=0.5, downsamp
             try:
                 galaxy_sample = generate_synthetic_galaxy(
                     alpha_val=alpha_val, lambda_val=lambda_val, downsampling=downsampling,
-                    random_seed=(idx + 1) * (sample_n + 1) + np.random.choice(np.arange(10), 1)[0])
+                    random_seed=int(152332 + (idx + 1) * (sample_n + 1) + np.random.choice(np.arange(10), 1)[0]))
                 res_dict[(alpha_val, lambda_val)].append(galaxy_sample)
                 sample_n += 1
                 pbar.update(1)
