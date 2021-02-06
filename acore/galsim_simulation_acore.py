@@ -1,4 +1,4 @@
-#import galsim
+import galsim
 import argparse
 import numpy as np
 import math
