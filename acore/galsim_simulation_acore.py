@@ -164,10 +164,13 @@ if __name__ == '__main__':
                         help='Simulated sample size.')
     parser.add_argument('--downsampling', action="store", type=int, default=20,
                         help='Shape of the downsampled image.')
+    parser.add_argument('--central_param', action='store_true', default=False,
+                        help='If true, we sample 1 value, the center of the parameter space.')
     argument_parsed = parser.parse_args()
 
     main(
         sample_size=argument_parsed.sample_size,
         downsampling=argument_parsed.downsampling,
-        sample_size_obs=argument_parsed.sample_size_obs
+        sample_size_obs=argument_parsed.sample_size_obs,
+        central_param=argument_parsed.central_param
     )
