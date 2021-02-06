@@ -33,7 +33,7 @@ def sample_from_prior(sample_size):
     return alpha_prior_sample, lambda_prior_sample
 
 
-def generate_synthetic_galaxy(alpha_val, lambda_val, downsampling=0):
+def generate_synthetic_galaxy(alpha_val, lambda_val, downsampling=0, random_seed=7):
     # Setup Galsim values first
     gal_flux = 1e5  # counts
     gal_r0 = 2.7  # arcsec
@@ -41,7 +41,6 @@ def generate_synthetic_galaxy(alpha_val, lambda_val, downsampling=0):
     psf_re = 1.0  # arcsec
     pixel_scale = 0.3  # arcsec / pixel
     sky_level = 2.5e3  # counts / arcsec^2
-    random_seed = 152332
     unit = coord.AngleUnit(1.0)
 
     # Initialize the (pseudo-)random number generator that we will be using below.
@@ -105,9 +104,18 @@ def generate_synthetic_galaxy(alpha_val, lambda_val, downsampling=0):
     return image_array
 
 
-def main(sample_size, sample_size_obs, save_out=True, mixing_param=0.5, downsampling=20):
-    # Sample from the prior first
-    alpha_prior_sample, lambda_prior_sample = sample_from_prior(sample_size=sample_size)
+def main(sample_size, sample_size_obs, save_out=True, mixing_param=0.5, downsampling=20, central_param=False):
+
+    if central_param:
+        # Sample from the parameter central in the parameter space
+        if sample_size > 1:
+            raise ValueError('The "central_param" option only works with sample_size equal to 1. '
+                             'Currently %s.' % sample_size)
+        alpha_prior_sample = np.array([0.0])
+        lambda_prior_sample = np.array([0.5])
+    else:
+        # Sample from the prior first
+        alpha_prior_sample, lambda_prior_sample = sample_from_prior(sample_size=sample_size)
 
     # Generate images
     param_mat_full = np.hstack((alpha_prior_sample.reshape(-1, 1), lambda_prior_sample.reshape(-1, 1)))
@@ -115,14 +123,14 @@ def main(sample_size, sample_size_obs, save_out=True, mixing_param=0.5, downsamp
     pbar = tqdm(total=sample_size * sample_size_obs, desc='Simulating %d Galaxies.' % sample_size)
     idx = 0
     while idx < param_mat_full.shape[0]:
-        out_vec = np.zeros((1, 1, downsampling, downsampling))
         alpha_val, lambda_val = param_mat_full[idx, :]
         res_dict[(alpha_val, lambda_val)] = []
         sample_n = 0
         while sample_n < sample_size_obs:
             try:
                 galaxy_sample = generate_synthetic_galaxy(
-                    alpha_val=alpha_val, lambda_val=lambda_val, downsampling=downsampling)
+                    alpha_val=alpha_val, lambda_val=lambda_val, downsampling=downsampling,
+                    random_seed=(idx + 1) * (sample_n + 1) + np.random.choice(np.arange(10), 1)[0])
                 res_dict[(alpha_val, lambda_val)].append(galaxy_sample)
                 sample_n += 1
                 pbar.update(1)
@@ -137,8 +145,9 @@ def main(sample_size, sample_size_obs, save_out=True, mixing_param=0.5, downsamp
         assert v[0].shape == (downsampling, downsampling)
 
     if save_out:
-        outfile_name = 'data/acore_galsim_simulated_%sparams_%sssobs_downsampling%s_%smixingparam_%s.pkl' % (
-            sample_size, sample_size_obs, downsampling, mixing_param,
+        outfile_name = 'data/acore_galsim_simulated_%s_%sssobs_downsampling%s_%smixingparam_%s.pkl' % (
+            '%sparams' % sample_size if central_param else 'central_param',
+            sample_size_obs, downsampling, mixing_param,
             datetime.strftime(datetime.today(), '%Y-%m-%d-%H-%M')
         )
         pickle.dump(obj=res_dict, file=open(outfile_name, 'wb'), protocol=3)
