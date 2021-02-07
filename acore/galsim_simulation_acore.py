@@ -135,11 +135,12 @@ def main(sample_size, sample_size_obs, save_out=True, mixing_param=0.5, downsamp
                 alpha_val=alpha_val, lambda_val=lambda_val, downsampling=downsampling,
                 random_seed=int(152332 + (idx + 1) + np.random.choice(np.arange(1000), 1)[0]))
             res_dict[(alpha_val, lambda_val)].append(galaxy_sample)
-            pbar.update(1)
+            idx += 1
         except (MemoryError, galsim.GalSimFFTSizeError):
-            continue
+            idx += 1
 
-        idx += 1
+        if idx % 25 == 0:
+            pbar.update(25)
 
     # Check that the dictionary internally has the correct dimensions:
     for k, v in res_dict.items():
