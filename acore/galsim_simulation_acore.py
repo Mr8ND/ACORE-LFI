@@ -26,9 +26,12 @@ def downsample(myarr, factor, estimator=np.nanmean):
     return dsarr
 
 
-def sample_from_prior(sample_size):
+def sample_from_prior(sample_size, sample_size_obs):
     alpha_prior_sample = np.random.uniform(-math.pi, math.pi, size=sample_size)
     lambda_prior_sample = np.random.uniform(0, 1, size=sample_size)
+
+    alpha_prior_sample = np.tile(alpha_prior_sample, sample_size_obs)
+    lambda_prior_sample = np.tile(lambda_prior_sample, sample_size_obs)
 
     return alpha_prior_sample, lambda_prior_sample
 
@@ -115,27 +118,26 @@ def main(sample_size, sample_size_obs, save_out=True, mixing_param=0.5, downsamp
         lambda_prior_sample = np.array([0.5])
     else:
         # Sample from the prior first
-        alpha_prior_sample, lambda_prior_sample = sample_from_prior(sample_size=sample_size)
+        alpha_prior_sample, lambda_prior_sample = sample_from_prior(
+            sample_size=sample_size, sample_size_obs=sample_size_obs)
 
     # Generate images
     param_mat_full = np.hstack((alpha_prior_sample.reshape(-1, 1), lambda_prior_sample.reshape(-1, 1)))
     res_dict = {}
-    pbar = tqdm(total=sample_size * sample_size_obs, desc='Simulating %d Galaxies.' % sample_size)
+    pbar = tqdm(total=param_mat_full.shape[0], desc='Simulating %d Galaxies.' % sample_size)
     idx = 0
     while idx < param_mat_full.shape[0]:
         alpha_val, lambda_val = param_mat_full[idx, :]
-        res_dict[(alpha_val, lambda_val)] = []
-        sample_n = 0
-        while sample_n < sample_size_obs:
-            try:
-                galaxy_sample = generate_synthetic_galaxy(
-                    alpha_val=alpha_val, lambda_val=lambda_val, downsampling=downsampling,
-                    random_seed=int(152332 + (idx + 1) * (sample_n + 1) + np.random.choice(np.arange(1000), 1)[0]))
-                res_dict[(alpha_val, lambda_val)].append(galaxy_sample)
-                sample_n += 1
-                pbar.update(1)
-            except (MemoryError, galsim.GalSimFFTSizeError):
-                continue
+        if (alpha_val, lambda_val) not in res_dict.keys():
+            res_dict[(alpha_val, lambda_val)] = []
+        try:
+            galaxy_sample = generate_synthetic_galaxy(
+                alpha_val=alpha_val, lambda_val=lambda_val, downsampling=downsampling,
+                random_seed=int(152332 + (idx + 1) + np.random.choice(np.arange(1000), 1)[0]))
+            res_dict[(alpha_val, lambda_val)].append(galaxy_sample)
+            pbar.update(1)
+        except (MemoryError, galsim.GalSimFFTSizeError):
+            continue
 
         idx += 1
 
