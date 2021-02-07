@@ -7,6 +7,7 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.model_selection import GridSearchCV
 from functools import partial
 from scipy.optimize import minimize
+from scipy.special import logsumexp
 
 
 neighbor_range = [1, 2, 3, 4, 5, 10, 15, 20, 25] + [50 * x for x in range(1, 21)] + [500 * x for x in range(3, 6)]
@@ -254,26 +255,41 @@ def compute_bayesfactor_single_t0(clf, obs_sample, t0, gen_param_fun,
     prob_mat[prob_mat == 0] = 1e-15
     assert prob_mat.shape == (n * monte_carlo_samples + n, 2)
 
-    # Calculate odds
-    # We extract t0 values
-    odds_t0 = np.exp(np.sum(np.log(prob_mat[0:n, 1] / prob_mat[0:n, 0]))).astype(np.float64)
-    assert isinstance(odds_t0, float)
+    if not log_out:
+        # Calculate odds
+        # We extract t0 values
+        odds_t0 = np.exp(np.sum(np.log(prob_mat[0:n, 1] / prob_mat[0:n, 0]))).astype(np.float64)
+        assert isinstance(odds_t0, float)
 
-    # We calculate the values for the monte carlo samples to approximate the integral
-    odds_t1 = prob_mat[n:, 1] / prob_mat[n:, 0]
-    assert odds_t1.shape[0] == n * monte_carlo_samples
+        # We calculate the values for the monte carlo samples to approximate the integral
+        odds_t1 = prob_mat[n:, 1] / prob_mat[n:, 0]
+        assert odds_t1.shape[0] == n * monte_carlo_samples
 
-    # Calculate sum of logs for each of the value we sampled from Monte Carlo samples
-    grouped_sum_t1 = np.array(
-        [np.exp(np.sum(np.log(odds_t1[n * ii:(n * (ii + 1))]))) for ii in range(monte_carlo_samples)])
-    assert grouped_sum_t1.shape[0] == monte_carlo_samples
+        # Calculate sum of logs for each of the value we sampled from Monte Carlo samples
+        grouped_sum_t1 = np.array(
+            [np.exp(np.sum(np.log(odds_t1[n * ii:(n * (ii + 1))]))) for ii in range(monte_carlo_samples)])
+        assert grouped_sum_t1.shape[0] == monte_carlo_samples
 
-    # Using the log of the average rather than the average itself
-    if log_out:
-        return np.log(odds_t0) - np.log(np.average(grouped_sum_t1.reshape(-1, )))
+        return odds_t0 / np.average(grouped_sum_t1.reshape(-1, ))
+    else:
+        # Calculate odds
+        # We extract t0 values and keep it in log-space
+        odds_t0 = np.sum(np.log(prob_mat[0:n, 1] / prob_mat[0:n, 0])).astype(np.float64)
+        assert isinstance(odds_t0, float)
 
-    # Using the bayes factor directly
-    return odds_t0/np.average(grouped_sum_t1.reshape(-1, ))
+        # We calculate the values for the monte carlo samples to approximate the integral
+        odds_t1 = prob_mat[n:, 1] / prob_mat[n:, 0]
+        assert odds_t1.shape[0] == n * monte_carlo_samples
+
+        # Calculate sum of logs for each of the value we sampled from Monte Carlo samples and keep it in log-space
+        grouped_sum_t1 = np.array(
+            [np.sum(np.log(odds_t1[n * ii:(n * (ii + 1))])) for ii in range(monte_carlo_samples)])
+        assert grouped_sum_t1.shape[0] == monte_carlo_samples
+
+        # Compute the sum of the exponents and take the log
+        denom = logsumexp(grouped_sum_t1.reshape(-1, )) - np.log(monte_carlo_samples)
+
+        return odds_t0 - denom
 
 
 def compute_statistics_single_t0(clf, obs_sample, t0, grid_param_t1, d=1, d_obs=1):
