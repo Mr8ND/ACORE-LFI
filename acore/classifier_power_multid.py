@@ -212,7 +212,7 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
                     # stats_sample = compute_exactlr_single_t0(
                     #     obs_sample=x_obs, t0_grid=theta_mat_sample.reshape(-1, model_obj.d), grid_param=grid_param)
                     t0_pred_vec = compute_exactlr_distribution_t0(
-                        prediction_grid=t0_grid, monte_carlo_samples=500, sample_size_obs=sample_size_obs, alpha=alpha)
+                        prediction_grid=t0_grid, monte_carlo_samples=100, sample_size_obs=sample_size_obs, alpha=alpha)
                 else:
                     raise ValueError('The variable test_statistic needs to be either acore, avgacore,'
                                      ' logavgacore, exactodds_nuisance or exactlr. '
@@ -273,7 +273,7 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
                 # stats_mat = compute_exactlr_msnh_t0(
                 #     t0_grid=theta_mat, sample_mat=sample_mat, grid_param=grid_param)
                 t0_pred_vec = compute_exactlr_distribution_t0(
-                    prediction_grid=t0_grid, monte_carlo_samples=500, sample_size_obs=sample_size_obs, alpha=alpha)
+                    prediction_grid=t0_grid, monte_carlo_samples=100, sample_size_obs=sample_size_obs, alpha=alpha)
             else:
                 raise ValueError('The variable test_statistic needs to be either acore, avgacore, logavgacore, '
                                  'exactodds_nuisance or exactlr. Currently %s' % test_statistic)
