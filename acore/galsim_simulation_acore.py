@@ -142,11 +142,6 @@ def main(sample_size, sample_size_obs, save_out=True, mixing_param=0.5, downsamp
         if idx % 25 == 0:
             pbar.update(25)
 
-    # Check that the dictionary internally has the correct dimensions:
-    for k, v in res_dict.items():
-        assert len(v) == sample_size_obs
-        assert v[0].shape == (downsampling, downsampling)
-
     if save_out:
         outfile_name = 'data/acore_galsim_simulated_%s_%sssobs_downsampling%s_%smixingparam_%s.pkl' % (
             '%sparams' % sample_size if not central_param else 'central_param',
