@@ -42,7 +42,7 @@ def sample_true_values(alpha_prior_sample, lambda_prior_sample, main_peak, mixin
     alpha_sample = []
     for alpha_val, lambda_val in zip(alpha_prior_sample, lambda_prior_sample):
         if lambda_val == main_peak:
-            alpha_val_sampled = np.random.laplace(loc=alpha_val, scale=0.05, size=1)
+            alpha_val_sampled = np.random.normal(loc=alpha_val, scale=0.05, size=1)
         elif lambda_val == 0.1:
             alpha_val_sampled = mixing_param * np.random.laplace(loc=alpha_val, scale=5e-4, size=1) + \
                                 (1 - mixing_param) * np.random.laplace(loc=alpha_val, scale=0.05, size=1)
