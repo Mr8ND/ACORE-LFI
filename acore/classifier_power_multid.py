@@ -209,10 +209,10 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
                                                            t0=row
                                                        ))
                 elif test_statistic == 'exactlr':
-                    # stats_sample = compute_exactlr_single_t0(
-                    #     obs_sample=x_obs, t0_grid=theta_mat_sample.reshape(-1, model_obj.d), grid_param=grid_param)
-                    t0_pred_vec = compute_exactlr_distribution_t0(
-                        prediction_grid=t0_grid, monte_carlo_samples=100, sample_size_obs=sample_size_obs, alpha=alpha)
+                    stats_sample = compute_exactlr_single_t0(
+                        obs_sample=x_obs, t0_grid=theta_mat_sample.reshape(-1, model_obj.d), grid_param=grid_param)
+                    # t0_pred_vec = compute_exactlr_distribution_t0(
+                    #     prediction_grid=t0_grid, monte_carlo_samples=100, sample_size_obs=sample_size_obs, alpha=alpha)
                 else:
                     raise ValueError('The variable test_statistic needs to be either acore, avgacore,'
                                      ' logavgacore, exactodds_nuisance or exactlr. '
@@ -270,10 +270,10 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
                                       obs_sample=sample_mat[kk, :, :], ) for kk, theta_0 in enumerate(theta_mat)
                                     ])
             elif test_statistic == 'exactlr':
-                # stats_mat = compute_exactlr_msnh_t0(
-                #     t0_grid=theta_mat, sample_mat=sample_mat, grid_param=grid_param)
-                t0_pred_vec = compute_exactlr_distribution_t0(
-                    prediction_grid=t0_grid, monte_carlo_samples=100, sample_size_obs=sample_size_obs, alpha=alpha)
+                stats_mat = compute_exactlr_msnh_t0(
+                    t0_grid=theta_mat, sample_mat=sample_mat, grid_param=grid_param)
+                # t0_pred_vec = compute_exactlr_distribution_t0(
+                #     prediction_grid=t0_grid, monte_carlo_samples=100, sample_size_obs=sample_size_obs, alpha=alpha)
             else:
                 raise ValueError('The variable test_statistic needs to be either acore, avgacore, logavgacore, '
                                  'exactodds_nuisance or exactlr. Currently %s' % test_statistic)
@@ -281,11 +281,11 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
             clf_cde_fitted[clf_name] = {}
             clf_name_qr = classifier_cde
             clf_params = classifier_cde_dict[classifier_cde]
-            if test_statistic != 'exactlr':
-                t0_pred_vec = train_qr_algo(model_obj=model_obj, theta_mat=theta_mat, stats_mat=stats_mat,
-                                            algo_name=clf_params[0], learner_kwargs=clf_params[1],
-                                            pytorch_kwargs=clf_params[2] if len(clf_params) > 2 else None,
-                                            alpha=alpha, prediction_grid=t0_grid)
+            # if test_statistic != 'exactlr':
+            t0_pred_vec = train_qr_algo(model_obj=model_obj, theta_mat=theta_mat, stats_mat=stats_mat,
+                                        algo_name=clf_params[0], learner_kwargs=clf_params[1],
+                                        pytorch_kwargs=clf_params[2] if len(clf_params) > 2 else None,
+                                        alpha=alpha, prediction_grid=t0_grid)
             clf_cde_fitted[clf_name][clf_name_qr] = t0_pred_vec
 
         # At this point all it's left is to record
