@@ -6,11 +6,13 @@ from datetime import datetime
 from utils.functions import compute_exact_tau_distr, compute_exact_tau
 from models.toy_gmm import ToyGMMLoader
 from models.toy_poisson import ToyPoissonLoader
+from models.toy_gamma import ToyGammaLoader
 
 
 model_dict = {
     'poisson': ToyPoissonLoader,
-    'gmm': ToyGMMLoader
+    'gmm': ToyGMMLoader,
+    'gamma': ToyGammaLoader
 }
 
 

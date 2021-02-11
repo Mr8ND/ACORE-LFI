@@ -8,7 +8,8 @@ from scipy.stats import norm, gamma, uniform
 class ToyGammaLoader:
 
     def __init__(self, scale=1, mean_instrumental=15, std_instrumental=7.5, low_int=0.5, high_int=10.5, true_param=2.0,
-                 out_dir='toy_gamma/', marginal=False, size_marginal=1000):
+                 out_dir='toy_gamma/', marginal=False, size_marginal=1000,
+                 empirical_marginal=True):
 
         self.mean_instrumental = mean_instrumental
         self.std_instrumental = std_instrumental
@@ -25,6 +26,7 @@ class ToyGammaLoader:
         self.num_pred_grid = 41
         self.pred_grid = np.linspace(start=self.low_int, stop=self.high_int, num=self.num_pred_grid)
         self.true_param = true_param
+        self.empirical_marginal = empirical_marginal
 
         if marginal:
             self.compute_marginal_reference(size_marginal)
@@ -38,6 +40,12 @@ class ToyGammaLoader:
         self.std_instrumental = std_mle
         self.g_distribution = norm(loc=mean_mle, scale=std_mle)
 
+    def sample_empirical_marginal(self, sample_size):
+        theta_vec_marg = self.sample_param_values(sample_size=sample_size)
+        return np.apply_along_axis(arr=theta_vec_marg.reshape(-1, self.d), axis=1,
+                                   func1d=lambda row: self.sample_sim(
+                                       sample_size=1, true_param=row)).reshape(-1, self.d_obs)
+
     def sample_sim(self, sample_size, true_param):
         return np.random.gamma(shape=true_param, scale=self.scale, size=sample_size)
 
@@ -47,13 +55,19 @@ class ToyGammaLoader:
     def generate_sample(self, sample_size, p=0.5, **kwargs):
         theta_vec = self.sample_param_values(sample_size=sample_size)
         bern_vec = np.random.binomial(n=1, p=p, size=sample_size)
-        concat_mat = np.hstack((theta_vec.reshape(-1, 1),
-                                bern_vec.reshape(-1, 1)))
+        concat_mat = np.hstack((theta_vec.reshape(-1, self.d), bern_vec.reshape(-1, 1)))
 
-        sample = np.apply_along_axis(arr=concat_mat, axis=1,
-                                     func1d=lambda row: self.sample_sim(sample_size=1, true_param=row[0]) if row[
-                                         1] else np.clip(self.g_distribution.rvs(size=1), a_min=0, a_max=2000))
-        return np.hstack((concat_mat, sample.reshape(-1, 1)))
+        if self.empirical_marginal:
+            sample = np.apply_along_axis(arr=concat_mat, axis=1,
+                                         func1d=lambda row: self.sample_sim(
+                                             sample_size=1, true_param=row[:self.d]) if row[self.d]
+                                         else self.sample_empirical_marginal(sample_size=1))
+        else:
+            sample = np.apply_along_axis(arr=concat_mat, axis=1,
+                                         func1d=lambda row: self.sample_sim(
+                                             sample_size=1, true_param=row[0]) if row[1]
+                                         else np.int(self.g_distribution.rvs(size=1)))
+        return np.hstack((concat_mat, sample.reshape(-1, self.d_obs)))
 
     def sample_msnh_algo5(self, b_prime, sample_size):
         theta_mat = self.sample_param_values(sample_size=b_prime).reshape(-1, 1)
