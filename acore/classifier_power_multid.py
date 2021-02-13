@@ -138,7 +138,7 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
                         obs_sample=x_obs, t0=theta_0) for theta_0 in t0_grid])
             elif test_statistic == 'exactlr':
                 tau_obs = compute_exactlr_single_t0(
-                        obs_sample=x_obs, t0_grid=t0_grid, grid_param=grid_param)
+                        obs_sample=x_obs, t0_grid=t0_grid, grid_param=t0_grid)
             else:
                 raise ValueError('The variable test_statistic needs to be either acore, avgacore, logavgacore, '
                                  'exactodds_nuisance, exactlr. Currently %s' % test_statistic)
