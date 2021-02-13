@@ -10,6 +10,8 @@ from or_classifiers.dnn_classifiers import OddsNet
 classifier_dict = {
     'NN': KNeighborsClassifier(),
     'MLP': MLPClassifier(alpha=0, max_iter=25000),
+    'MLP2': MLPClassifier((64, 32, 32), activation='relu', alpha=0, max_iter=25000),
+    'XGBoost (d3, n500)': XGBClassifier(max_depth=3, n_estimators=500),
     'QDA': QuadraticDiscriminantAnalysis()
 }
 
