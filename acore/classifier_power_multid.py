@@ -309,9 +309,9 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
                     plot_df = pd.DataFrame.from_dict({
                         'theta1': t0_grid[:, 0],
                         'theta2': t0_grid[:, 1],
-                        'tau_statistic': tau_obs_val,
-                        'cutoff': cutoff_val,
-                        'decision': (tau_obs_val >= cutoff_val).astype(float)
+                        'tau_statistic': tau_obs_val.reshape(-1, ),
+                        'cutoff': cutoff_val.reshape(-1, ),
+                        'decision': (tau_obs_val.reshape(-1, ) >= cutoff_val.reshape(-1, )).astype(float)
                         })
 
                     pkl_dir = 'sims/classifier_power_multid/plot_df/'
