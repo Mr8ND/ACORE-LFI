@@ -34,7 +34,7 @@ model_dict = {
 def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier_cde, test_statistic, alternative_norm,
          monte_carlo_samples=500, debug=False, seed=7, size_check=1000, verbose=False, marginal=False,
          size_marginal=1000, empirical_marginal=True, benchmark=1, nuisance_parameters=False, nuisance_confint=False,
-         guided_sim=False, guided_sample=1000):
+         guided_sim=False, guided_sample=1000, exactlr_mc=1000):
 
     # Changing values if debugging
     b = b if not debug else 100
@@ -212,7 +212,7 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
                     # stats_sample = compute_exactlr_single_t0(
                     #     obs_sample=x_obs, t0_grid=theta_mat_sample.reshape(-1, model_obj.d), grid_param=grid_param)
                     t0_pred_vec = compute_exactlr_distribution_t0(
-                        prediction_grid=t0_grid, monte_carlo_samples=1000, sample_size_obs=sample_size_obs, alpha=alpha)
+                        prediction_grid=t0_grid, monte_carlo_samples=exactlr_mc, sample_size_obs=sample_size_obs, alpha=alpha)
                 else:
                     raise ValueError('The variable test_statistic needs to be either acore, avgacore,'
                                      ' logavgacore, exactodds_nuisance or exactlr. '
@@ -273,7 +273,7 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
                 # stats_mat = compute_exactlr_msnh_t0(
                 #     t0_grid=theta_mat, sample_mat=sample_mat, grid_param=grid_param)
                 t0_pred_vec = compute_exactlr_distribution_t0(
-                    prediction_grid=t0_grid, monte_carlo_samples=1000, sample_size_obs=sample_size_obs, alpha=alpha)
+                    prediction_grid=t0_grid, monte_carlo_samples=exactlr_mc, sample_size_obs=sample_size_obs, alpha=alpha)
             else:
                 raise ValueError('The variable test_statistic needs to be either acore, avgacore, logavgacore, '
                                  'exactodds_nuisance or exactlr. Currently %s' % test_statistic)
@@ -386,6 +386,8 @@ if __name__ == '__main__':
                         help='If true, we guided the sampling for the B prime in order to get meaningful results.')
     parser.add_argument('--guided_sample', action="store", type=int, default=2500,
                         help='The sample size to be used for the guided simulation. Only used if guided_sim is True.')
+    parser.add_argument('--exactlr_mc', action="store", type=int, default=1000,
+                        help='Monte Carlo samples for the exact likelihood ratio calculations.')
     argument_parsed = parser.parse_args()
 
     
@@ -412,5 +414,6 @@ if __name__ == '__main__':
         nuisance_parameters=argument_parsed.nuisance,
         nuisance_confint=argument_parsed.nuisance_confint,
         guided_sim=argument_parsed.guided_sim,
-        guided_sample=argument_parsed.guided_sample
+        guided_sample=argument_parsed.guided_sample,
+        exactlr_mc=argument_parsed.exactlr_mc
     )
