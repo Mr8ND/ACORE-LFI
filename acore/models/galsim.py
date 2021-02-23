@@ -41,7 +41,9 @@ class CNNmodel:
     def predict_proba(self, predict_mat):
         param_tensor = torch.from_numpy(predict_mat[:, :self.d]).type(torch.Tensor).to(self.device)
         img_tensor = torch.from_numpy(
-            predict_mat[:, self.d:].reshape(-1, self.img_h, self.img_w)).type(torch.Tensor).to(self.device)
+            predict_mat[:, self.d:].reshape(-1, self.img_h, self.img_w)).type(torch.Tensor)
+        img_tensor = img_tensor.unsqueeze(1).to(self.device)
+
         return self.model(img=img_tensor, param=param_tensor).cpu().detach().numpy()
 
 
@@ -53,8 +55,18 @@ class GalSimLoader:
                  flnm_sim='data/galsim/acore_galsim_simulated_50000params_25ssobs_downsampling20_0.5mixingparam_2021-02-08-16-50.pkl',
                  flnm_data='data/galsim/acore_galsim_simulated_central_param_100ssobs_downsampling20_0.5mixingparam_2021-02-06-18-53.pkl',
                  alpha_low=-math.pi, alpha_high=math.pi, lambda_low=0, lambda_high=1, alpha_true=0.0, lambda_true=0.5,
-                 out_dir='galsim/', num_acore_grid=21, num_pred_grid=21, *args, **kwargs):
+                 out_dir='galsim/', num_acore_grid=21, num_pred_grid=21, seed=7, *args, **kwargs):
 
+        # Set the seed
+        random.seed(seed)
+
+        # Set all parameters
+        self.d = 2
+        self.img_h = 20
+        self.img_w = 20
+        self.d_obs = self.img_h * self.img_w
+        self.out_directory = out_dir
+        self.b_prime_vec = [100, 500, 1000, 5000, 10000, 50000]
         self.true_param = np.array([alpha_true, lambda_true])
         self.alpha_low = alpha_low
         self.alpha_high = alpha_high
@@ -73,7 +85,8 @@ class GalSimLoader:
         )).reshape(-1, 2)
 
         # Load in the data for MSNH and the true observed data
-        self.param_mshn_dict = pickle.load(open(flnm_sim, 'rb'))
+        self.flnm_sim = flnm_sim
+        self.param_mshn_dict = pickle.load(open(self.flnm_sim, 'rb'))
         self.param_vec = list(self.param_mshn_dict.keys())
         self.param_mshn_trueobs_dict = pickle.load(open(flnm_data, 'rb'))
 
@@ -82,15 +95,8 @@ class GalSimLoader:
             raise ValueError('True parameters are not what was expected.')
 
         # Load pre-trained model
-        clf_obj = CNNmodel(model_name=model_name, model_folder=model_folder)
-
-        # Parameters
-        self.d = 2
-        self.h_img = 20
-        self.w_img = 20
-        self.d_obs = self.h_img * self.w_img
-        self.out_directory = out_dir
-        self.b_prime_vec = [100, 500, 1000, 5000, 10000, 50000]
+        self.clf_obj = CNNmodel(model_name=model_name, model_folder=model_folder, d=self.d,
+                                img_h=self.img_h, img_w=self.img_w)
 
     def sample_param_values(self, sample_size):
         alpha_prior_sample = np.random.uniform(self.alpha_low, self.alpha_high, size=sample_size)
@@ -106,11 +112,26 @@ class GalSimLoader:
             param_mat[kk, :] = np.array([param_val[0], param_val[1]])
             ss_temp = 0
             while ss_temp < sample_size:
-                sample_img = self.param_mshn_dict[param_val].pop()
+                try:
+                    sample_img = self.param_mshn_dict[param_val].pop()
+                except IndexError:
+                    self.param_mshn_dict = pickle.load(open(self.flnm_sim, 'rb'))
+                    sample_img = self.param_mshn_dict[param_val].pop()
                 sample_mat[kk, ss_temp, :] = sample_img.reshape(self.d_obs,)
                 ss_temp += 1
 
         return param_mat, sample_mat
+
+    def sample_sim_true_param(self, sample_size):
+        sample_mat = np.zeros((sample_size, self.d_obs))
+        true_param_tuple = list(self.param_mshn_trueobs_dict.keys())[0]
+        ss_temp = 0
+        while ss_temp < sample_size:
+            sample_img = self.param_mshn_trueobs_dict[true_param_tuple].pop()
+            sample_mat[ss_temp, :] = sample_img.reshape(self.d_obs, )
+            ss_temp += 1
+
+        return sample_mat
 
     def sample_msnh_algo5(self, b_prime, sample_size):
         return self.sample_sim_check(sample_size=sample_size, n=b_prime)
