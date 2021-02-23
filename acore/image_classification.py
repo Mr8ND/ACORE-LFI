@@ -19,7 +19,7 @@ class ImgDataset(torch.utils.data.Dataset):
 
     def __init__(self, param_mat, image_mat, y_vec):
         self.param = param_mat
-        self.image = np.expand_dims(image_mat, axis=1)
+        self.image = torch.unsqueeze(image_mat, dim=1)
         self.y = y_vec
 
     def __getitem__(self, index):
@@ -95,20 +95,20 @@ def main(datafile='acore_galsim_simulated_275000params_1ssobs_downsampling20_0.5
     device = torch.device('cuda:0' if (torch.cuda.is_available() and cuda_flag) else 'cpu')
 
     train_dataset = ImgDataset(
-        param_mat=torch.from_numpy(train_param.astype(np.float64)).type(torch.Tensor).to(device),
-        image_mat=torch.from_numpy(train_img.astype(np.float64)).type(torch.Tensor).to(device),
-        y_vec=torch.from_numpy(train_y.astype(np.float64)).type(torch.Tensor).to(device))
+        param_mat=torch.from_numpy(train_param.astype(np.float64)).type(torch.Tensor),
+        image_mat=torch.from_numpy(train_img.astype(np.float64)).type(torch.Tensor),
+        y_vec=torch.from_numpy(train_y.astype(np.float64)).type(torch.Tensor))
     test_dataset = ImgDataset(
-        param_mat=torch.from_numpy(test_param.astype(np.float64)).type(torch.Tensor).to(device),
-        image_mat=torch.from_numpy(test_img.astype(np.float64)).type(torch.Tensor).to(device),
-        y_vec=torch.from_numpy(test_y.astype(np.float64)).type(torch.Tensor).to(device))
+        param_mat=torch.from_numpy(test_param.astype(np.float64)).type(torch.Tensor),
+        image_mat=torch.from_numpy(test_img.astype(np.float64)).type(torch.Tensor),
+        y_vec=torch.from_numpy(test_y.astype(np.float64)).type(torch.Tensor))
 
     train_load = torch.utils.data.DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=False)
     test_load = torch.utils.data.DataLoader(dataset=test_dataset, batch_size=test_n, shuffle=False)
 
     # Create the model
     flnm_model = 'data/%smodel_%slr_%sbatchsize_%s.pt' % (
-        model_run, str(lr), str(batch_size), datetime.strftime(datetime.today(), '%Y-%m-%d-%H-%M'))
+        model_run, str(lr), str(batch_size), datetime.strftime(datetime.today(), '%Y-%m-%d'))
     model = model_dict[model_run]
     model.to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
@@ -127,7 +127,7 @@ def main(datafile='acore_galsim_simulated_275000params_1ssobs_downsampling20_0.5
         model.train()
         train_loss_temp = []
         for batch_idx, (param_batch, img_batch, y_batch) in enumerate(train_load):
-
+            param_batch, img_batch, y_batch = param_batch.to(device), img_batch.to(device), y_batch.to(device)
             optimizer.zero_grad()
             out_batch = model(img_batch, param_batch)
             loss = criterion(out_batch, y_batch)
@@ -142,6 +142,8 @@ def main(datafile='acore_galsim_simulated_275000params_1ssobs_downsampling20_0.5
 
         model.eval()
         param_batch_test, img_batch_test, y_batch_test = next(iter(test_load))
+        param_batch_test, img_batch_test, y_batch_test = param_batch_test.to(device), \
+                                                         img_batch_test.to(device), y_batch_test.to(device)
         out_batch_test = model(img_batch_test, param_batch_test)
         acc_test = (torch.argmax(out_batch_test, dim=1) == torch.argmax(y_batch_test, dim=1)).sum()/test_n
         loss = criterion(out_batch_test, y_batch_test)
@@ -151,8 +153,8 @@ def main(datafile='acore_galsim_simulated_275000params_1ssobs_downsampling20_0.5
             print('Epoch:%d, Train Loss: %.5f, Test Loss: %.5f, Accuracy Test: %.5f' % (
                 epoch, training_loss[-1], test_loss[-1], acc_test))
 
-        if epoch > 50 and np.median(
-                training_loss[-50:]) > np.median(training_loss[-100:-50]):
+        if epoch > 200 and np.median(
+                training_loss[-100:]) > np.median(training_loss[-200:-100]):
             break
         else:
             torch.save({
@@ -160,6 +162,8 @@ def main(datafile='acore_galsim_simulated_275000params_1ssobs_downsampling20_0.5
                 'model_state_dict': model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
                 'loss': loss.item(),
+                'training_loss': training_loss,
+                'test_loss': test_loss
             }, flnm_model)
 
 
