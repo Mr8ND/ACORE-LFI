@@ -4,6 +4,7 @@ import math
 import os
 import torch
 import sys
+import pdb
 import random
 sys.path.append(".")
 
@@ -86,8 +87,7 @@ class GalSimLoader:
 
         # Load in the data for MSNH and the true observed data
         self.flnm_sim = flnm_sim
-        self.param_mshn_dict = pickle.load(open(self.flnm_sim, 'rb'))
-        self.param_vec = list(self.param_mshn_dict.keys())
+        self.load_simulated_images()
         self.param_mshn_trueobs_dict = pickle.load(open(flnm_data, 'rb'))
 
         # Check if parameters correspond
@@ -97,6 +97,11 @@ class GalSimLoader:
         # Load pre-trained model
         self.clf_obj = CNNmodel(model_name=model_name, model_folder=model_folder, d=self.d,
                                 img_h=self.img_h, img_w=self.img_w)
+
+    def load_simulated_images(self):
+        param_mshn_dict_temp = pickle.load(open(self.flnm_sim, 'rb'))
+        self.param_mshn_dict = {k: v for k, v in param_mshn_dict_temp.items() if len(v) > 0}
+        self.param_vec = list(self.param_mshn_dict.keys())
 
     def sample_param_values(self, sample_size):
         alpha_prior_sample = np.random.uniform(self.alpha_low, self.alpha_high, size=sample_size)
@@ -115,8 +120,8 @@ class GalSimLoader:
                 try:
                     sample_img = self.param_mshn_dict[param_val].pop()
                 except IndexError:
-                    self.param_mshn_dict = pickle.load(open(self.flnm_sim, 'rb'))
-                    sample_img = self.param_mshn_dict[param_val].pop()
+                    self.load_simulated_images()
+                    continue
                 sample_mat[kk, ss_temp, :] = sample_img.reshape(self.d_obs,)
                 ss_temp += 1
 
