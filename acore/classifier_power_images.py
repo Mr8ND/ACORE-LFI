@@ -19,7 +19,7 @@ model_dict = {
 
 
 def main(model_name, d_obs, run, rep, b_prime, alpha,  sample_size_obs, classifier_cde, test_statistic,
-         debug=False, seed=7, monte_carlo_samples=500, verbose=False):
+         debug=False, seed=7, monte_carlo_samples=500, cuda_flag=False, verbose=False):
 
     # Changing values if debugging
     b_prime = b_prime if not debug else 100
@@ -27,7 +27,7 @@ def main(model_name, d_obs, run, rep, b_prime, alpha,  sample_size_obs, classifi
 
     # We pass as inputs all arguments necessary for all classes, but some of them will not be picked up if they are
     # not necessary for a specific class
-    model_obj = model_dict[run](seed=seed, model_name=model_name)
+    model_obj = model_dict[run](seed=seed, model_name=model_name, cuda_flag=cuda_flag)
 
     # Get the correct functions
     msnh_sampling_func = model_obj.sample_msnh_algo5
@@ -155,6 +155,8 @@ if __name__ == '__main__':
                         help='Name for the pre-trained CNN classifier to be used.')
     parser.add_argument('--monte_carlo_samples', action="store", type=int, default=1000,
                         help='Sample size for the calculation of the OR loss.')
+    parser.add_argument('--cuda_flag', action='store_true', default=False,
+                        help='If true, uses a GPU if available.')
     argument_parsed = parser.parse_args()
 
     main(
@@ -170,5 +172,6 @@ if __name__ == '__main__':
         test_statistic=argument_parsed.test_statistic,
         classifier_cde=argument_parsed.class_cde,
         model_name=argument_parsed.model_name,
-        monte_carlo_samples=argument_parsed.monte_carlo_samples
+        monte_carlo_samples=argument_parsed.monte_carlo_samples,
+        cuda_flag=argument_parsed.cuda_flag
     )

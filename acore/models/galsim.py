@@ -22,9 +22,9 @@ MODEL_DICT = {
 
 class CNNmodel:
 
-    def __init__(self, model_name, model_folder, d, img_h, img_w, pretrained=True, device='cpu'):
+    def __init__(self, model_name, model_folder, d, img_h, img_w, pretrained=True, cuda_flag=False):
         self.model_name = model_name
-        self.device = torch.device(device)
+        self.device = torch.device('cuda:0' if (torch.cuda.is_available() and cuda_flag) else 'cpu')
         self.model = MODEL_DICT[model_name]()
         self.model_folder = model_folder
         self.d = d
@@ -56,7 +56,7 @@ class GalSimLoader:
                  flnm_sim='data/galsim/acore_galsim_simulated_50000params_25ssobs_downsampling20_0.5mixingparam_2021-02-08-16-50.pkl',
                  flnm_data='data/galsim/acore_galsim_simulated_central_param_100ssobs_downsampling20_0.5mixingparam_2021-02-06-18-53.pkl',
                  alpha_low=-math.pi, alpha_high=math.pi, lambda_low=0, lambda_high=1, alpha_true=0.0, lambda_true=0.5,
-                 out_dir='galsim/', num_acore_grid=21, num_pred_grid=21, seed=7, *args, **kwargs):
+                 out_dir='galsim/', num_acore_grid=21, num_pred_grid=21, seed=7, cuda_flag=False, *args, **kwargs):
 
         # Set the seed
         random.seed(seed)
@@ -96,7 +96,7 @@ class GalSimLoader:
 
         # Load pre-trained model
         self.clf_obj = CNNmodel(model_name=model_name, model_folder=model_folder, d=self.d,
-                                img_h=self.img_h, img_w=self.img_w)
+                                img_h=self.img_h, img_w=self.img_w, cuda_flag=cuda_flag)
 
     def load_simulated_images(self):
         param_mshn_dict_temp = pickle.load(open(self.flnm_sim, 'rb'))
