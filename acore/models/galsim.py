@@ -37,15 +37,13 @@ class CNNmodel:
     def _load_torch_model(self, model_name):
         flnm_model = [el for el in os.listdir(self.model_folder) if model_name in el][0]
         model_out_dict = torch.load(self.model_folder + flnm_model, map_location=self.device)
-        self.model.load_state_dict(model_out_dict['model_state_dict'])
+        self.model.load_state_dict(model_out_dict['model_state_dict']).to(self.device)
 
     def predict_proba(self, predict_mat):
         param_tensor = torch.from_numpy(predict_mat[:, :self.d]).type(torch.Tensor).to(self.device)
         img_tensor = torch.from_numpy(
             predict_mat[:, self.d:].reshape(-1, self.img_h, self.img_w)).type(torch.Tensor)
         img_tensor = img_tensor.unsqueeze(1).to(self.device)
-
-        pdb.set_trace()
 
         return self.model(img=img_tensor, param=param_tensor).cpu().detach().numpy()
 
