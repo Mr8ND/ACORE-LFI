@@ -45,6 +45,8 @@ class CNNmodel:
             predict_mat[:, self.d:].reshape(-1, self.img_h, self.img_w)).type(torch.Tensor)
         img_tensor = img_tensor.unsqueeze(1).to(self.device)
 
+        pdb.set_trace()
+
         return self.model(img=img_tensor, param=param_tensor).cpu().detach().numpy()
 
 
