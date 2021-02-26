@@ -24,7 +24,7 @@ model_dict = {
 
 def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier, classifier_cde, test_statistic,
          alternative_norm, diagnostic_sample=2000, monte_carlo_samples=500, debug=False, seed=7, size_check=1000,
-         size_marginal=1000, empirical_marginal=True, benchmark=1, nuisance_parameters=False,
+         size_marginal=1000, empirical_marginal=True, benchmark=1, nuisance_parameters=False, num_grid=11,
          verbose=False, marginal=False):
 
     # Changing values if debugging
@@ -38,7 +38,7 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
     model_obj = model_dict[run](
         d_obs=d_obs, marginal=marginal, size_marginal=size_marginal, empirical_marginal=empirical_marginal,
         true_param=t0_val, alt_mu_norm=alternative_norm, nuisance_parameters=nuisance_parameters,
-        benchmark=benchmark
+        benchmark=benchmark, num_acore_grid=num_grid, num_pred_grid=num_grid
     )
 
     # Get the correct functions
@@ -252,6 +252,8 @@ if __name__ == '__main__':
                         help='If true, uses nuisance parameters if available.')
     parser.add_argument('--diagnostic_sample', action="store", type=int, default=2000,
                         help='Sample for diagnostics meaning.')
+    parser.add_argument('--num_grid', action="store", type=int, default=11,
+                        help='Number of points in the parameter grid.')
     argument_parsed = parser.parse_args()
 
     main(
@@ -276,5 +278,6 @@ if __name__ == '__main__':
         benchmark=argument_parsed.benchmark,
         nuisance_parameters=argument_parsed.nuisance,
         classifier=argument_parsed.classifier,
-        diagnostic_sample=argument_parsed.diagnostic_sample
+        diagnostic_sample=argument_parsed.diagnostic_sample,
+        num_grid=argument_parsed.num_grid
     )
