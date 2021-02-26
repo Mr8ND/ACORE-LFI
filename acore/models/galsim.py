@@ -25,7 +25,7 @@ class CNNmodel:
     def __init__(self, model_name, model_folder, d, img_h, img_w, pretrained=True, cuda_flag=False):
         self.model_name = model_name
         self.device = torch.device('cuda:0' if (torch.cuda.is_available() and cuda_flag) else 'cpu')
-        self.model = MODEL_DICT[model_name]()
+        self.model = MODEL_DICT[model_name]().to(self.device)
         self.model_folder = model_folder
         self.d = d
         self.img_h = img_h
@@ -37,7 +37,7 @@ class CNNmodel:
     def _load_torch_model(self, model_name):
         flnm_model = [el for el in os.listdir(self.model_folder) if model_name in el][0]
         model_out_dict = torch.load(self.model_folder + flnm_model, map_location=self.device)
-        self.model.load_state_dict(model_out_dict['model_state_dict']).to(self.device)
+        self.model.load_state_dict(model_out_dict['model_state_dict'])
 
     def predict_proba(self, predict_mat):
         param_tensor = torch.from_numpy(predict_mat[:, :self.d]).type(torch.Tensor).to(self.device)
