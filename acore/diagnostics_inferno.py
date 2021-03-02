@@ -22,7 +22,7 @@ model_dict = {
 }
 
 
-def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier, classifier_cde, test_statistic,
+def main(d_obs, run, b, b_prime, alpha, t0_val, sample_size_obs, classifier, classifier_cde, test_statistic,
          alternative_norm, diagnostic_sample=2000, monte_carlo_samples=500, debug=False, seed=7, size_check=1000,
          size_marginal=1000, empirical_marginal=True, benchmark=1, nuisance_parameters=False, num_grid=11,
          verbose=False, marginal=False):
@@ -30,7 +30,6 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
     # Changing values if debugging
     b = b if not debug else 100
     b_prime = b_prime if not debug else 100
-    rep = rep if not debug else 2
     classifier_dict = classifier_dict_multid_power if 'inferno' not in run else classifier_inferno_dict
 
     # We pass as inputs all arguments necessary for all classes, but some of them will not be picked up if they are
@@ -187,8 +186,8 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
         'nuisance': model_obj.nuisance_flag
     }
     out_dir = 'sims/classifier_power_multid/'
-    out_filename = 'inferno_b%s_diagnostic_%steststats_%sB_%sBprime_%srep_alpha%s_sampleobs%s_t0val%s_%s_%s.pkl' % (
-        benchmark, test_statistic, b, b_prime, rep,
+    out_filename = 'inferno_b%s_diagnostic_%steststats_%sB_%sBprime_%sseed_alpha%s_sampleobs%s_t0val%s_%s_%s.pkl' % (
+        benchmark, test_statistic, b, b_prime, seed,
         str(alpha).replace('.', '-'), sample_size_obs,
         str(t0_val).replace('.', '-'), classifier_cde,
         datetime.strftime(datetime.today(), '%Y-%m-%d-%H-%M')
@@ -251,7 +250,6 @@ if __name__ == '__main__':
     main(
         d_obs=argument_parsed.d_obs,
         run=argument_parsed.run,
-        rep=argument_parsed.rep,
         marginal=argument_parsed.marginal,
         empirical_marginal=argument_parsed.empirical_marginal,
         b=argument_parsed.b,  # b_val,
