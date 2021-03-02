@@ -1,6 +1,7 @@
 import numpy as np
 import sys
 import warnings
+import torch
 warnings.filterwarnings('ignore')
 
 from sklearn.neighbors import KNeighborsClassifier
@@ -11,6 +12,15 @@ from scipy.special import logsumexp
 
 
 neighbor_range = [1, 2, 3, 4, 5, 10, 15, 20, 25] + [50 * x for x in range(1, 21)] + [500 * x for x in range(3, 6)]
+
+
+def compute_orloss_from_odds(odds_mat, bern_vec, p=0.5):
+
+    # Split them accordingly
+    odds_simulator = odds_mat[bern_vec == 1][:, 1]
+    odds_reference = odds_mat[bern_vec == 0][:, 0]
+
+    return np.average(odds_reference ** 2) - 2 * (p / (1 - p)) * np.average(odds_simulator)
 
 
 def odds_ratio_loss(clf, x_vec, theta_vec, bern_vec, d=1, d_obs=1, p=0.5):
