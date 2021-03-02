@@ -31,6 +31,9 @@ class CNNmodel:
         self.img_h = img_h
         self.img_w = img_w
 
+        self.check_loss = None
+        self.odds_loss_check = None
+
         if pretrained:
             self._load_torch_model(model_name)
 
@@ -38,6 +41,8 @@ class CNNmodel:
         flnm_model = [el for el in os.listdir(self.model_folder) if model_name in el][0]
         model_out_dict = torch.load(self.model_folder + flnm_model, map_location=self.device)
         self.model.load_state_dict(model_out_dict['model_state_dict'])
+        self.check_loss = model_out_dict['check_loss']
+        self.odds_loss_check = model_out_dict['odds_loss_check']
 
     def predict_proba(self, predict_mat):
         param_tensor = torch.from_numpy(predict_mat[:, :self.d]).type(torch.Tensor).to(self.device)
@@ -55,11 +60,13 @@ class GalSimLoader:
     def __init__(self, model_name='resnet34', model_folder='cnn_models/trained_models/',
                  flnm_sim='data/galsim/acore_galsim_simulated_50000params_25ssobs_downsampling20_0.5mixingparam_2021-02-08-16-50.pkl',
                  flnm_data='data/galsim/acore_galsim_simulated_central_param_100ssobs_downsampling20_0.5mixingparam_2021-02-06-18-53.pkl',
+                 flnm_train='data/galsim/acore_galsim_simulated_275000params_1ssobs_downsampling20_0.5mixingparam_2021-02-08-02-37.pkl',
                  alpha_low=-math.pi, alpha_high=math.pi, lambda_low=0, lambda_high=1, alpha_true=0.0, lambda_true=0.5,
                  out_dir='galsim/', num_acore_grid=21, num_pred_grid=21, seed=7, cuda_flag=False, *args, **kwargs):
 
         # Set the seed
-        random.seed(seed)
+        self.seed = seed
+        random.seed(self.seed)
 
         # Set all parameters
         self.d = 2
@@ -86,6 +93,7 @@ class GalSimLoader:
         )).reshape(-1, 2)
 
         # Load in the data for MSNH and the true observed data
+        self.flnm_train = flnm_train
         self.flnm_sim = flnm_sim
         self.load_simulated_images()
         self.param_mshn_trueobs_dict = pickle.load(open(flnm_data, 'rb'))
@@ -140,6 +148,69 @@ class GalSimLoader:
 
     def sample_msnh_algo5(self, b_prime, sample_size):
         return self.sample_sim_check(sample_size=sample_size, n=b_prime)
+
+    def _sample_from_prior_training(self, sample_size, random_seed):
+        np.random.seed(random_seed)
+        alpha_prior_sample = np.random.uniform(-math.pi, math.pi, size=sample_size)
+        lambda_prior_sample = np.random.uniform(0, 1, size=sample_size)
+        return np.hstack((alpha_prior_sample.reshape(-1, 1), lambda_prior_sample.reshape(-1, 1)))
+
+    def load_test_cases(self, n_train, test_split=0.1):
+
+        # Load the images
+        img_dict = pickle.load(open(self.flnm_train, 'rb'))
+
+        # Prepare the arrays
+        n_images = len(img_dict.keys())
+        param_mat = np.zeros((n_images, 2))
+        image_mat = np.zeros((n_images, self.img_h, self.img_w))
+        idx = 0
+        for (alpha_val, lambda_val), image_np in img_dict.items():
+
+            if idx > ((n_train * 2) + 1):
+                break
+
+            # Check whether the image was available
+            if len(image_np) > 0:
+                param_mat[idx, :] = np.array([alpha_val, lambda_val])
+                image_mat[idx, :, :] = image_np[0]
+                idx += 1
+
+        # Correct the shape of parameter and image matrices
+        n_images = idx
+        param_mat = param_mat[:n_images, :]
+        image_mat = image_mat[:n_images, :, :]
+
+        # Generate the samples from the simulator and the sample from the empirical marginal
+        if n_train > (n_images / 2):
+            raise ValueError('Not enough training data. Current shape:%d, Requested:%d (x2).' % (n_images, n_train))
+
+        # Sample from the simulator
+        param_simulator = param_mat[:n_train, :]
+        image_simulator = image_mat[:n_train, :, :]
+        y_vec_simulator = np.hstack((np.zeros(n_train).reshape(-1, 1), np.ones(n_train).reshape(-1, 1)))
+
+        # Sample from the empirical marginal
+        param_empirical_marginal = self._sample_from_prior_training(sample_size=n_train, random_seed=self.seed)
+        image_empirical_marginal = image_mat[n_train:(2 * n_train), :, :]
+        y_vec_empirical_marginal = np.hstack((np.ones(n_train).reshape(-1, 1), np.zeros(n_train).reshape(-1, 1)))
+
+        # Create full matrices and vectors
+        param_full = np.vstack((param_simulator, param_empirical_marginal))
+        image_full = np.vstack((image_simulator, image_empirical_marginal))
+        y_vec_full = np.vstack((y_vec_simulator, y_vec_empirical_marginal))
+
+        # Split training and testing
+        np.random.seed(self.seed)
+        indices = np.random.permutation(n_train * 2)
+        test_n = int((n_train * 2) * test_split)
+        test_idx = indices[:test_n]
+        y_test_full = y_vec_full[test_idx]
+
+        # Have to flatten the y_test to make it Sklearn compatible
+        y_test_1d = np.array([int(el[1] == 1) for el in y_test_full]).reshape(-1, )
+
+        return image_full[test_idx, :, :], param_full[test_idx, :], y_test_1d
 
     def compute_exact_tau(self, x_obs, t0_val, meshgrid):
         raise NotImplementedError('True Likelihood not known for this model.')

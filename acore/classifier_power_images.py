@@ -7,8 +7,10 @@ import argparse
 import pandas as pd
 from tqdm.auto import tqdm
 from datetime import datetime
+from sklearn.metrics import log_loss
 
-from utils.functions import compute_statistics_single_t0, compute_averageodds_single_t0, compute_bayesfactor_single_t0
+from utils.functions import compute_statistics_single_t0, compute_averageodds_single_t0, \
+    compute_bayesfactor_single_t0, compute_orloss_from_odds
 from models.galsim import GalSimLoader
 from utils.qr_functions import train_qr_algo
 from qr_algorithms.complete_list import classifier_cde_dict
@@ -19,7 +21,7 @@ model_dict = {
 
 
 def main(model_name, d_obs, run, rep, b_prime, alpha,  sample_size_obs, classifier_cde, test_statistic,
-         debug=False, seed=7, monte_carlo_samples=500, cuda_flag=False, verbose=False):
+         debug=False, seed=7, monte_carlo_samples=500, cuda_flag=False, n_train=60000, test_split=0.1, verbose=False):
 
     # Changing values if debugging
     b_prime = b_prime if not debug else 100
@@ -39,12 +41,24 @@ def main(model_name, d_obs, run, rep, b_prime, alpha,  sample_size_obs, classifi
     clf_odds = model_obj.clf_obj
     gen_param_fun = model_obj.sample_param_values
 
+    # Check the cross entropy loss and the odds ratio loss for the test set during the training
+    # img_test, param_test, y_test = model_obj.load_test_cases(n_train=n_train, test_split=test_split)
+    # odds_test = clf_odds.predict_proba(np.hstack((
+    #     param_test.reshape(-1, model_obj.d), img_test.reshape(-1, model_obj.d_obs)
+    # )))
+    # cross_entropy_loss_test = log_loss(y_true=y_test, y_pred=odds_test[:, 1].reshape(-1,))
+    # or_loss_test = compute_orloss_from_odds(bern_vec=y_test, odds_mat=odds_test)
+
+    cross_entropy_loss_test = clf_odds.check_loss[-1]
+    or_loss_test = clf_odds.odds_loss_check[-1]
+
     # Loop over repetitions and classifiers
     # Each time we train the different QR classifiers (the OR classifier is already trained and loaded),
     # we build the intervals and we record whether the point is in or not.
     out_val = []
     out_cols = ['d_obs', 'test_statistic', 'b_prime', 'classifier_cde', 'run', 'rep',
-                'sample_size_obs', 'coverage', 'power', 'size_CI', 'model_name', 'monte_carlo_samples']
+                'sample_size_obs', 'coverage', 'power', 'size_CI', 'model_name', 'monte_carlo_samples',
+                'cross_entropy_loss_test', 'or_loss_test']
     pbar = tqdm(total=rep, desc="Toy Example for Simulations, n=%s, B'=%s" % (sample_size_obs, b_prime))
     for jj in range(rep):
 
@@ -110,7 +124,7 @@ def main(model_name, d_obs, run, rep, b_prime, alpha,  sample_size_obs, classifi
                                                                       np.sum(in_confint)) / in_confint.shape[0]
         out_val.append([
             d_obs, test_statistic, b_prime, clf_name_qr, run, jj, sample_size_obs,
-            coverage, power, size_temp, model_name, monte_carlo_samples
+            coverage, power, size_temp, model_name, monte_carlo_samples, cross_entropy_loss_test, or_loss_test
         ])
 
         pbar.update(1)
