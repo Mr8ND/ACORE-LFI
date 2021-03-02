@@ -72,39 +72,31 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
     # Compute the nuisance parameters if necessary
     if benchmark == 4 and model_obj.nuisance_flag:
         theta0_mat = np.zeros((diagnostic_sample, 4))
-        acore_grid_list = []
-        t0_grid_list = []
-        b_prime_sample_list = []
-        pbar = tqdm(total=diagnostic_sample, desc='Nuisance parameter computation')
-        for kk in range(diagnostic_sample):
 
-            # First compute the nuisance parameter values of the parameter of interest
-            nuisance_vec_lik = model_obj.nuisance_parameter_minimization(
-                x_obs=sample_mat[kk, :, :], target_params=param_mat[kk, 0].reshape(-1, ), clf_odds=clf_odds)
-            theta0_mat[kk, :] = np.concatenate((
-                param_mat[kk, 0].reshape(-1, ), nuisance_vec_lik[:3].reshape(-1,)
-            ))
+        # As a shortcut we compute the nuisance parameters only once
+        # Compute the nuisance parameter values of the parameter of interest
+        nuisance_vec_lik = model_obj.nuisance_parameter_minimization(
+            x_obs=sample_mat[0, :, :], target_params=param_mat[0, 0].reshape(-1, ), clf_odds=clf_odds)
 
-            # Then compute the various grids over which we minimize ACORE or we sample BFF (logavgacore)
-            t0_grid_out, acore_grid_out = model_obj.calculate_nuisance_parameters_over_grid(
-                t0_grid=t0_grid, clf_odds=clf_odds, x_obs=sample_mat[kk, :, :])
+        # Then we compute the various grids over which we minimize ACORE or we sample BFF (logavgacore)
+        t0_grid_out, acore_grid_out = model_obj.calculate_nuisance_parameters_over_grid(
+            t0_grid=t0_grid, clf_odds=clf_odds, x_obs=sample_mat[0, :, :])
 
-            # Since the nuisance parameters change every time, we need to simulate the B' dataset in advance
-            theta_mat, sample_mat = model_obj.sample_msnh_algo5(b_prime=b_prime, sample_size=sample_size_obs)
-
-            # Append everything to their own list
-            t0_grid_list.append(t0_grid_out)
-            acore_grid_list.append(acore_grid_out)
-            b_prime_sample_list.append((theta_mat, sample_mat))
-            pbar.update(1)
+        # Append everything to their own list
+        theta0_mat[:, 0] = param_mat[:, 0]
+        theta0_mat[:, 1:] = nuisance_vec_lik[:3].reshape(-1, 3)
+        t0_grid_list = [t0_grid_out] * diagnostic_sample
+        acore_grid_list = [acore_grid_out] * diagnostic_sample
     elif benchmark == 1 and not model_obj.nuisance_flag:
         theta0_mat = param_mat
         acore_grid_list = [grid_param] * diagnostic_sample
         t0_grid_list = [t0_grid] * diagnostic_sample
-        theta_mat, sample_mat = model_obj.sample_msnh_algo5(b_prime=b_prime, sample_size=sample_size_obs)
-        b_prime_sample_list = [(theta_mat, sample_mat)] * diagnostic_sample
     else:
         raise NotImplementedError
+
+    # Create the B' sample to check the diagnostic over
+    theta_mat, sample_mat = model_obj.sample_msnh_algo5(b_prime=b_prime, sample_size=sample_size_obs)
+    b_prime_sample_list = [(theta_mat, sample_mat)] * diagnostic_sample
 
     # Create the confidence sets now
     tau_obs_vec = np.zeros(diagnostic_sample)
