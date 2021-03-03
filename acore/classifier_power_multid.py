@@ -326,10 +326,10 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
     # Saving the results
     out_df = pd.DataFrame.from_records(data=out_val, index=range(len(out_val)), columns=out_cols)
     out_dir = 'sims/classifier_power_multid/'
-    out_filename = 'd%s_%steststats_%sB_%sBprime_%s_%srep_alpha%s_sampleobs%s_t0val%s_%s_%s.csv' % (
+    out_filename = 'd%s_%steststats_%sB_%sBprime_%s_%srep_alpha%s_sampleobs%s_t0val%s_%s_%sseed_%s.csv' % (
         d_obs, test_statistic, b, b_prime, run, rep,
         str(alpha).replace('.', '-'), sample_size_obs,
-        str(t0_val).replace('.', '-'), classifier_cde,
+        str(t0_val).replace('.', '-'), classifier_cde, seed,
         datetime.strftime(datetime.today(), '%Y-%m-%d-%H-%M')
     )
     out_df.to_csv(out_dir + out_filename)
