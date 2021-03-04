@@ -129,7 +129,7 @@ def main(b, b_prime, alpha, classifier, class_cde, sample_size_obs, run, t_star,
     # Confidence Region
     print('----- Creating Confidence Region')
     simultaneous_nh_decision = []
-    for jj, t0_pred in enumerate(t0_pred_vec):
+    for jj, t0_pred in enumerate(t0_pred_vec):  # TODO: shouldn't this below be > ? t0_pred is cutoff
         simultaneous_nh_decision.append([t0_pred, tau_obs[jj], int(tau_obs[jj] < t0_pred)])
 
     time_vec = [(train_time - start_time).total_seconds(),

@@ -1,9 +1,9 @@
-from typing import Union
 import re
 import os
 import pandas as pd
 import numpy as np
 import logging
+from typing import Iterable
 
 
 class MuonFeatures:
@@ -14,26 +14,39 @@ class MuonFeatures:
 
     def __init__(self,
                  data_path: str,
+                 t0_grid_granularity: int,
                  true_param_low: int = 100,  # GeV
                  true_param_high: int = 2000,  # GeV
-                 test_size: float = 0.2,
-                 reference_g=None
-                 ):
+                 param_dims: int = 1,  # only true energy
+                 observed_dims: int = 16,  # 16 features
+                 observed_size: float = 0.2,
+                 reference_g=None,
+                 param_column: int = -1,
+                 debug: bool = False):
+        if debug:
+            logging_level = logging.DEBUG
+        else:
+            logging_level = logging.INFO
 
         # just to ease debugging
         logging.basicConfig(
             filename="./debugging.log",
-            level=logging.INFO,
-            format='%(asctime)s %(levelname)s %(message)s'
+            level=logging_level,
+            format='%(asctime)s %(module)s %(levelname)s %(message)s'
         )
 
         self.data = MuonFeatures.read_file(path=data_path)
-        self.train_set, self.test_set = MuonFeatures.train_test_split(data=self.data, test_size=test_size)
+        # keep observed split to follow ACORE code structure
+        self.train_set, self.obs_x, self.obs_param = MuonFeatures.train_obs_split(data=self.data,
+                                                                                  observed_size=observed_size,
+                                                                                  param_column=param_column)
         self.train_set_left = self.train_set
-        if reference_g is None:
-            self.reference_g = self.set_marginal_reference
-        else:
-            self.reference_g = reference_g
+        self.d = param_dims
+        self.observed_dims = observed_dims
+        self.param_grid = np.linspace(true_param_low, true_param_high, t0_grid_granularity)
+        self.reference_g = reference_g
+
+        self.param_column = param_column
 
     @staticmethod
     def read_file(path: str):
@@ -53,14 +66,14 @@ class MuonFeatures:
             raise NotImplementedError('File format not supported yet')
 
     @staticmethod
-    def train_test_split(data, test_size: float):
-        assert isinstance(test_size, float)
+    def train_obs_split(data, observed_size: float, param_column: int = -1):
+        assert isinstance(observed_size, float)
         shuffled_index = np.random.permutation(data.index.to_numpy())
-        test_index = shuffled_index[:int(test_size*len(shuffled_index))]
-        train_set, test_set = data.loc[~data.index.isin(test_index), :].to_numpy(), data.loc[test_index, :].to_numpy()
-        logging.info(f'train size: {len(train_set)}, test size: {len(test_set)}')
-        assert (len(train_set.index) + len(test_set.index)) == len(data.index)
-        return train_set, test_set
+        obs_index = shuffled_index[:int(observed_size*len(shuffled_index))]
+        train_set, obs_set = data.loc[~data.index.isin(obs_index), :].to_numpy(), data.loc[obs_index, :].to_numpy()
+        logging.info(f'train size: {len(train_set)}, observed size: {len(obs_set)}')
+        assert (len(train_set.index) + len(obs_set.index)) == len(data.index)
+        return train_set, obs_set[:param_column], obs_set[param_column]
 
     def sample_param_values(self, sample_size: int, data: np.ndarray = None):
         if data is None:
@@ -70,8 +83,8 @@ class MuonFeatures:
 
         logging.debug(f'sampling {sample_size} params from data of shape {data.shape}')
 
-        # last column is true energy; unique needed because some params are equal
-        return np.random.choice(np.unique(data[:, -1]), size=sample_size)
+        # unique needed because some params are equal
+        return np.random.choice(np.unique(data[:, self.param_column]), size=sample_size)
 
     def sample_sim(self, sample_size: int, true_param: np.ndarray, data: np.ndarray = None):
         if data is None:
@@ -84,10 +97,15 @@ class MuonFeatures:
         if sample_size > len(data):
             raise ValueError(f'Only {len(data)} simulations available, got {sample_size}')
 
-        # last column is true energy; [0] because returns tuple
-        idxs = np.where(np.isin(data[:, -1], true_param))[0]
+        if not isinstance(true_param, Iterable):
+            true_param = np.array([true_param])
+
+        # [0] because np.where returns tuple
+        idxs = np.where(np.isin(data[:, self.param_column], true_param))[0]
         # params can be equal for multiple rows -> take only one occurrence for each (total_sims == sample_size)
-        idxs_unique = list(set(np.unique(data, return_index=True)[1]).intersection(set(idxs)))
+        idxs_unique = list(  # TODO: can avoid this step and use np.unique directly in idxs above?
+            set(np.unique(data[:, self.param_column], return_index=True)[1]).intersection(set(idxs))  # [1] for idx obj
+        )
         assert len(idxs_unique) == sample_size, f'{sample_size} samples requested, got {len(idxs_unique)}'
         simulations = data[idxs_unique]
         if using_train_set:
@@ -101,10 +119,10 @@ class MuonFeatures:
     def sample_reference_g(self, sample_size, data: np.ndarray = None):
 
         if self.reference_g is None:
-            true_param = self.sample_param_values(sample_size=1)
+            true_param = self.sample_param_values(sample_size=sample_size)
             return self.sample_sim(sample_size, true_param, data=data)
         else:
-            self.reference_g.rvs(size=1)
+            self.reference_g.rvs(size=sample_size)
 
     def generate_sample(self, sample_size, bernoulli_p=0.5, data: np.ndarray = None):
         theta = self.sample_param_values(sample_size, data=data)
@@ -117,4 +135,12 @@ class MuonFeatures:
                                      if row[1] else self.sample_reference_g(sample_size, data=data))
         return np.hstack((concat_matrix, sample.reshape(-1, 1)))
 
+    def sample_msnh(self, b_prime: int, sample_size: int):
 
+        # TODO: theta_matrix should be a tensor of dimensions (b_prime, d, confidence_band_size)
+        theta_matrix = self.sample_param_values(sample_size=b_prime).reshape(-1, self.d)
+        assert theta_matrix.shape == (b_prime, self.d)
+
+        sample_matrix = np.apply_along_axis(arr=theta_matrix, axis=1,
+                                            func1d=lambda row: self.sample_sim(sample_size=sample_size, true_param=row))
+        return theta_matrix, sample_matrix
