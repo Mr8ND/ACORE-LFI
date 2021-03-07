@@ -613,7 +613,7 @@ class InfernoToyLoader:
 
         # Return the grids necessary to various sampling and ACORE grid
         t0_grid_out = t0_grid_lik_values[:, :-1]
-        # self.t0_grid_nuisance = t0_grid_out
+        self.t0_grid_nuisance = t0_grid_out
         # acore_grid_out = np.hstack((
         #     t0_grid.reshape(-1, 1),
         #     np.tile(self.nuisance_global_param_val, t0_grid.shape[0]).reshape(
