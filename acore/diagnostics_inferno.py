@@ -183,7 +183,8 @@ def main(d_obs, run, b, b_prime, alpha, t0_val, sample_size_obs, classifier, cla
         'diagnostic_sample': diagnostic_sample,
         'run': run,
         'benchmark': benchmark,
-        'nuisance': model_obj.nuisance_flag
+        'nuisance': model_obj.nuisance_flag,
+        'test_statistic': test_statistic
     }
     out_dir = 'sims/classifier_power_multid/'
     out_filename = 'inferno_b%s_diagnostic_%steststats_%sB_%sBprime_%sseed_alpha%s_sampleobs%s_t0val%s_%s_%s.pkl' % (

@@ -593,9 +593,8 @@ class InfernoToyLoader:
         res_min = minimize(
             fun=partial(self._nuisance_parameter_func, x_obs=x_obs,
                         target_params=target_params, clf_odds=clf_odds),
-            x0=np.array([np.nan, 0, 5, 1000]).reshape(1, 4)[:, self.nuisance_params_cols].reshape(-1,),
+            x0=np.array([np.nan, 0.0, 5.0, 1000.0]).reshape(1, 4)[:, self.nuisance_params_cols].reshape(-1,),
             method='trust-constr', options={'verbose': 0}, bounds=self.bounds_opt)
-
         return np.concatenate((np.array(res_min.x), np.array([-1 * res_min.fun])))
 
     def calculate_nuisance_parameters_over_grid(self, t0_grid, clf_odds, x_obs):
@@ -614,12 +613,13 @@ class InfernoToyLoader:
 
         # Return the grids necessary to various sampling and ACORE grid
         t0_grid_out = t0_grid_lik_values[:, :-1]
-        self.t0_grid_nuisance = t0_grid_out
-        acore_grid_out = np.hstack((
-            t0_grid.reshape(-1, 1),
-            np.tile(self.nuisance_global_param_val, t0_grid.shape[0]).reshape(
-                t0_grid.shape[0], self.nuisance_global_param_val.shape[0])
-        ))
+        # self.t0_grid_nuisance = t0_grid_out
+        # acore_grid_out = np.hstack((
+        #     t0_grid.reshape(-1, 1),
+        #     np.tile(self.nuisance_global_param_val, t0_grid.shape[0]).reshape(
+        #         t0_grid.shape[0], self.nuisance_global_param_val.shape[0])
+        # ))
+        acore_grid_out = t0_grid_out.copy()
         return t0_grid_out, acore_grid_out
 
     def _complete_theta_param_nuisance(self, t0_val):
@@ -637,6 +637,20 @@ class InfernoToyLoader:
         sample_mat = np.apply_along_axis(arr=theta_mat, axis=1,
                                          func1d=lambda row: self.sample_sim(sample_size=sample_size, true_param=row))
         return theta_mat, sample_mat.reshape(b_prime, sample_size, self.d_obs)
+
+
+class ClfOddsExact:
+
+    def __init__(self, inferno_model):
+        self.inferno_model = inferno_model
+
+    def predict_proba(self, param_mat):
+        prob_mat = np.apply_along_axis(arr=param_mat, axis=1,
+                                       func1d=lambda row: self.inferno_model.compute_exact_odds(
+                                           theta_vec=row[:4], x_vec=row[4:]
+                                        ))
+        return np.hstack((np.ones(prob_mat.shape[0]).reshape(-1, 1), prob_mat.reshape(-1, 1)))
+
 
 # if __name__ == '__main__':
 

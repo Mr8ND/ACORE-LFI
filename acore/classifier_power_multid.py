@@ -16,7 +16,7 @@ from models.toy_mvn import ToyMVNLoader
 from models.toy_mvn_simplehyp import ToyMVNSimpleHypLoader
 from models.toy_mvn_multid import ToyMVNMultiDLoader
 from models.toy_mvn_multid_simplehyp import ToyMVNMultiDSimpleHypLoader
-from models.inferno import InfernoToyLoader
+from models.inferno import InfernoToyLoader, ClfOddsExact
 from utils.qr_functions import train_qr_algo
 from or_classifiers.toy_example_list import classifier_dict_multid, classifier_inferno_dict, classifier_dict_multid_power
 from qr_algorithms.complete_list import classifier_cde_dict
@@ -101,8 +101,12 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
         clf_odds_fitted = {}
         clf_cde_fitted = {}
         for clf_name, clf_model in sorted(classifier_dict.items(), key=lambda x: x[0]):
-            clf_odds = train_clf(d=model_obj.d, sample_size=b, clf_model=clf_model, gen_function=gen_sample_func,
-                                 clf_name=clf_name, nn_square_root=True)
+
+            if test_statistic == 'exactlr':
+                clf_odds = ClfOddsExact(inferno_model=model_obj)
+            else:
+                clf_odds = train_clf(d=model_obj.d, sample_size=b, clf_model=clf_model, gen_function=gen_sample_func,
+                                     clf_name=clf_name, nn_square_root=True)
             if verbose:
                 print('----- %s Trained' % clf_name)
 
@@ -212,7 +216,8 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
                     # stats_sample = compute_exactlr_single_t0(
                     #     obs_sample=x_obs, t0_grid=theta_mat_sample.reshape(-1, model_obj.d), grid_param=grid_param)
                     t0_pred_vec = compute_exactlr_distribution_t0(
-                        prediction_grid=t0_grid, monte_carlo_samples=exactlr_mc, sample_size_obs=sample_size_obs, alpha=alpha)
+                        prediction_grid=t0_grid, monte_carlo_samples=exactlr_mc, sample_size_obs=sample_size_obs,
+                        alpha=alpha)
                 else:
                     raise ValueError('The variable test_statistic needs to be either acore, avgacore,'
                                      ' logavgacore, exactodds_nuisance or exactlr. '
@@ -273,7 +278,8 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
                 # stats_mat = compute_exactlr_msnh_t0(
                 #     t0_grid=theta_mat, sample_mat=sample_mat, grid_param=grid_param)
                 t0_pred_vec = compute_exactlr_distribution_t0(
-                    prediction_grid=t0_grid, monte_carlo_samples=exactlr_mc, sample_size_obs=sample_size_obs, alpha=alpha)
+                    prediction_grid=t0_grid, monte_carlo_samples=exactlr_mc, sample_size_obs=sample_size_obs,
+                    alpha=alpha)
             else:
                 raise ValueError('The variable test_statistic needs to be either acore, avgacore, logavgacore, '
                                  'exactodds_nuisance or exactlr. Currently %s' % test_statistic)
