@@ -587,14 +587,15 @@ class InfernoToyLoader:
             x_obs.reshape(-1, self.d_obs)
         ))
         pred_mat = clf_odds.predict_proba(param_mat)
-        return -1 * (np.prod(pred_mat[:, 1] / pred_mat[:, 0]))
+        odds_val = -1 * np.sum(np.log(pred_mat[:, 1] / pred_mat[:, 0]))
+        return odds_val
 
     def nuisance_parameter_minimization(self, x_obs, target_params, clf_odds):
+        x0_val = np.array([np.nan, 0, 5, 1000.0])[self.nuisance_params_cols]
         res_min = minimize(
             fun=partial(self._nuisance_parameter_func, x_obs=x_obs,
                         target_params=target_params, clf_odds=clf_odds),
-            x0=np.array([np.nan, 0.0, 5.0, 1000.0]).reshape(1, 4)[:, self.nuisance_params_cols].reshape(-1,),
-            method='trust-constr', options={'verbose': 0}, bounds=self.bounds_opt)
+            x0=x0_val, method='trust-constr', options={'verbose': 0}, bounds=self.bounds_opt)
         return np.concatenate((np.array(res_min.x), np.array([-1 * res_min.fun])))
 
     def calculate_nuisance_parameters_over_grid(self, t0_grid, clf_odds, x_obs):
