@@ -113,6 +113,9 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
 
             if test_statistic == 'acore':
                 # If nuisance parameters are involved, we do profiling, so we have to adapt the grids accordingly
+                # There is a lot of overhead for logavgacore (BFF), but not for ACORE, since all important variables
+                # are modified in place. For BFF that is not the case as we need to integrate for the numerator in
+                # case of nuisance parameters.
                 if model_obj.nuisance_flag:
                     t0_grid, acore_grid = model_obj.calculate_nuisance_parameters_over_grid(
                         t0_grid=model_obj.pred_grid, clf_odds=clf_odds, x_obs=x_obs)
@@ -202,7 +205,7 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
                 elif test_statistic == 'logavgacore':
                     if model_obj.nuisance_flag:
                         theta_mat_sample = theta_mat_sample[:, :len(model_obj.target_params_cols)]
-                        stats_sample = np.apply_along_axis(arr=theta_mat_sample.reshape(-1, model_obj.d), axis=1,
+                        stats_sample = np.apply_along_axis(arr=theta_mat_sample, axis=1,
                                                            func1d=lambda row: compute_bayesfactor_single_t0_nuisance(
                                                                clf=clf_odds,
                                                                obs_sample=x_obs,

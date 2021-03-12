@@ -11,7 +11,8 @@ from sklearn.metrics import log_loss
 from functools import partial
 
 from utils.functions import train_clf, compute_statistics_single_t0, clf_prob_value, compute_bayesfactor_single_t0, \
-    compute_averageodds_single_t0, odds_ratio_loss, train_pvalue_clf, sample_from_matrix
+    compute_averageodds_single_t0, odds_ratio_loss, train_pvalue_clf, sample_from_matrix, \
+    compute_bayesfactor_single_t0_nuisance
 # from models.toy_gmm_multid import ToyGMMMultiDLoader
 from models.toy_mvn import ToyMVNLoader
 from models.toy_mvn_simplehyp import ToyMVNSimpleHypLoader
@@ -94,27 +95,40 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_stati
             if verbose:
                 print('----- %s Trained' % clf_name)
 
-            if model_obj.nuisance_flag:
-                t0_grid, acore_grid = model_obj.calculate_nuisance_parameters_over_grid(
-                    t0_grid=model_obj.pred_grid, clf_odds=clf_odds, x_obs=x_obs)
-                gen_param_fun = partial(sample_from_matrix, t0_grid=t0_grid)
-                grid_param = acore_grid
-
             if test_statistic == 'acore':
-                tau_obs = np.array([
-                    compute_statistics_single_t0(
-                        clf=clf_odds, obs_sample=x_obs, t0=theta_0, grid_param_t1=grid_param,
-                        d=model_obj.d, d_obs=model_obj.d_obs) for theta_0 in t0_grid])
+                # If nuisance parameters are involved, we do profiling, so we have to adapt the grids accordingly
+                if model_obj.nuisance_flag:
+                    t0_grid, acore_grid = model_obj.calculate_nuisance_parameters_over_grid(
+                        t0_grid=model_obj.pred_grid, clf_odds=clf_odds, x_obs=x_obs)
+                    gen_param_fun = partial(sample_from_matrix, t0_grid=t0_grid)
+                    grid_param = acore_grid
+
+                    tau_obs = np.array([
+                        compute_statistics_single_t0(
+                            clf=clf_odds, obs_sample=x_obs, t0=theta_0, grid_param_t1=grid_param,
+                            d=model_obj.d, d_obs=model_obj.d_obs) for theta_0 in t0_grid])
+                else:
+                    tau_obs = np.array([
+                        compute_statistics_single_t0(
+                            clf=clf_odds, obs_sample=x_obs, t0=theta_0, grid_param_t1=grid_param,
+                            d=model_obj.d, d_obs=model_obj.d_obs) for theta_0 in t0_grid])
             elif test_statistic == 'avgacore':
                 tau_obs = np.array([
                     compute_bayesfactor_single_t0(
                         clf=clf_odds, obs_sample=x_obs, t0=theta_0, gen_param_fun=gen_param_fun,
                         d=model_obj.d, d_obs=model_obj.d_obs) for theta_0 in t0_grid])
             elif test_statistic == 'logavgacore':
-                tau_obs = np.array([
-                    compute_bayesfactor_single_t0(
-                        clf=clf_odds, obs_sample=x_obs, t0=theta_0, gen_param_fun=gen_param_fun,
-                        d=model_obj.d, d_obs=model_obj.d_obs, log_out=True) for theta_0 in t0_grid])
+                if model_obj.nuisance_flag:
+                    tau_obs = np.array([
+                        compute_bayesfactor_single_t0_nuisance(
+                            clf=clf_odds, obs_sample=x_obs, t0=theta_0, gen_param_fun=gen_param_fun,
+                            d=model_obj.d, d_obs=model_obj.d_obs, log_out=True,
+                            d_param_interest=len(model_obj.target_params_cols)) for theta_0 in t0_grid])
+                else:
+                    tau_obs = np.array([
+                        compute_bayesfactor_single_t0(
+                            clf=clf_odds, obs_sample=x_obs, t0=theta_0, gen_param_fun=gen_param_fun,
+                            d=model_obj.d, d_obs=model_obj.d_obs, log_out=True) for theta_0 in t0_grid])
             elif test_statistic == 'averageodds':
                 tau_obs = np.array([
                     compute_averageodds_single_t0(
@@ -166,17 +180,32 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_stati
                                                            monte_carlo_samples=monte_carlo_samples
                                                        ))
                 elif test_statistic == 'logavgacore':
-                    stats_sample = np.apply_along_axis(arr=theta_mat_sample.reshape(-1, model_obj.d), axis=1,
-                                                       func1d=lambda row: compute_bayesfactor_single_t0(
-                                                           clf=clf_odds,
-                                                           obs_sample=x_obs,
-                                                           t0=row,
-                                                           gen_param_fun=gen_param_fun,
-                                                           d=model_obj.d,
-                                                           d_obs=model_obj.d_obs,
-                                                           monte_carlo_samples=monte_carlo_samples,
-                                                           log_out=True
-                                                       ))
+                    if model_obj.nuisance_flag:
+                        theta_mat_sample = theta_mat_sample[:, :len(model_obj.target_params_cols)]
+                        stats_sample = np.apply_along_axis(arr=theta_mat_sample, axis=1,
+                                                           func1d=lambda row: compute_bayesfactor_single_t0_nuisance(
+                                                               clf=clf_odds,
+                                                               obs_sample=x_obs,
+                                                               t0=row,
+                                                               gen_param_fun=gen_param_fun,
+                                                               d=model_obj.d,
+                                                               d_obs=model_obj.d_obs,
+                                                               monte_carlo_samples=monte_carlo_samples,
+                                                               log_out=True,
+                                                               d_param_interest=len(model_obj.target_params_cols)
+                                                           ))
+                    else:
+                        stats_sample = np.apply_along_axis(arr=theta_mat_sample.reshape(-1, model_obj.d), axis=1,
+                                                           func1d=lambda row: compute_bayesfactor_single_t0(
+                                                               clf=clf_odds,
+                                                               obs_sample=x_obs,
+                                                               t0=row,
+                                                               gen_param_fun=gen_param_fun,
+                                                               d=model_obj.d,
+                                                               d_obs=model_obj.d_obs,
+                                                               monte_carlo_samples=monte_carlo_samples,
+                                                               log_out=True
+                                                           ))
                 elif test_statistic == 'averageodds':
                     stats_sample = np.apply_along_axis(arr=theta_mat_sample.reshape(-1, model_obj.d), axis=1,
                                                        func1d=lambda row: compute_averageodds_single_t0(
@@ -237,16 +266,31 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_stati
                     t0=theta_0, obs_sample=x_obs) for kk, theta_0 in enumerate(theta_mat)
                 ])
             elif test_statistic == 'logavgacore':
-                stats_mat_generated = np.array([compute_bayesfactor_single_t0(
-                    clf=clf_odds, d=model_obj.d, d_obs=model_obj.d_obs, gen_param_fun=gen_param_fun,
-                    monte_carlo_samples=monte_carlo_samples, log_out=True,
-                    t0=theta_0, obs_sample=sample_mat[kk, :, :]) for kk, theta_0 in enumerate(theta_mat)
-                ])
-                stats_mat_observed = np.array([compute_bayesfactor_single_t0(
-                    clf=clf_odds, d=model_obj.d, d_obs=model_obj.d_obs, gen_param_fun=gen_param_fun,
-                    monte_carlo_samples=monte_carlo_samples, log_out=True,
-                    t0=theta_0, obs_sample=x_obs) for kk, theta_0 in enumerate(theta_mat)
-                ])
+                if model_obj.nuisance_flag:
+                    theta_mat = theta_mat[:, :len(model_obj.target_params_cols)]
+                    stats_mat_generated = np.array([compute_bayesfactor_single_t0_nuisance(
+                        clf=clf_odds, d=model_obj.d, d_obs=model_obj.d_obs, gen_param_fun=gen_param_fun,
+                        monte_carlo_samples=monte_carlo_samples, log_out=True,
+                        t0=theta_0, obs_sample=sample_mat[kk, :, :],
+                        d_param_interest=len(model_obj.target_params_cols)) for kk, theta_0 in enumerate(theta_mat)
+                    ])
+                    stats_mat_observed = np.array([compute_bayesfactor_single_t0_nuisance(
+                        clf=clf_odds, d=model_obj.d, d_obs=model_obj.d_obs, gen_param_fun=gen_param_fun,
+                        monte_carlo_samples=monte_carlo_samples, log_out=True,
+                        t0=theta_0, obs_sample=x_obs,
+                        d_param_interest=len(model_obj.target_params_cols)) for kk, theta_0 in enumerate(theta_mat)
+                    ])
+                else:
+                    stats_mat_generated = np.array([compute_bayesfactor_single_t0(
+                        clf=clf_odds, d=model_obj.d, d_obs=model_obj.d_obs, gen_param_fun=gen_param_fun,
+                        monte_carlo_samples=monte_carlo_samples, log_out=True,
+                        t0=theta_0, obs_sample=sample_mat[kk, :, :]) for kk, theta_0 in enumerate(theta_mat)
+                    ])
+                    stats_mat_observed = np.array([compute_bayesfactor_single_t0(
+                        clf=clf_odds, d=model_obj.d, d_obs=model_obj.d_obs, gen_param_fun=gen_param_fun,
+                        monte_carlo_samples=monte_carlo_samples, log_out=True,
+                        t0=theta_0, obs_sample=x_obs) for kk, theta_0 in enumerate(theta_mat)
+                    ])
             elif test_statistic == 'averageodds':
                 stats_mat_generated = np.array([compute_averageodds_single_t0(
                     clf=clf_odds, d=model_obj.d, d_obs=model_obj.d_obs,
@@ -271,11 +315,13 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_stati
                     pval_pred = np.repeat(sum(indicator_vec)/len(indicator_vec), b_prime)
                     loss_value_pval = np.nan
                 else:
-                    clf_pvalue = train_pvalue_clf(clf_model=clf_model_pvalue, X=theta_mat.reshape(-1, model_obj.d),
+                    dim_param = len(model_obj.target_params_cols) if model_obj.nuisance_flag and \
+                                                                 test_statistic == 'logavgacore' else model_obj.d
+                    clf_pvalue = train_pvalue_clf(clf_model=clf_model_pvalue, X=theta_mat.reshape(-1, dim_param),
                                                   y=indicator_vec.reshape(-1, ), clf_name=clf_name_pvalue,
                                                   nn_square_root=True)
-                    pval_pred = clf_pvalue.predict_proba(t0_grid.reshape(-1, model_obj.d))[:, 1]
-                    theta_mat_pred = clf_pvalue.predict_proba(theta_mat.reshape(-1, model_obj.d))[:, 1]
+                    pval_pred = clf_pvalue.predict_proba(t0_grid.reshape(-1, dim_param))[:, 1]
+                    theta_mat_pred = clf_pvalue.predict_proba(theta_mat.reshape(-1, dim_param))[:, 1]
                     loss_value_pval = log_loss(y_true=indicator_vec, y_pred=theta_mat_pred)
                 clf_pvalue_fitted[clf_name][clf_name_pvalue] = (pval_pred, loss_value_pval)
 
@@ -286,6 +332,8 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_stati
                 size_temp = np.mean(in_confint)
                 coverage = int(pvalue_val[true_param_row_idx] >= alpha)
                 power = (in_confint.shape[0] - np.sum(in_confint) + coverage) / in_confint.shape[0]
+
+                print(in_confint, size_temp, coverage, power)
                 out_val.append([
                     d_obs, test_statistic, b_prime, b, clf_name, clf_name_qr, run, jj, sample_size_obs,
                     cross_ent_loss, pvalue_celoss_val, t0_val, coverage, power,
