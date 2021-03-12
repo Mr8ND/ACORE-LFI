@@ -215,7 +215,7 @@ class InfernoToyLoader:
         if len(true_param) < 4:
             true_param = self._create_complete_param_vec(true_param)
         mixing_param = np.clip(true_param[3] / (true_param[0] + true_param[3]), 0, 1)
-        cluster = np.random.binomial(n=1, p=mixing_param, size=sample_size)
+        cluster = np.random.binomial(n=1, p=1.0 - mixing_param, size=sample_size)
 
         # Normal samples
         means_vec = self._compute_mean_vec(r_param=true_param[1])
