@@ -302,6 +302,95 @@ def compute_bayesfactor_single_t0(clf, obs_sample, t0, gen_param_fun,
         return odds_t0 - denom
 
 
+def compute_bayesfactor_single_t0_nuisance(clf, obs_sample, t0, gen_param_fun, d_param_interest,
+                                           log_out=False, d=1, d_obs=1, monte_carlo_samples=1000):
+
+    # In the nuisance example we need to also integrate the numerator
+    # So we sample twice the number of parameters, but for the first set we replace the parameters
+    # of interest with the values of t0.
+    # A couple of assumptions: the parameter vector is setup with [parameter of interest, nuisance parameters]
+    # and t0 only include the parameter of interest
+
+    theta_samples_full = gen_param_fun(sample_size=monte_carlo_samples * 2)
+    assert theta_samples_full.shape[0] == 2 * monte_carlo_samples
+    n = obs_sample.shape[0]
+
+    # Force the true parameter of interest value t0 into a numpy array
+    if isinstance(t0, float):
+        t0 = np.array(t0).reshape(1, 1)[:d_param_interest]
+    elif isinstance(t0, np.ndarray) and len(t0) == 1:
+        t0 = t0.reshape(1, 1)[:d_param_interest]
+
+    # Create the numerator values for integration
+    theta_samples_num = theta_samples_full[:monte_carlo_samples, :]
+    theta_samples_num[:, :t0.shape[1]] = t0
+
+    # Create the denominator values
+    theta_samples_den = theta_samples_full[monte_carlo_samples:, :]
+
+    if d > 1:
+        predict_mat = np.hstack((
+            np.vstack((
+                np.tile(theta_samples_num, n).reshape(-1, d),
+                np.tile(theta_samples_den, n).reshape(-1, d)
+            )),
+            np.vstack((
+                np.tile(obs_sample, (monte_carlo_samples, 1)).reshape(-1, d_obs),
+                np.tile(obs_sample, (monte_carlo_samples, 1)).reshape(-1, d_obs)
+            ))
+        ))
+    else:
+        predict_mat = np.hstack((
+            np.vstack((
+                np.repeat(theta_samples_num, n).reshape(-1, 1),
+                np.repeat(theta_samples_den, n).reshape(-1, 1)
+            )),
+            np.vstack((
+                np.tile(obs_sample, (monte_carlo_samples, 1)).reshape(-1, d_obs),
+                np.tile(obs_sample, (monte_carlo_samples, 1)).reshape(-1, d_obs)
+            ))
+        ))
+    assert predict_mat.shape == (2 * n * monte_carlo_samples, d + d_obs)
+
+    # Do the prediction step
+    prob_mat = clf.predict_proba(predict_mat)
+    prob_mat[prob_mat == 0] = 1e-15
+    assert prob_mat.shape == (2 * n * monte_carlo_samples, 2)
+
+    if not log_out:
+        raise NotImplementedError
+    else:
+        # Calculate odds
+        odds_total = prob_mat[:, 1] / prob_mat[:, 0]
+
+        # Compute the numerator
+        # First get the correct odds
+        odds_num = odds_total[: (n * monte_carlo_samples)]
+        assert odds_num.shape[0] == n * monte_carlo_samples
+
+        # Calculate sum of logs for each of the value we sampled from Monte Carlo samples and keep it in log-space
+        grouped_sum_num = np.array(
+            [np.sum(np.log(odds_num[n * ii:(n * (ii + 1))])) for ii in range(monte_carlo_samples)])
+        assert grouped_sum_num.shape[0] == monte_carlo_samples
+
+        # Calculate sum of exponents and take the log
+        numerator = logsumexp(grouped_sum_num.reshape(-1, )) - np.log(monte_carlo_samples)
+
+        # Compute the denominator
+        odds_den = odds_total[(n * monte_carlo_samples):]
+        assert odds_den.shape[0] == n * monte_carlo_samples
+
+        # Calculate sum of logs for each of the value we sampled from Monte Carlo samples and keep it in log-space
+        grouped_sum_den = np.array(
+            [np.sum(np.log(odds_den[n * ii:(n * (ii + 1))])) for ii in range(monte_carlo_samples)])
+        assert grouped_sum_den.shape[0] == monte_carlo_samples
+
+        # Compute the sum of the exponents and take the log
+        denominator = logsumexp(grouped_sum_den.reshape(-1, )) - np.log(monte_carlo_samples)
+
+        return numerator - denominator
+
+
 def compute_statistics_single_t0(clf, obs_sample, t0, grid_param_t1, d=1, d_obs=1):
     # Stack the data
     # First sets of column: we repeat t0 for n times, and then repeat t1 for n times each
