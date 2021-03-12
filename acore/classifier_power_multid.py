@@ -345,7 +345,6 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
                 coverage = int(tau_obs_val[true_param_row_idx] >= cutoff_val[true_param_row_idx])
                 power = 1 - in_confint if isinstance(in_confint, float) else (in_confint.shape[0] - 
                                                                   np.sum(in_confint)) / in_confint.shape[0]
-                print(in_confint, coverage, power)
                 out_val.append([
                     d_obs, test_statistic, b_prime, b, clf_name, clf_name_qr, run, jj, sample_size_obs,
                     cross_ent_loss, t0_val, coverage, power,
