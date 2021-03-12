@@ -211,7 +211,8 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
                                                                d=model_obj.d,
                                                                d_obs=model_obj.d_obs,
                                                                monte_carlo_samples=monte_carlo_samples,
-                                                               log_out=True
+                                                               log_out=True,
+                                                               d_param_interest=len(model_obj.target_params_cols)
                                                            ))
                     else:
                         stats_sample = np.apply_along_axis(arr=theta_mat_sample.reshape(-1, model_obj.d), axis=1,
