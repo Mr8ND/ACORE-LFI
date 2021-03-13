@@ -16,7 +16,7 @@ classifier_dict = {
 }
 
 classifier_inferno_dict = {
-    'XGBoost \n (d3, n100)': XGBClassifier(n_estimators=100)
+    'XGBoost \n (d3, n100)': XGBClassifier(n_estimators=500, depth=5)
 }
 
 classifier_pvalue_dict = {
