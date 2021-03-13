@@ -629,7 +629,7 @@ class InfernoToyLoader:
     def sample_msnh_algo5(self, b_prime, sample_size):
         # If we have nuisance parameters, we replace the values of those parameters with the parameter sampled
         # with the nuisance parameters
-        if self.nuisance_flag:
+        if self.nuisance_flag and self.t0_grid_nuisance is not None:
             theta_mat = sample_from_matrix(t0_grid=self.t0_grid_nuisance, sample_size=b_prime).reshape(-1, self.d)
         else:
             theta_mat = self.sample_param_values(sample_size=b_prime).reshape(-1, self.d)
