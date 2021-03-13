@@ -15,8 +15,12 @@ classifier_dict = {
     'QDA': QuadraticDiscriminantAnalysis()
 }
 
-classifier_inferno_dict = {
+classifier_inferno_dict_b4 = {
     'XGBoost \n (d3, n100)': XGBClassifier(n_estimators=500, depth=5)
+}
+
+classifier_inferno_dict_b1 = {
+    'MLP1': MLPClassifier((32, 16), activation='relu', alpha=0, max_iter=25000)
 }
 
 classifier_pvalue_dict = {
