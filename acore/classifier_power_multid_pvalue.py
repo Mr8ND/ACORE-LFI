@@ -18,8 +18,8 @@ from models.toy_mvn import ToyMVNLoader
 from models.toy_mvn_simplehyp import ToyMVNSimpleHypLoader
 from models.toy_mvn_multid import ToyMVNMultiDLoader
 from models.toy_mvn_multid_simplehyp import ToyMVNMultiDSimpleHypLoader
-from or_classifiers.toy_example_list import classifier_dict_multid_power, classifier_inferno_dict
-from or_classifiers.toy_example_list import classifier_pvalue_dict
+from or_classifiers.toy_example_list import classifier_dict_multid_power, classifier_inferno_dict_b4, \
+    classifier_inferno_dict_b1, classifier_pvalue_dict
 from models.inferno import InfernoToyLoader
 
 model_dict = {
@@ -42,7 +42,18 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_stati
     size_check = size_check if not debug else 100
     rep = rep if not debug else 2
     # classifier_dict = classifier_dict_multid if 'inferno' not in run else classifier_inferno_dict
-    classifier_dict = classifier_dict_multid_power if 'inferno' not in run else classifier_inferno_dict
+
+    # Assign the correct classifier in the INFERNO run
+    if 'inferno' in run:
+        if benchmark == 1:
+            classifier_dict = classifier_inferno_dict_b1
+        elif benchmark == 4:
+            classifier_dict = classifier_inferno_dict_b4
+        else:
+            raise NotImplementedError('OR Classification has been explored under Benchmark 1 and 4, not others.')
+    else:
+        classifier_dict = classifier_dict_multid_power
+
     model_obj = model_dict[run](
         d_obs=d_obs, marginal=marginal, size_marginal=size_marginal, empirical_marginal=empirical_marginal,
         true_param=t0_val, alt_mu_norm=alternative_norm, nuisance_parameters=nuisance_parameters,

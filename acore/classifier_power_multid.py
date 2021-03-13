@@ -18,7 +18,7 @@ from models.toy_mvn_multid import ToyMVNMultiDLoader
 from models.toy_mvn_multid_simplehyp import ToyMVNMultiDSimpleHypLoader
 from models.inferno import InfernoToyLoader, ClfOddsExact
 from utils.qr_functions import train_qr_algo
-from or_classifiers.toy_example_list import classifier_dict_multid, classifier_inferno_dict, \
+from or_classifiers.toy_example_list import classifier_inferno_dict_b1, classifier_inferno_dict_b4, \
     classifier_dict_multid_power
 from qr_algorithms.complete_list import classifier_cde_dict
 
@@ -42,8 +42,17 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
     b_prime = b_prime if not debug else 100
     size_check = size_check if not debug else 100
     rep = rep if not debug else 2
-    #classifier_dict = classifier_dict_multid if 'inferno' not in run else classifier_inferno_dict
-    classifier_dict = classifier_dict_multid_power if 'inferno' not in run else classifier_inferno_dict
+
+    # Assign the correct classifier in the INFERNO run
+    if 'inferno' in run:
+        if benchmark == 1:
+            classifier_dict = classifier_inferno_dict_b1
+        elif benchmark == 4:
+            classifier_dict = classifier_inferno_dict_b4
+        else:
+            raise NotImplementedError('OR Classification has been explored under Benchmark 1 and 4, not others.')
+    else:
+        classifier_dict = classifier_dict_multid_power
 
     # We pass as inputs all arguments necessary for all classes, but some of them will not be picked up if they are
     # not necessary for a specific class
