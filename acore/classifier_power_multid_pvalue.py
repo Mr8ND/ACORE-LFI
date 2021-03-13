@@ -332,8 +332,6 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_stati
                 size_temp = np.mean(in_confint)
                 coverage = int(pvalue_val[true_param_row_idx] >= alpha)
                 power = (in_confint.shape[0] - np.sum(in_confint) + coverage) / in_confint.shape[0]
-
-                print(in_confint, size_temp, coverage, power)
                 out_val.append([
                     d_obs, test_statistic, b_prime, b, clf_name, clf_name_qr, run, jj, sample_size_obs,
                     cross_ent_loss, pvalue_celoss_val, t0_val, coverage, power,
