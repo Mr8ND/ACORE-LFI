@@ -33,7 +33,7 @@ model_dict = {
 
 
 def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier_cde, test_statistic, alternative_norm,
-         monte_carlo_samples=500, debug=False, seed=7, size_check=1000, verbose=False, marginal=False,
+         monte_carlo_samples=500, debug=False, seed=7, size_check=1000, verbose=False, marginal=False, num_grid=21,
          size_marginal=1000, empirical_marginal=True, benchmark=1, nuisance_parameters=False, nuisance_confint=False,
          guided_sim=False, guided_sample=1000, exactlr_mc=1000):
 
@@ -59,7 +59,7 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
     model_obj = model_dict[run](
         d_obs=d_obs, marginal=marginal, size_marginal=size_marginal, empirical_marginal=empirical_marginal,
         true_param=t0_val, alt_mu_norm=alternative_norm, nuisance_parameters=nuisance_parameters,
-        benchmark=benchmark
+        benchmark=benchmark, num_acore_grid=num_grid, num_pred_grid=num_grid
     )
 
     # Get the correct functions
@@ -453,6 +453,9 @@ if __name__ == '__main__':
                         help='The sample size to be used for the guided simulation. Only used if guided_sim is True.')
     parser.add_argument('--exactlr_mc', action="store", type=int, default=1000,
                         help='Monte Carlo samples for the exact likelihood ratio calculations.')
+    parser.add_argument('--num_grid', action="store", type=int, default=21,
+                        help='Number of grid points for the grid over which to evaluate t0 and ACORE maximization '
+                             'grid.')
     argument_parsed = parser.parse_args()
 
     
@@ -480,5 +483,6 @@ if __name__ == '__main__':
         nuisance_confint=argument_parsed.nuisance_confint,
         guided_sim=argument_parsed.guided_sim,
         guided_sample=argument_parsed.guided_sample,
-        exactlr_mc=argument_parsed.exactlr_mc
+        exactlr_mc=argument_parsed.exactlr_mc,
+        num_grid=argument_parsed.num_grid
     )

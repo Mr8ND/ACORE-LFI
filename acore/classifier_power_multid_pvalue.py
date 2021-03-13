@@ -34,7 +34,7 @@ model_dict = {
 
 def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_statistic, alternative_norm,
          monte_carlo_samples=500, debug=False, seed=7, size_check=1000, verbose=False, marginal=False,
-         size_marginal=1000, empirical_marginal=False, benchmark=1,
+         size_marginal=1000, empirical_marginal=False, benchmark=1, num_grid=21,
          nuisance_parameters=False, guided_sim=False, guided_sample=1000):
     # Changing values if debugging
     b = b if not debug else 100
@@ -57,7 +57,7 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_stati
     model_obj = model_dict[run](
         d_obs=d_obs, marginal=marginal, size_marginal=size_marginal, empirical_marginal=empirical_marginal,
         true_param=t0_val, alt_mu_norm=alternative_norm, nuisance_parameters=nuisance_parameters,
-        benchmark=benchmark
+        benchmark=benchmark, num_acore_grid=num_grid, num_pred_grid=num_grid
     )
 
     # Get the correct functions
@@ -409,6 +409,9 @@ if __name__ == '__main__':
                         help='If true, we guided the sampling for the B prime in order to get meaningful results.')
     parser.add_argument('--guided_sample', action="store", type=int, default=2500,
                         help='The sample size to be used for the guided simulation. Only used if guided_sim is True.')
+    parser.add_argument('--num_grid', action="store", type=int, default=21,
+                        help='Number of grid points for the grid over which to evaluate t0 and ACORE maximization '
+                             'grid.')
     argument_parsed = parser.parse_args()
 
     # b_vec = [100, 500, 1000]
@@ -434,5 +437,6 @@ if __name__ == '__main__':
         benchmark=argument_parsed.benchmark,
         nuisance_parameters=argument_parsed.nuisance,
         guided_sim=argument_parsed.guided_sim,
-        guided_sample=argument_parsed.guided_sample
+        guided_sample=argument_parsed.guided_sample,
+        num_grid=argument_parsed.num_grid
     )
