@@ -1,5 +1,4 @@
 from warnings import simplefilter
-
 simplefilter(action='ignore', category=FutureWarning)
 
 import numpy as np
@@ -11,10 +10,11 @@ from functools import partial
 from xgboost import XGBClassifier
 
 from utils.functions import train_clf, compute_statistics_single_t0, compute_bayesfactor_single_t0, \
-    sample_from_matrix, matrix_mesh
+    sample_from_matrix, matrix_mesh, compute_bayesfactor_single_t0_nuisance
 from models.inferno import InfernoToyLoader
 from utils.qr_functions import train_qr_algo
-from or_classifiers.toy_example_list import classifier_inferno_dict, classifier_dict_multid_power
+from or_classifiers.toy_example_list import classifier_inferno_dict_b1, classifier_inferno_dict_b4, \
+    classifier_dict_multid_power
 from qr_algorithms.complete_list import classifier_cde_dict
 
 model_dict = {
@@ -30,7 +30,17 @@ def main(d_obs, run, b, b_prime, alpha, t0_val, sample_size_obs, classifier, cla
     # Changing values if debugging
     b = b if not debug else 100
     b_prime = b_prime if not debug else 100
-    classifier_dict = classifier_dict_multid_power if 'inferno' not in run else classifier_inferno_dict
+
+    # Assign the correct classifier in the INFERNO run
+    if 'inferno' in run:
+        if benchmark == 1:
+            classifier_dict = classifier_inferno_dict_b1
+        elif benchmark == 4:
+            classifier_dict = classifier_inferno_dict_b4
+        else:
+            raise NotImplementedError('OR Classification has been explored under Benchmark 1 and 4, not others.')
+    else:
+        classifier_dict = classifier_dict_multid_power
 
     # We pass as inputs all arguments necessary for all classes, but some of them will not be picked up if they are
     # not necessary for a specific class
@@ -103,9 +113,6 @@ def main(d_obs, run, b, b_prime, alpha, t0_val, sample_size_obs, classifier, cla
     pbar = tqdm(total=diagnostic_sample, desc='Compute Confidence sets')
     for idx in range(diagnostic_sample):
 
-        if model_obj.nuisance_flag:
-            gen_param_fun = partial(sample_from_matrix, t0_grid=t0_grid_list[idx])
-
         # Compute the test statistic
         if test_statistic == 'acore':
             tau_obs = np.array([
@@ -113,11 +120,21 @@ def main(d_obs, run, b, b_prime, alpha, t0_val, sample_size_obs, classifier, cla
                     clf=clf_odds, obs_sample=sample_mat[idx, :, :], t0=theta_0, grid_param_t1=acore_grid_list[idx],
                     d=model_obj.d, d_obs=model_obj.d_obs) for theta_0 in theta0_mat[idx, :].reshape(1, -1)])
         elif test_statistic == 'logavgacore':
-            tau_obs = np.array([
-                compute_bayesfactor_single_t0(
-                    clf=clf_odds, obs_sample=sample_mat[idx, :, :], t0=theta_0, gen_param_fun=gen_param_fun,
-                    d=model_obj.d, d_obs=model_obj.d_obs, log_out=True)
-                for theta_0 in theta0_mat[idx, :].reshape(1, -1)])
+            if model_obj.nuisance_flag:
+                tau_obs = np.array([
+                    compute_bayesfactor_single_t0_nuisance(
+                        clf=clf_odds, obs_sample=sample_mat[idx, :, :],
+                        t0=theta_0[:len(model_obj.target_params_cols)],
+                        gen_param_fun=gen_param_fun,
+                        d=model_obj.d, d_obs=model_obj.d_obs, log_out=True,
+                        d_param_interest=len(model_obj.target_params_cols))
+                    for theta_0 in theta0_mat[idx, :].reshape(1, -1)])
+            else:
+                tau_obs = np.array([
+                    compute_bayesfactor_single_t0(
+                        clf=clf_odds, obs_sample=sample_mat[idx, :, :], t0=theta_0, gen_param_fun=gen_param_fun,
+                        d=model_obj.d, d_obs=model_obj.d_obs, log_out=True)
+                    for theta_0 in theta0_mat[idx, :].reshape(1, -1)])
         else:
             raise ValueError('The variable test_statistic needs to be either acore or logavgacore. '
                              'Currently %s' % test_statistic)
@@ -131,16 +148,25 @@ def main(d_obs, run, b, b_prime, alpha, t0_val, sample_size_obs, classifier, cla
                 t0=theta_0, obs_sample=sample_mat_bprime[kk, :, :]) for kk, theta_0 in enumerate(theta_mat_bprime)
             ])
         elif test_statistic == 'logavgacore':
-            stats_mat_bprime = np.array([compute_bayesfactor_single_t0(
-                clf=clf_odds, d=model_obj.d, d_obs=model_obj.d_obs, gen_param_fun=gen_param_fun,
-                monte_carlo_samples=monte_carlo_samples, log_out=True,
-                t0=theta_0, obs_sample=sample_mat_bprime[kk, :, :]) for kk, theta_0 in enumerate(theta_mat_bprime)
-            ])
+            if model_obj.nuisance_flag:
+                theta_mat = theta_mat[:, :len(model_obj.target_params_cols)]
+                stats_mat_bprime = np.array([compute_bayesfactor_single_t0_nuisance(
+                    clf=clf_odds, d=model_obj.d, d_obs=model_obj.d_obs, gen_param_fun=gen_param_fun,
+                    monte_carlo_samples=monte_carlo_samples, log_out=True,
+                    t0=theta_0, obs_sample=sample_mat[kk, :, :],
+                    d_param_interest=len(model_obj.target_params_cols))
+                    for kk, theta_0 in enumerate(theta_mat)
+                ])
+            else:
+                stats_mat_bprime = np.array([compute_bayesfactor_single_t0(
+                    clf=clf_odds, d=model_obj.d, d_obs=model_obj.d_obs, gen_param_fun=gen_param_fun,
+                    monte_carlo_samples=monte_carlo_samples, log_out=True,
+                    t0=theta_0, obs_sample=sample_mat_bprime[kk, :, :]) for kk, theta_0 in enumerate(theta_mat_bprime)
+                ])
         else:
             raise ValueError('The variable test_statistic needs to be either acore or logavgacore. '
                              'Currently %s' % test_statistic)
 
-        clf_name_qr = classifier_cde
         clf_params = classifier_cde_dict[classifier_cde]
         t0_pred_vec = train_qr_algo(model_obj=model_obj, theta_mat=theta_mat_bprime, stats_mat=stats_mat_bprime,
                                     algo_name=clf_params[0], learner_kwargs=clf_params[1],
