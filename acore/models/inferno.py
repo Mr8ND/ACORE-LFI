@@ -642,13 +642,14 @@ class InfernoToyLoader:
 
 class ClfOddsExact:
 
-    def __init__(self, inferno_model):
+    def __init__(self, inferno_model, d):
         self.inferno_model = inferno_model
+        self.d = d
 
     def predict_proba(self, param_mat):
         prob_mat = np.apply_along_axis(arr=param_mat, axis=1,
                                        func1d=lambda row: self.inferno_model.compute_exact_odds(
-                                           theta_vec=row[:4], x_vec=row[4:]
+                                           theta_vec=row[:self.d], x_vec=row[self.d:]
                                         ))
         return np.hstack((np.ones(prob_mat.shape[0]).reshape(-1, 1), prob_mat.reshape(-1, 1)))
 

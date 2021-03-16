@@ -113,7 +113,7 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
         for clf_name, clf_model in sorted(classifier_dict.items(), key=lambda x: x[0]):
 
             if test_statistic == 'exactlr':
-                clf_odds = ClfOddsExact(inferno_model=model_obj)
+                clf_odds = ClfOddsExact(inferno_model=model_obj, d=model_obj.d)
             else:
                 clf_odds = train_clf(d=model_obj.d, sample_size=b, clf_model=clf_model, gen_function=gen_sample_func,
                                      clf_name=clf_name, nn_square_root=True)
