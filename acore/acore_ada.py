@@ -4,12 +4,15 @@ from datetime import datetime
 from tqdm import tqdm
 from typing import Union
 import numpy as np
+import pandas as pd
 
 from models import muon_features
 from or_classifiers.complete_list import classifier_dict
 from qr_algorithms.complete_list import classifier_cde_dict
 from utils.functions import train_clf, compute_statistics_single_t0
 from utils.qr_functions import train_qr_algo
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 
 class ACORE:
@@ -167,9 +170,25 @@ class ACORE:
         for tau_obs_x in self.tau_obs:
             self.confidence_region(tau_obs=tau_obs_x, conf_band=True)
 
-    # TODO: plot what?
-    def plot(self):
-        pass
+    def plot_confidence_band(self, return_df=False):
+        df_plot = pd.DataFrame({"obs_x": self.model.obs_x.reshape(-1),
+                                "obs_theta": self.model.obs_param,
+                                "lower": [min(l) for l in self.conf_band],
+                                "upper": [max(l) for l in self.conf_band],
+                                "lower_err": [abs(min(l) - self.model.obs_param[i]) for i, l in
+                                              enumerate(self.conf_band)],
+                                "upper_err": [abs(max(l) - self.model.obs_param[i]) for i, l in
+                                              enumerate(self.conf_band)]})
+        fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(10, 10))
+        sns.scatterplot(x=df_plot.loc[:, "obs_theta"], y=df_plot.loc[:, "obs_x"], ax=ax)
+        ax.errorbar(df_plot.loc[:, "obs_theta"], df_plot.loc[:, "obs_x"],
+                    xerr=df_plot.loc[:, ["lower_err", "upper_err"]].T.to_numpy(),
+                    ecolor="red", fmt='none')
+        ax.set(xlabel=r'$\theta$', ylabel='x')
+        plt.show()
+        if return_df:
+            return df_plot
+
         """
         plot_df = pd.DataFrame.from_dict({
             'background': t0_grid[:, 0],
