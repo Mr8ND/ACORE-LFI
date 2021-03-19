@@ -3,7 +3,7 @@ import os
 import pandas as pd
 import numpy as np
 import logging
-from typing import Iterable
+from typing import Iterable, Union
 
 
 class MuonFeatures:
@@ -13,14 +13,14 @@ class MuonFeatures:
     # TODO: ensure or_sample and qr_sample are non-overlapping, unless no more unused data
 
     def __init__(self,
-                 data_path: str,
+                 data: Union[str, pd.DataFrame],
                  t0_grid_granularity: int,
                  true_param_low: int = 100,  # GeV
                  true_param_high: int = 2000,  # GeV
                  param_dims: int = 1,  # only true energy
                  observed_dims: int = 16,  # 16 features
-                 observed_size: float = 0.2,
-                 reference_g=None,
+                 observed_sample_fraction: float = 0.2,
+                 reference_g='marginal',
                  param_column: int = -1,
                  debug: bool = False):
         if debug:
@@ -35,11 +35,17 @@ class MuonFeatures:
             format='%(asctime)s %(module)s %(levelname)s %(message)s'
         )
 
-        self.data = MuonFeatures.read_file(path=data_path)
+        if isinstance(data, str):
+            self.data = MuonFeatures.read_file(path=data)
+        elif isinstance(data, pd.DataFrame):
+            self.data = data
+        else:
+            raise ValueError(f'data must be either a filepath (str type) or a pandas DataFrame, got {type(data)}')
         # keep observed split to follow ACORE code structure
-        self.train_set, self.obs_x, self.obs_param = MuonFeatures.train_obs_split(data=self.data,
-                                                                                  observed_size=observed_size,
-                                                                                  param_column=param_column)
+        self.train_set, self.obs_x, self.obs_param = \
+            MuonFeatures.train_obs_split(data=self.data,
+                                         observed_fraction=observed_sample_fraction,
+                                         param_column=param_column)
         self.train_set_left = self.train_set
         self.d = param_dims
         self.observed_dims = observed_dims
@@ -66,14 +72,18 @@ class MuonFeatures:
             raise NotImplementedError('File format not supported yet')
 
     @staticmethod
-    def train_obs_split(data, observed_size: float, param_column: int = -1):
-        assert isinstance(observed_size, float)
+    def train_obs_split(data, observed_fraction: float, param_column: int = -1):
+        assert isinstance(observed_fraction, float)
+
         shuffled_index = np.random.permutation(data.index.to_numpy())
-        obs_index = shuffled_index[:int(observed_size*len(shuffled_index))]
-        train_set, obs_set = data.loc[~data.index.isin(obs_index), :].to_numpy(), data.loc[obs_index, :].to_numpy()
+        train_index = shuffled_index[int(observed_fraction * len(shuffled_index)):]
+        obs_index = shuffled_index[:int(observed_fraction * len(shuffled_index))]
+        train_set, obs_set = data.iloc[train_index, :].to_numpy(), data.iloc[obs_index, :].to_numpy()
+
         logging.info(f'train size: {len(train_set)}, observed size: {len(obs_set)}')
-        assert (len(train_set.index) + len(obs_set.index)) == len(data.index)
-        return train_set, obs_set[:param_column], obs_set[param_column]
+        assert (len(train_set) + len(obs_set)) == len(data.index)
+
+        return train_set, np.delete(obs_set, param_column, axis=1), obs_set[:, param_column]
 
     def sample_param_values(self, sample_size: int, data: np.ndarray = None):
         if data is None:
@@ -86,7 +96,7 @@ class MuonFeatures:
         # unique needed because some params are equal
         return np.random.choice(np.unique(data[:, self.param_column]), size=sample_size)
 
-    def sample_sim(self, sample_size: int, true_param: np.ndarray, data: np.ndarray = None):
+    def sample_sim(self, sample_size: int, true_param: np.ndarray, data: Union[np.ndarray, None] = None):
         if data is None:
             using_train_set = True
             data = self.train_set_left
@@ -97,50 +107,75 @@ class MuonFeatures:
         if sample_size > len(data):
             raise ValueError(f'Only {len(data)} simulations available, got {sample_size}')
 
-        if not isinstance(true_param, Iterable):
+        if not isinstance(true_param, np.ndarray):
             true_param = np.array([true_param])
 
         # [0] because np.where returns tuple
+        # TODO: np.isin uses == operator? If yes, better change to something like |value - target| < epsilon
         idxs = np.where(np.isin(data[:, self.param_column], true_param))[0]
         # params can be equal for multiple rows -> take only one occurrence for each (total_sims == sample_size)
         idxs_unique = list(  # TODO: can avoid this step and use np.unique directly in idxs above?
             set(np.unique(data[:, self.param_column], return_index=True)[1]).intersection(set(idxs))  # [1] for idx obj
         )
-        assert len(idxs_unique) == sample_size, f'{sample_size} samples requested, got {len(idxs_unique)}'
-        simulations = data[idxs_unique]
+        assert len(idxs_unique) == sample_size, \
+            f'{sample_size} samples requested, got {len(idxs_unique)}. These params where not matched: {true_param}'
+        simulations = np.delete(data[idxs_unique, :], self.param_column, axis=1)
         if using_train_set:
             # avoid reusing same data points until we have unused available
-            self.train_set_left = np.delete(data, idxs_unique)
+            self.train_set_left = np.delete(data, idxs_unique, axis=0)
             if len(self.train_set_left) == 0:
                 self.train_set_left = self.train_set
                 logging.info('no more simulations available, training dataset re-instantiated')
         return simulations
 
-    def sample_reference_g(self, sample_size, data: np.ndarray = None):
+    def sample_reference_g(self, sample_size, data: Union[np.ndarray, None] = None):
 
-        if self.reference_g is None:
-            true_param = self.sample_param_values(sample_size=sample_size)
+        if self.reference_g == 'marginal':
+            # sample another simulation, which will be matched with the (different) param sampled in generate_sample
+            # -> EMPIRICAL MARGINAL, ensures independence between x and theta
+            true_param = self.sample_param_values(sample_size=sample_size, data=data)
             return self.sample_sim(sample_size, true_param, data=data)
         else:
             self.reference_g.rvs(size=sample_size)
 
-    def generate_sample(self, sample_size, bernoulli_p=0.5, data: np.ndarray = None):
-        theta = self.sample_param_values(sample_size, data=data)
-        labels = np.random.binomial(n=1, p=bernoulli_p, size=sample_size)
-        concat_matrix = np.hstack((theta.reshape(-1, 1),
-                                  labels.reshape(-1, 1)))
+    def label_dependent_sampling(self, label: int, data: Union[np.ndarray, None] = None):
+        # TODO: should reshape every time as (sample_size, param_dims) and (sample_size, observed_dims)?
+        # TODO: when sampling from reference, should theta come from self.param_grid or from self.sample_param_values
+        theta = self.sample_param_values(sample_size=1, data=data)
+        if label == 1:
+            sim = self.sample_sim(sample_size=1, true_param=theta, data=data)
+        elif label == 0:
+            sim = self.sample_reference_g(sample_size=1, data=data)
+        else:
+            raise ValueError(f'label must be either 0 or 1, got {label}')
+        return np.concatenate((theta.reshape(-1, self.d),
+                               sim.reshape(-1, self.observed_dims)), axis=1)
 
-        sample = np.apply_along_axis(arr=concat_matrix, axis=1,
-                                     func1d=lambda row: self.sample_sim(sample_size=1, true_param=row[0], data=data)
-                                     if row[1] else self.sample_reference_g(sample_size, data=data))
-        return np.hstack((concat_matrix, sample.reshape(-1, 1)))
+    # need kwargs cause some functions in ACORE call generate_sample with args we have not specified or don't need
+    def generate_sample(self, sample_size, p=0.5, data: Union[np.ndarray, None] = None, **kwargs):
+        labels = np.random.binomial(n=1, p=p, size=sample_size).reshape(-1, 1)
+        param_and_sample = np.apply_along_axis(arr=labels, axis=1,
+                                               func1d=lambda label: self.label_dependent_sampling(label, data=data))
+        out = np.concatenate((labels,
+                              param_and_sample.reshape(-1, self.d + self.observed_dims)), axis=1)
+        logging.debug(f'generated sample dimensions: {out.shape}')
+        return out
 
     def sample_msnh(self, b_prime: int, sample_size: int):
 
-        # TODO: theta_matrix should be a tensor of dimensions (b_prime, d, confidence_band_size)
-        theta_matrix = self.sample_param_values(sample_size=b_prime).reshape(-1, self.d)
-        assert theta_matrix.shape == (b_prime, self.d)
+        # TODO: use of label-dependent sampling will not work if sample_size > 1.
+        #  Will need multiple rows with same param and different obs (?)
+        if sample_size > 1:
+            raise NotImplementedError("Label-dependent sampling will not work if sample_size > 1. See TODO above")
 
-        sample_matrix = np.apply_along_axis(arr=theta_matrix, axis=1,
-                                            func1d=lambda row: self.sample_sim(sample_size=sample_size, true_param=row))
+        logging.info("Sampling for many simple null hypothesis")
+
+        # need to sample one at a time -> label dependent sampling with label always equal to 1
+        labels = np.random.binomial(n=1, p=1, size=b_prime).reshape(-1, 1)
+        assert labels.shape == (b_prime, 1)
+
+        theta_sample_matrix = np.apply_along_axis(arr=labels, axis=1, func1d=lambda label:
+                                                  self.label_dependent_sampling(label=label)
+                                                  ).reshape(-1, self.d + self.observed_dims)
+        theta_matrix, sample_matrix = theta_sample_matrix[:, :self.d], theta_sample_matrix[:, self.d:]
         return theta_matrix, sample_matrix

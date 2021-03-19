@@ -1,4 +1,5 @@
 import logging
+import sys
 from datetime import datetime
 from tqdm import tqdm
 from typing import Union
@@ -69,31 +70,33 @@ class ACORE:
 
         train_time = datetime.now()
         if self.verbose:
-            print('----- %s Trained' % self.classifier_or_name)
+            print('----- %s Trained' % self.classifier_or_name, flush=True)
             # TODO: not general; assumes observed_sample_size == 1
-            progress_bar = tqdm(total=len(self.model.param_grid)*len(self.model.obs_x), desc='Calculate Odds')
+            progress_bar = tqdm(total=len(self.model.param_grid)*len(self.model.obs_x),
+                                desc='Calculate Odds')
 
         tau_obs = []
         # TODO: should this loop over self.model.obs_x as well? Since my observed_sample_size == 1; assume YES for now
-        for theta_0 in self.model.param_grid:
+        for obs_x in self.model.obs_x:
             tau_obs_x = []
             # TODO: not general; assumes observed_sample_size == 1
-            for obs_x in self.model.obs_x:
+            for theta_0 in self.model.param_grid:
                 tau_obs_x.append(compute_statistics_single_t0(clf=clf, obs_sample=obs_x, t0=theta_0,
                                                               d=self.model.d, d_obs=self.model.observed_dims,
                                                               grid_param_t1=self.model.param_grid))
+                if self.verbose:
+                    progress_bar.update(1)
             tau_obs.append(tau_obs_x)
-            if self.verbose:
-                progress_bar.update(1)
+        progress_bar.close()
         pred_time = datetime.now()
         self.time['or_training_time'] = (train_time - start_time).total_seconds()
         self.time['tau_prediction_time'] = (pred_time - train_time).total_seconds()
-        self.tau_obs = np.array(tau_obs)
+        self.tau_obs = tau_obs
 
     def estimate_critical_value(self):
 
         if self.verbose:
-            print('----- Training Quantile Regression Algorithm')
+            print('----- Training Quantile Regression Algorithm', flush=True)
         if self.classifier_or_fit is None:
             raise ValueError('Classifier for Odds Ratios not trained yet')
 
@@ -104,7 +107,7 @@ class ACORE:
         stats_matrix = np.array([compute_statistics_single_t0(clf=self.classifier_or_fit, d=self.model.d,
                                                               d_obs=self.model.observed_dims,
                                                               grid_param_t1=self.model.param_grid,
-                                                              t0=theta_0, obs_sample=sample_matrix[kk, :, :])
+                                                              t0=theta_0, obs_sample=sample_matrix[kk, :])
                                  for kk, theta_0 in enumerate(theta_matrix)])
         bprime_time = datetime.now()
 
@@ -118,10 +121,12 @@ class ACORE:
         self.time['bprime_time'] = (bprime_time - start_time).total_seconds()
         self.time['cutoff_time'] = (cutoff_time - bprime_time).total_seconds()
 
-    def confidence_region(self, tau_obs: Union[list, None] = None, conf_band: bool = False):
+    def confidence_region(self,
+                          tau_obs: Union[list, None] = None,
+                          conf_band: bool = False):
 
-        if self.verbose:
-            print('----- Creating Confidence Region')
+        if self.verbose and not conf_band:
+            print('----- Creating Confidence Region', flush=True)
 
         if tau_obs is None:
             if self.tau_obs is None:
@@ -135,6 +140,9 @@ class ACORE:
         for jj, t0_pred in enumerate(self.t0_pred):                 # TODO: in acore.py this was <. Typo?
             simultaneous_nh_decision.append([t0_pred, tau_obs[jj], int(tau_obs[jj] > t0_pred)])
 
+        #confidence_region = [self.model.param_grid[jj] for jj, t0_pred in enumerate(self.t0_pred)
+        #                     if tau_obs[jj] > t0_pred]
+
         confidence_region = [theta for jj, theta in enumerate(self.model.param_grid)
                              if simultaneous_nh_decision[jj][2]]
         if conf_band:
@@ -147,11 +155,15 @@ class ACORE:
     # need one confidence interval for each observed x
     def confidence_band(self):
 
-        if not all(isinstance(elem, list) for elem in self.tau_obs):
-            raise ValueError('Need a list of lists of tau_obs to compute a confidence bands for each observed x')
-
         self.estimate_or_tau()
         self.estimate_critical_value()
+
+        if self.verbose:
+            print('----- Creating Confidence Band', flush=True)
+
+        if not all(isinstance(elem, list) for elem in self.tau_obs):
+            raise ValueError('Need a list of lists of tau_obs to compute a confidence set for each observed x')
+
         for tau_obs_x in self.tau_obs:
             self.confidence_region(tau_obs=tau_obs_x, conf_band=True)
 
