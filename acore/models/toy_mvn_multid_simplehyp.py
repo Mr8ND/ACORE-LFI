@@ -77,6 +77,10 @@ class ToyMVNMultiDSimpleHypLoader:
         ))
         self.idx_row_true_param = 0
 
+        # b analysis values
+        self.b_sample_vec = [50, 100, 500, 1000, 5000, 10000, 50000, 100000, 500000]
+        self.regen_flag = False
+
     def sample_sim(self, sample_size, true_param):
         return multivariate_normal(mean=true_param, cov=self.true_cov).rvs(sample_size).reshape(sample_size, self.d_obs)
 

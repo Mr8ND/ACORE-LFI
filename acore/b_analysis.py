@@ -14,29 +14,36 @@ from models.camelus_wl import CamelusSimLoader
 from models.sen_poisson import SenPoissonLoader
 from models.inferno import InfernoToyLoader
 from utils.functions import clf_prob_value, train_clf, odds_ratio_loss
+from models.toy_mvn_multid_simplehyp import ToyMVNMultiDSimpleHypLoader
+from or_classifiers.toy_example_list import classifier_dict_multid_power
 
 
 model_dict = {
     'camelus': CamelusSimLoader,
     'poisson': SenPoissonLoader,
-    'inferno': InfernoToyLoader
+    'inferno': InfernoToyLoader,
+    'mvn_multid_simplehyp': ToyMVNMultiDSimpleHypLoader
 }
 
 
-def main(alpha, run, debug=False, seed=7, size_check=1000, size_reference=10000, benchmark=1, empirical_marginal=False):
+def main(d_obs, alpha, run, debug=False, seed=7, size_check=1000, size_reference=10000, benchmark=1, empirical_marginal=False):
 
     # Setup the variables, also to account for debug runs
     np.random.seed(seed)
     classifier_dict = classifier_dict_full if not debug else classifier_dict_small
 
+    if run == 'mvn_multid_simplehyp':
+        classifier_dict = classifier_dict_multid_power
+
     # Create the loader object, which drives most
     print('----- Loading Simulations In')
-    model_obj = model_dict[run](benchmark=benchmark, empirical_marginal=empirical_marginal)
+    model_obj = model_dict[run](benchmark=benchmark, empirical_marginal=empirical_marginal, d_obs=d_obs)
 
     # Also, get the mean and std of the reference distribution
-    model_obj.set_reference_g(size_reference=size_reference)
-    mean_instrumental = model_obj.mean_instrumental
-    cov_instrumental = model_obj.cov_instrumental
+    if not empirical_marginal:
+        model_obj.set_reference_g(size_reference=size_reference)
+        mean_instrumental = model_obj.mean_instrumental
+        cov_instrumental = model_obj.cov_instrumental
 
     # Get the correct functions
     gen_sample_func = model_obj.generate_sample
@@ -46,13 +53,15 @@ def main(alpha, run, debug=False, seed=7, size_check=1000, size_reference=10000,
     b_vec = model_obj.b_sample_vec if not debug else [100, 1000]
     out_val = []
     out_cols = ['b', 'classifier', 'entropy_loss', 'or_loss_value', 'alpha', 'run', 'size_check', 'size_marginal',
-                'benchmark']
+                'benchmark', 'd_obs']
     for b_val in np.array(b_vec).astype(np.int):
 
         if b_val > 100000 and model_obj.regen_flag:
             model_obj = model_dict[run]()
             gen_sample_func = model_obj.generate_sample
-            model_obj.set_reference_g_no_sample(mean_instrumental=mean_instrumental, cov_instrumental=cov_instrumental)
+            if not empirical_marginal:
+                model_obj.set_reference_g_no_sample(
+                    mean_instrumental=mean_instrumental, cov_instrumental=cov_instrumental)
 
         np.random.seed(seed)
         sample_check = gen_sample_func(sample_size=size_check, marginal=False)
@@ -82,7 +91,7 @@ def main(alpha, run, debug=False, seed=7, size_check=1000, size_reference=10000,
                                             bern_vec=bern_vec, d=model_obj.d, d_obs=model_obj.d_obs)
             out_val.append([
                 b_val, clf_name.replace('\n', '').replace(' ', '-'),
-                loss_value, or_loss_value, alpha, run, size_check, size_reference, benchmark
+                loss_value, or_loss_value, alpha, run, size_check, size_reference, benchmark, d_obs
             ])
 
             if debug:
@@ -93,8 +102,8 @@ def main(alpha, run, debug=False, seed=7, size_check=1000, size_reference=10000,
     # Saving the results
     out_df = pd.DataFrame.from_records(data=out_val, index=range(len(out_val)), columns=out_cols)
     out_dir = 'sims/%s' % model_obj.out_directory
-    out_filename = 'b_analysis_%s_alpha%s_sizecheck%s_bmax%s_%s.csv' % (
-        run, str(alpha).replace('.', '-'), size_check, np.max(b_vec),
+    out_filename = 'b_analysis_%s_dobs%s_alpha%s_sizecheck%s_bmax%s_%s.csv' % (
+        run, d_obs, str(alpha).replace('.', '-'), size_check, np.max(b_vec),
         datetime.strftime(datetime.today(), '%Y-%m-%d')
     )
     out_df.to_csv(out_dir + out_filename)
@@ -104,6 +113,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--seed', action="store", type=int, default=7,
                         help='Random State')
+    parser.add_argument('--d_obs', action="store", type=int, default=2,
+                        help='Dimension argument for the model class')
     parser.add_argument('--size_check', action="store", type=int, default=1000,
                         help='Number of points used to check entropy')
     parser.add_argument('--size_reference', action="store", type=int, default=1000,
@@ -129,5 +140,6 @@ if __name__ == '__main__':
         size_check=argument_parsed.size_check,
         size_reference=argument_parsed.size_reference,
         benchmark=argument_parsed.benchmark,
-        empirical_marginal=argument_parsed.empirical_marginal
+        empirical_marginal=argument_parsed.empirical_marginal,
+        d_obs=argument_parsed.d_obs
     )
