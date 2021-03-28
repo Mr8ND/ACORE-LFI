@@ -211,7 +211,7 @@ class InfernoToyLoader:
             true_param = np.concatenate((true_param, np.array([self.true_b])))
         return true_param
 
-    def sample_sim(self, sample_size, true_param):
+    def sample_sim(self, sample_size, true_param, return_cluster=False):
         if len(true_param) < 4:
             true_param = self._create_complete_param_vec(true_param)
         mixing_param = np.clip(true_param[3] / (true_param[0] + true_param[3]), 0, 1)
@@ -237,8 +237,16 @@ class InfernoToyLoader:
         samples_normal = (v + m).reshape(sample_size, 2)
 
         # Exponential samples
-        exp_param_vec = np.take([true_param[2], 2], cluster)
-        samples_exp = np.random.exponential(scale=exp_param_vec).reshape(-1, 1)
+        # The cluster 0 is the background, cluster 1 is the signal
+        exp_param_vec = np.take([true_param[2], 2.0], cluster)
+
+        # We need to be careful on whether the exponential takes in the rate or the scale
+        # currently it's taking the rate in (1/scale). Per the INFERNO paper, the rate needs to be 2.0 in the
+        # case of the background and 0 in case of the signal
+        samples_exp = np.random.exponential(scale=1/exp_param_vec).reshape(-1, 1)
+
+        if return_cluster:
+            return np.hstack((samples_normal, samples_exp, cluster.reshape(-1, 1)))
 
         return np.hstack((samples_normal, samples_exp))
 
@@ -293,7 +301,7 @@ class InfernoToyLoader:
         first_term_exp = expon.pdf(x=x[2], scale=1/lambda_param)
 
         second_term = self._normal_multivariate_likelihood(x=x[:2], mu=mu_vec[1], sigma=sigma_mats[1])
-        second_term_exp = expon.pdf(x=x[2], scale=1/2)
+        second_term_exp = expon.pdf(x=x[2], scale=1/2.0)
 
         return mixing_param * first_term * first_term_exp + (1 - mixing_param) * second_term * second_term_exp
 
