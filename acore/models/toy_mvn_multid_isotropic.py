@@ -13,7 +13,7 @@ from scipy.special import erf
 class ToyMVNMultiDIsotropicLoader:
 
     def __init__(self, d_obs=2, mean_instrumental=0.0, std_instrumental=4.0, low_int=-5.0, high_int=5.0,
-                 true_param=0.0, true_std=1.0, mean_prior=0.0, std_prior=2.0, uniform_grid_sample_size=5000,
+                 true_param=0.0, true_std=1.0, mean_prior=0.0, std_prior=2.0, uniform_grid_sample_size=10000,
                  out_dir='toy_mvn_isotropic/', prior_type='uniform',
                  marginal=False, size_marginal=5000, empirical_marginal=True, **kwargs):
 
