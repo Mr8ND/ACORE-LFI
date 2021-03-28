@@ -32,8 +32,8 @@ def main(d_obs, alpha, run, debug=False, seed=7, size_check=1000, size_reference
     np.random.seed(seed)
     classifier_dict = classifier_dict_full if not debug else classifier_dict_small
 
-    if run == 'mvn_multid_simplehyp':
-        classifier_dict = classifier_dict_multid_power
+    # if run == 'mvn_multid_simplehyp':
+    #     classifier_dict = classifier_dict_multid_power
 
     # Create the loader object, which drives most
     print('----- Loading Simulations In')
@@ -115,7 +115,7 @@ if __name__ == '__main__':
                         help='Random State')
     parser.add_argument('--d_obs', action="store", type=int, default=2,
                         help='Dimension argument for the model class')
-    parser.add_argument('--size_check', action="store", type=int, default=1000,
+    parser.add_argument('--size_check', action="store", type=int, default=5000,
                         help='Number of points used to check entropy')
     parser.add_argument('--size_reference', action="store", type=int, default=1000,
                         help='Number of samples used for the reference distribution')
