@@ -71,7 +71,7 @@ class ToyMVNMultiDIsotropicLoader:
         self.idx_row_true_param = 0
 
         # b analysis values
-        self.b_sample_vec = [50, 100, 500, 1000, 5000, 10000, 50000, 100000, 500000]
+        self.b_sample_vec = [50, 100, 500, 1000, 5000, 10000, 50000, 100000]
         self.regen_flag = False
 
     def sample_sim(self, sample_size, true_param):
