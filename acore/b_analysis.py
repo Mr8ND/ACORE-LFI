@@ -15,6 +15,7 @@ from models.sen_poisson import SenPoissonLoader
 from models.inferno import InfernoToyLoader
 from utils.functions import clf_prob_value, train_clf, odds_ratio_loss
 from models.toy_mvn_multid_simplehyp import ToyMVNMultiDSimpleHypLoader
+from models.toy_mvn_multid_isotropic import ToyMVNMultiDIsotropicLoader
 from or_classifiers.toy_example_list import classifier_dict_multid_power
 
 
@@ -22,7 +23,8 @@ model_dict = {
     'camelus': CamelusSimLoader,
     'poisson': SenPoissonLoader,
     'inferno': InfernoToyLoader,
-    'mvn_multid_simplehyp': ToyMVNMultiDSimpleHypLoader
+    'mvn_multid_simplehyp': ToyMVNMultiDSimpleHypLoader,
+    'mvn_iso': ToyMVNMultiDIsotropicLoader
 }
 
 
