@@ -124,18 +124,14 @@ class InfernoToyLoader:
         self.nuisance_global_param_val = None
 
         # Prediction grids have to be mindful of how many parameters are active
-        if not self.nuisance_flag and self.d > 1:
-            self.num_pred_grid = 11
-            self.num_acore_grid = 11
-        else:
-            self.num_pred_grid = num_pred_grid
-            self.num_acore_grid = num_acore_grid
+        self.num_pred_grid = num_pred_grid
+        self.num_acore_grid = num_acore_grid
 
         # For the ACORE grid, it really depends on whether we consider nuisance parameters or not
         if self.nuisance_flag:
             self.pred_grid = np.linspace(start=self.s_low, stop=self.s_high, num=self.num_pred_grid)
             self.idx_row_true_param = np.where((self.pred_grid == self.true_param[0]))[0][0]
-            self.acore_grid = None
+            self.acore_grid = np.linspace(start=self.s_low, stop=self.s_high, num=self.num_acore_grid)
         else:
             self.pred_grid = np.unique(
                 tensor_4d_mesh(np.meshgrid(np.linspace(start=self.s_low, stop=self.s_high, num=self.num_pred_grid),

@@ -35,7 +35,7 @@ model_dict = {
 def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier_cde, test_statistic, alternative_norm,
          monte_carlo_samples=500, debug=False, seed=7, size_check=1000, verbose=False, marginal=False, num_grid=21,
          size_marginal=1000, empirical_marginal=True, benchmark=1, nuisance_parameters=False, nuisance_confint=False,
-         guided_sim=False, guided_sample=1000, exactlr_mc=1000):
+         guided_sim=False, guided_sample=1000, exactlr_mc=1000, num_acore_grid=1000):
 
     # Changing values if debugging
     b = b if not debug else 100
@@ -59,7 +59,7 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
     model_obj = model_dict[run](
         d_obs=d_obs, marginal=marginal, size_marginal=size_marginal, empirical_marginal=empirical_marginal,
         true_param=t0_val, alt_mu_norm=alternative_norm, nuisance_parameters=nuisance_parameters,
-        benchmark=benchmark, num_acore_grid=num_grid, num_pred_grid=num_grid
+        benchmark=benchmark, num_acore_grid=num_acore_grid, num_pred_grid=num_grid
     )
 
     # Get the correct functions
@@ -126,9 +126,12 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
                 # are modified in place. For BFF that is not the case as we need to integrate for the numerator in
                 # case of nuisance parameters.
                 if model_obj.nuisance_flag:
-                    t0_grid, acore_grid = model_obj.calculate_nuisance_parameters_over_grid(
+
+                    t0_grid, _ = model_obj.calculate_nuisance_parameters_over_grid(
                         t0_grid=model_obj.pred_grid, clf_odds=clf_odds, x_obs=x_obs)
-                    gen_param_fun = partial(sample_from_matrix, t0_grid=t0_grid)
+                    _, acore_grid = model_obj.calculate_nuisance_parameters_over_grid(
+                        t0_grid=model_obj.acore_grid, clf_odds=clf_odds, x_obs=x_obs)
+                    gen_param_fun = partial(sample_from_matrix, t0_grid=acore_grid)
                     grid_param = acore_grid
 
                     tau_obs = np.array([
@@ -371,9 +374,14 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
                 
                 #### RECORD for each tau_obs_val point: its location (d1, d2), tau value, cutoff value, decision (1 or 0)
                 if nuisance_confint:
+                    if len(t0_grid.shape) == 1 or (len(t0_grid.shape) == 2 and t0_grid.shape[1] == 1):
+                        t0_grid_out = np.hstack((t0_grid.reshape(-1, 1), t0_grid.reshape(-1, 1)))
+                    else:
+                        t0_grid_out = t0_grid
+
                     plot_df = pd.DataFrame.from_dict({
-                        'theta1': t0_grid[:, 0],
-                        'theta2': t0_grid[:, 1],
+                        'theta1': t0_grid_out[:, 0],
+                        'theta2': t0_grid_out[:, 1],
                         'tau_statistic': tau_obs_val.reshape(-1, ),
                         'cutoff': cutoff_val.reshape(-1, ),
                         'decision': (tau_obs_val.reshape(-1, ) >= cutoff_val.reshape(-1, )).astype(float)
@@ -454,8 +462,9 @@ if __name__ == '__main__':
     parser.add_argument('--exactlr_mc', action="store", type=int, default=1000,
                         help='Monte Carlo samples for the exact likelihood ratio calculations.')
     parser.add_argument('--num_grid', action="store", type=int, default=21,
-                        help='Number of grid points for the grid over which to evaluate t0 and ACORE maximization '
-                             'grid.')
+                        help='Number of grid points for the grid over which to evaluate t0 grid.')
+    parser.add_argument('--num_acore_grid', action="store", type=int, default=1000,
+                        help='Number of grid points for the grid over which to evaluate ACORE maximization grid.')
     argument_parsed = parser.parse_args()
 
     
@@ -484,5 +493,6 @@ if __name__ == '__main__':
         guided_sim=argument_parsed.guided_sim,
         guided_sample=argument_parsed.guided_sample,
         exactlr_mc=argument_parsed.exactlr_mc,
-        num_grid=argument_parsed.num_grid
+        num_grid=argument_parsed.num_grid,
+        num_acore_grid=argument_parsed.num_acore_grid
     )
