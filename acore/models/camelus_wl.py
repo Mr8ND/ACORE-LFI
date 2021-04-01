@@ -1,6 +1,8 @@
 import pickle
 import numpy as np
+import random
 from scipy.stats import multivariate_normal
+from shapely.geometry import Polygon, Point
 
 
 class CamelusSimLoader:
@@ -8,11 +10,12 @@ class CamelusSimLoader:
     # to pop from them
 
     def __init__(self, flnm='data/linc_full_dict_data.pkl', true_index=111,
-                 out_dir='camelus_linc/', empirical_marginal=True, *args, **kwargs):
+                 out_dir='camelus_linc/', empirical_marginal=True, num_acore_grid=100, *args, **kwargs):
         linc_data_dict = pickle.load(open(flnm, 'rb'))
         self.data_dict = linc_data_dict
         self.grid = linc_data_dict['grid']
-        self.acore_grid = self.grid
+
+        self.acore_grid = self.get_random_point_in_polygon(poly=Polygon(self.grid), size=num_acore_grid)
         self.pred_grid = self.grid
         self.true_t0 = np.round(self.grid[true_index, ], 2)
         self.idx_row_true_param = true_index
@@ -29,6 +32,17 @@ class CamelusSimLoader:
         self.b_sample_vec = [50, 100, 500, 1e3, 5e3, 1e4, 5e4, 1e5]
         self.b_prime_vec = [100, 500, 1000, 5000, 10000, 50000, 100000]
         self.nuisance_flag = False
+
+    def get_random_point_in_polygon(self, poly, size):
+        minx, miny, maxx, maxy = poly.bounds
+        points_list = []
+        counter = 0
+        while counter < size:
+            p = Point(random.uniform(minx, maxx), random.uniform(miny, maxy))
+            if poly.contains(p):
+                points_list.append([p.x, p.y])
+                counter += 1
+        return np.array(points_list).reshape(-1, 2)
 
     def set_reference_g(self, size_reference):
         sim_sample_reference = self.sample_sim_overall(size_reference)
