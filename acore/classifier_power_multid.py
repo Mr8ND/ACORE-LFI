@@ -11,24 +11,24 @@ from functools import partial
 
 from utils.functions import train_clf, compute_statistics_single_t0, clf_prob_value, compute_bayesfactor_single_t0, \
     compute_averageodds_single_t0, odds_ratio_loss, sample_from_matrix, compute_bayesfactor_single_t0_nuisance
-from models.toy_gmm_multid import ToyGMMMultiDLoader
 from models.toy_mvn import ToyMVNLoader
 from models.toy_mvn_simplehyp import ToyMVNSimpleHypLoader
 from models.toy_mvn_multid import ToyMVNMultiDLoader
 from models.toy_mvn_multid_simplehyp import ToyMVNMultiDSimpleHypLoader
 from models.inferno import InfernoToyLoader, ClfOddsExact
+from models.camelus_wl import CamelusSimLoader
 from utils.qr_functions import train_qr_algo
 from or_classifiers.toy_example_list import classifier_inferno_dict_b1, classifier_inferno_dict_b4, \
-    classifier_dict_multid_power
+    classifier_dict_multid_power, classifier_dict_multid_camelus
 from qr_algorithms.complete_list import classifier_cde_dict
 
 model_dict = {
-    # 'gmm': ToyGMMMultiDLoader,
     'mvn': ToyMVNLoader,
     'mvn_simplehyp': ToyMVNSimpleHypLoader,
     'mvn_multid': ToyMVNMultiDLoader,
     'mvn_multid_simplehyp': ToyMVNMultiDSimpleHypLoader,
-    'inferno': InfernoToyLoader
+    'inferno': InfernoToyLoader,
+    'camelus': CamelusSimLoader
 }
 
 
@@ -51,6 +51,8 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
             classifier_dict = classifier_inferno_dict_b4
         else:
             raise NotImplementedError('OR Classification has been explored under Benchmark 1 and 4, not others.')
+    elif 'camelus' in run:
+        classifier_dict = classifier_dict_multid_camelus
     else:
         classifier_dict = classifier_dict_multid_power
 

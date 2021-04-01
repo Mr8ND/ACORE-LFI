@@ -12,8 +12,11 @@ class CamelusSimLoader:
         linc_data_dict = pickle.load(open(flnm, 'rb'))
         self.data_dict = linc_data_dict
         self.grid = linc_data_dict['grid']
+        self.acore_grid = self.grid
         self.pred_grid = self.grid
         self.true_t0 = np.round(self.grid[true_index, ], 2)
+        self.idx_row_true_param = true_index
+        self.true_param = self.true_t0
 
         self.empirical_marginal = empirical_marginal
         self.mean_instrumental = None
@@ -25,6 +28,7 @@ class CamelusSimLoader:
         self.out_directory = out_dir
         self.b_sample_vec = [50, 100, 500, 1e3, 5e3, 1e4, 5e4, 1e5]
         self.b_prime_vec = [100, 500, 1000, 5000, 10000, 50000, 100000]
+        self.nuisance_flag = False
 
     def set_reference_g(self, size_reference):
         sim_sample_reference = self.sample_sim_overall(size_reference)
@@ -106,3 +110,6 @@ class CamelusSimLoader:
 
     def make_grid_over_param_space(self, n_grid):
         raise NotImplementedError('Grid is fixed on this model for now.')
+
+    def compute_exact_prob(self, theta_vec, x_vec):
+        return np.array([0.9 for el in theta_vec])
