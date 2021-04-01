@@ -13,7 +13,7 @@ from scipy.special import erf
 class ToyMVNMultiDIsotropicLoader:
 
     def __init__(self, d_obs=2, mean_instrumental=0.0, std_instrumental=4.0, low_int=-5.0, high_int=5.0,
-                 true_param=0.0, true_std=1.0, mean_prior=0.0, std_prior=2.0, uniform_grid_sample_size=10000,
+                 true_param=0.0, true_std=1.0, mean_prior=0.0, std_prior=2.0, uniform_grid_sample_size=1000,
                  out_dir='toy_mvn_isotropic/', prior_type='uniform',
                  marginal=False, size_marginal=5000, empirical_marginal=True, **kwargs):
 
@@ -55,13 +55,9 @@ class ToyMVNMultiDIsotropicLoader:
         self.empirical_marginal = empirical_marginal
             
         # Always sample the same number of values for maximization independent of the dimension
-        if not uniform_grid_sample_size % self.d == 0:
-            self.num_pred_grid = ceil(uniform_grid_sample_size/self.d) * self.d
-        else:
-            self.num_pred_grid = uniform_grid_sample_size
-        np.random.seed(7)
+        self.num_pred_grid = uniform_grid_sample_size
         acore_grid = np.random.uniform(
-            low=self.low_int, high=self.high_int, size=self.num_pred_grid).reshape(-1, self.d)
+            low=self.low_int, high=self.high_int, size=self.num_pred_grid * self.d).reshape(-1, self.d)
         self.acore_grid = np.vstack((self.true_param.reshape(1, self.d), acore_grid))
         
         # prediction grid we care about is the null hypothesis plus all the values on the 45 degree line
