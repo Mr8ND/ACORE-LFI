@@ -8,12 +8,14 @@ class CamelusSimLoader:
     # to pop from them
 
     def __init__(self, flnm='data/linc_full_dict_data.pkl', true_index=111,
-                 out_dir='camelus_linc/', *args, **kwargs):
+                 out_dir='camelus_linc/', empirical_marginal=True, *args, **kwargs):
         linc_data_dict = pickle.load(open(flnm, 'rb'))
         self.data_dict = linc_data_dict
         self.grid = linc_data_dict['grid']
         self.pred_grid = self.grid
         self.true_t0 = np.round(self.grid[true_index, ], 2)
+
+        self.empirical_marginal = empirical_marginal
         self.mean_instrumental = None
         self.cov_instrumental = None
         self.g_distribution = None
@@ -21,7 +23,7 @@ class CamelusSimLoader:
         self.d_obs = 7
         self.regen_flag = True
         self.out_directory = out_dir
-        self.b_sample_vec = [50, 100, 500, 1e3, 5e3, 1e4, 5e4, 1e5, 5e5]
+        self.b_sample_vec = [50, 100, 500, 1e3, 5e3, 1e4, 5e4, 1e5]
         self.b_prime_vec = [100, 500, 1000, 5000, 10000, 50000, 100000]
 
     def set_reference_g(self, size_reference):
@@ -54,6 +56,12 @@ class CamelusSimLoader:
     def sample_param_values(self, sample_size):
         return self.grid[np.random.choice(self.grid.shape[0], size=sample_size)]
 
+    def sample_empirical_marginal(self, sample_size):
+        theta_vec_marg = self.sample_param_values(sample_size=sample_size)
+        return np.apply_along_axis(arr=theta_vec_marg.reshape(-1, self.d), axis=1,
+                                   func1d=lambda row: self.sample_sim(
+                                       sample_size=1, true_param=row)).reshape(-1, self.d_obs)
+
     def sample_sim_check(self, sample_size, n):
         random_t0 = self.sample_param_values(sample_size)
         sample_mat = np.array([self.sample_sim(n, t0_val).reshape(-1, n) for t0_val in random_t0])
@@ -69,14 +77,16 @@ class CamelusSimLoader:
         bern_vec = np.random.binomial(n=1, p=p, size=sample_size).reshape(sample_size, 1)
         concat_mat = np.hstack((theta_mat, bern_vec))
 
-        if marginal:
-            raise NotImplementedError('Marginal distribution of X not implemented.')
-
-        # Sample matrix
-        sample = np.apply_along_axis(arr=concat_mat, axis=1,
-                                     func1d=lambda row: self.sample_sim(
-                                         sample_size=1, true_param=row[:2]) if row[2] else
-                                     np.abs(self.g_distribution.rvs(size=1)).astype(int)).reshape(-1, 7)
+        if self.empirical_marginal:
+            sample = np.apply_along_axis(arr=concat_mat, axis=1,
+                                         func1d=lambda row: self.sample_sim(
+                                             sample_size=1, true_param=row[:self.d]) if row[self.d]
+                                         else self.sample_empirical_marginal(sample_size=1)).reshape(-1, 7)
+        else:
+            sample = np.apply_along_axis(arr=concat_mat, axis=1,
+                                         func1d=lambda row: self.sample_sim(
+                                             sample_size=1, true_param=row[:2]) if row[2] else
+                                         np.abs(self.g_distribution.rvs(size=1)).astype(int)).reshape(-1, 7)
         return np.hstack((concat_mat, sample))
 
     def sample_msnh_algo5(self, b_prime, sample_size):
