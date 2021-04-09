@@ -112,8 +112,12 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
                         compute_bayesfactor_single_t0(
                             clf=clf_odds, obs_sample=x_obs, t0=theta_0, gen_param_fun=gen_param_fun,
                             d=model_obj.d, d_obs=model_obj.d_obs, log_out=True) for theta_0 in t0_grid])
+            elif test_statistic == 'exactbf':
+                tau_obs = np.array([
+                        model_obj.compute_exact_bayes_factor_single_t0(
+                            obs_sample=x_obs, t0=theta_0) for theta_0 in t0_grid])
             else:
-                raise ValueError('The variable test_statistic needs to be either acore, logavgacore. '
+                raise ValueError('The variable test_statistic needs to be either acore, logavgacore or exactbf. '
                                  'Currently %s' % test_statistic)
 
             # Calculating cross-entropy
@@ -134,7 +138,8 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
         # Train the quantile regression algorithm for confidence levels
         theta_mat, sample_mat = msnh_sampling_func(b_prime=b_prime, sample_size=sample_size_obs)
         stats_mat = np.zeros((theta_mat.shape[0]))
-        pbar = tqdm(total=b_prime, desc='Generating test stats for b_prime, n=%s, b=%s' % (sample_size_obs, b_prime))
+        pbar = tqdm(total=t0_grid.shape[0] if test_statistic == 'exactbf' else b_prime,
+                    desc='Generating test stats for b_prime, n=%s, b=%s' % (sample_size_obs, b_prime))
         if test_statistic == 'acore':
             for kk, theta_0 in enumerate(theta_mat):
                 stats_mat[kk] = compute_statistics_single_t0(
@@ -148,17 +153,28 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
                   monte_carlo_samples=monte_carlo_samples, log_out=True,
                   t0=theta_0, obs_sample=sample_mat[kk, :, :])
                 pbar.update(1)
+        elif test_statistic == 'exactbf':
+            # Obtain the quantile by MC sampling
+            mc_sample_exactbf = b_prime
+            t0_pred_vec = np.zeros(t0_grid.shape[0])
+            for kk, t0_val_temp in enumerate(t0_grid):
+                bf_temp = np.array([model_obj.compute_exact_bayes_factor_single_t0(
+                            obs_sample=gen_obs_func(sample_size=sample_size_obs, true_param=t0_val_temp),
+                            t0=t0_val_temp) for _ in range(mc_sample_exactbf)]).reshape(-1,)
+                t0_pred_vec[kk] = np.quantile(a=bf_temp, q=alpha)
+                pbar.update(1)
         else:
-            raise ValueError('The variable test_statistic needs to be either acore, logavgacore. '
+            raise ValueError('The variable test_statistic needs to be either acore, logavgacore, exactbf. '
                              'Currently %s' % test_statistic)
 
         clf_cde_fitted[clf_name] = {}
         clf_name_qr = classifier_cde
         clf_params = classifier_cde_dict[classifier_cde]
-        t0_pred_vec = train_qr_algo(model_obj=model_obj, theta_mat=theta_mat, stats_mat=stats_mat,
-                                        algo_name=clf_params[0], learner_kwargs=clf_params[1],
-                                        pytorch_kwargs=clf_params[2] if len(clf_params) > 2 else None,
-                                        alpha=alpha, prediction_grid=t0_grid, dim_param=model_obj.d)
+        if test_statistic != 'exact_bf':
+            t0_pred_vec = train_qr_algo(model_obj=model_obj, theta_mat=theta_mat, stats_mat=stats_mat,
+                                            algo_name=clf_params[0], learner_kwargs=clf_params[1],
+                                            pytorch_kwargs=clf_params[2] if len(clf_params) > 2 else None,
+                                            alpha=alpha, prediction_grid=t0_grid, dim_param=model_obj.d)
         clf_cde_fitted[clf_name][clf_name_qr] = t0_pred_vec
 
     # At this point all it's left is to record
