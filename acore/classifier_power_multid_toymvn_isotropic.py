@@ -4,6 +4,7 @@ simplefilter(action='ignore', category=FutureWarning)
 import numpy as np
 import argparse
 import pandas as pd
+import pickle
 from tqdm.auto import tqdm
 from datetime import datetime
 from sklearn.metrics import log_loss
@@ -23,8 +24,8 @@ model_dict = {
 
 
 def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier_cde, test_statistic,
-         classifier, monte_carlo_samples=500, debug=False, seed=7, size_check=1000, verbose=False,
-         marginal=False, num_grid=21, size_marginal=1000, empirical_marginal=True, benchmark=1,
+         classifier, monte_carlo_samples=500, debug=False, seed=7, size_check=5000, verbose=False,
+         marginal=False, num_grid=21, size_marginal=1000, empirical_marginal=True, benchmark=1, explore_distr=False,
          nuisance_parameters=False, guided_sim=False, guided_sample=1000, uniform_grid_sample_size=1000):
 
     # Changing values if debugging
@@ -136,9 +137,16 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
         clf_odds_fitted[clf_name] = (tau_obs_list, loss_value_list, or_loss_value_list)
 
         # Train the quantile regression algorithm for confidence levels
-        theta_mat, sample_mat = msnh_sampling_func(b_prime=b_prime, sample_size=sample_size_obs)
+        if explore_distr:
+            theta_mat = np.repeat(t0_grid, 1000, axis=0)
+            sample_mat = np.apply_along_axis(arr=theta_mat, axis=1,
+                                             func1d=lambda row: gen_obs_func(
+                                                 sample_size=sample_size_obs, true_param=row
+                                             ))
+        else:
+            theta_mat, sample_mat = msnh_sampling_func(b_prime=b_prime, sample_size=sample_size_obs)
         stats_mat = np.zeros((theta_mat.shape[0]))
-        pbar = tqdm(total=t0_grid.shape[0] if test_statistic == 'exactbf' else b_prime,
+        pbar = tqdm(total=t0_grid.shape[0] if test_statistic == 'exactbf' else theta_mat.shape[0],
                     desc='Generating test stats for b_prime, n=%s, b=%s' % (sample_size_obs, b_prime))
         if test_statistic == 'acore':
             for kk, theta_0 in enumerate(theta_mat):
@@ -163,18 +171,43 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
                             t0=t0_val_temp) for _ in range(mc_sample_exactbf)]).reshape(-1,)
                 t0_pred_vec[kk] = np.quantile(a=bf_temp, q=alpha)
                 pbar.update(1)
+            stats_mat = None
         else:
             raise ValueError('The variable test_statistic needs to be either acore, logavgacore, exactbf. '
                              'Currently %s' % test_statistic)
+
+        if explore_distr:
+            out_dict = {
+                'd_obs': d_obs,
+                'theta_mat': theta_mat,
+                't0_grid': t0_grid,
+                'test_statistic': test_statistic,
+                'classifier': classifier,
+                'classifier_cde': classifier_cde,
+                'stats_mat': stats_mat,
+                'sample_size_obs': sample_size_obs,
+                'b': b,
+                'monte_carlo_samples': monte_carlo_samples,
+                'uniform_grid_sample_size': uniform_grid_sample_size
+            }
+
+            pkl_dir = 'sims/classifier_power_multid/plot_df/'
+            out_filename = 'isotropic_distrexploration_d%s_%steststats_%sB_%sclassifier_%s.pkl' % (
+                d_obs, test_statistic, b, classifier,
+                datetime.strftime(datetime.today(), '%Y-%m-%d-%H-%M')
+            )
+            pickle.dump(out_dict, open(pkl_dir + out_filename, 'wb'))
+
+            return None
 
         clf_cde_fitted[clf_name] = {}
         clf_name_qr = classifier_cde
         clf_params = classifier_cde_dict[classifier_cde]
         if test_statistic != 'exact_bf':
             t0_pred_vec = train_qr_algo(model_obj=model_obj, theta_mat=theta_mat, stats_mat=stats_mat,
-                                            algo_name=clf_params[0], learner_kwargs=clf_params[1],
-                                            pytorch_kwargs=clf_params[2] if len(clf_params) > 2 else None,
-                                            alpha=alpha, prediction_grid=t0_grid, dim_param=model_obj.d)
+                                        algo_name=clf_params[0], learner_kwargs=clf_params[1],
+                                        pytorch_kwargs=clf_params[2] if len(clf_params) > 2 else None,
+                                        alpha=alpha, prediction_grid=t0_grid, dim_param=model_obj.d)
         clf_cde_fitted[clf_name][clf_name_qr] = t0_pred_vec
 
     # At this point all it's left is to record
@@ -234,6 +267,9 @@ if __name__ == '__main__':
     parser.add_argument('--debug', action='store_true', default=False,
                         help='If true, a very small value for the sample sizes is fit to make sure the'
                              'file can run quickly for debugging purposes')
+    parser.add_argument('--explore_distr', action='store_true', default=False,
+                        help='If true, computes the distribution of the test statistics at the 45 degree line '
+                             'direction and saves a pickle file.')
     parser.add_argument('--verbose', action='store_true', default=False,
                         help='If true, logs are printed to the terminal')
     parser.add_argument('--sample_size_obs', action="store", type=int, default=10,
@@ -272,5 +308,6 @@ if __name__ == '__main__':
         size_marginal=argument_parsed.size_marginal,
         monte_carlo_samples=argument_parsed.monte_carlo_samples,
         uniform_grid_sample_size=argument_parsed.unif_grid,
-        classifier=argument_parsed.classifier
+        classifier=argument_parsed.classifier,
+        explore_distr=argument_parsed.explore_distr
     )
