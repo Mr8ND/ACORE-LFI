@@ -5,6 +5,7 @@ import numpy as np
 import argparse
 import pandas as pd
 import pickle
+import pdb
 from tqdm.auto import tqdm
 from datetime import datetime
 from sklearn.metrics import log_loss
@@ -188,7 +189,8 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
                 'sample_size_obs': sample_size_obs,
                 'b': b,
                 'monte_carlo_samples': monte_carlo_samples,
-                'uniform_grid_sample_size': uniform_grid_sample_size
+                'uniform_grid_sample_size': uniform_grid_sample_size,
+                'tau_obs_list': tau_obs_list
             }
 
             pkl_dir = 'sims/classifier_power_multid/plot_df/'

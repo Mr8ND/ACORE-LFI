@@ -56,9 +56,8 @@ class ToyMVNMultiDIsotropicLoader:
             
         # Always sample the same number of values for maximization independent of the dimension
         self.num_pred_grid = uniform_grid_sample_size
-        acore_grid = np.random.uniform(
+        self.acore_grid = np.random.uniform(
             low=self.low_int, high=self.high_int, size=self.num_pred_grid * self.d).reshape(-1, self.d)
-        self.acore_grid = np.vstack((self.true_param.reshape(1, self.d), acore_grid))
         
         # prediction grid we care about is the null hypothesis plus all the values on the 45 degree line
         # in d dimension. We are basically looking for power in the direction outside the null hypothesis
