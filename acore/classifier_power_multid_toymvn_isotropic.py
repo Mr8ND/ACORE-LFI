@@ -147,7 +147,9 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
         else:
             theta_mat, sample_mat = msnh_sampling_func(b_prime=b_prime, sample_size=sample_size_obs)
         stats_mat = np.zeros((theta_mat.shape[0]))
-        pbar = tqdm(total=t0_grid.shape[0] if test_statistic == 'exactbf' else theta_mat.shape[0],
+        # pbar = tqdm(total=t0_grid.shape[0] if test_statistic == 'exactbf' else theta_mat.shape[0],
+        #             desc='Generating test stats for b_prime, n=%s, b=%s' % (sample_size_obs, b_prime))
+        pbar = tqdm(total=theta_mat.shape[0],
                     desc='Generating test stats for b_prime, n=%s, b=%s' % (sample_size_obs, b_prime))
         if test_statistic == 'acore':
             for kk, theta_0 in enumerate(theta_mat):
@@ -164,13 +166,18 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
                 pbar.update(1)
         elif test_statistic == 'exactbf':
             # Obtain the quantile by MC sampling
-            mc_sample_exactbf = b_prime
-            t0_pred_vec = np.zeros(t0_grid.shape[0])
-            for kk, t0_val_temp in enumerate(t0_grid):
-                bf_temp = np.array([model_obj.compute_exact_bayes_factor_single_t0(
-                            obs_sample=gen_obs_func(sample_size=sample_size_obs, true_param=t0_val_temp),
-                            t0=t0_val_temp) for _ in range(mc_sample_exactbf)]).reshape(-1,)
-                t0_pred_vec[kk] = np.quantile(a=bf_temp, q=alpha)
+            # mc_sample_exactbf = b_prime
+            # t0_pred_vec = np.zeros(t0_grid.shape[0])
+            # for kk, t0_val_temp in enumerate(t0_grid):
+            #     bf_temp = np.array([model_obj.compute_exact_bayes_factor_single_t0(
+            #                 obs_sample=gen_obs_func(sample_size=sample_size_obs, true_param=t0_val_temp),
+            #                 t0=t0_val_temp) for _ in range(mc_sample_exactbf)]).reshape(-1,)
+            #     t0_pred_vec[kk] = np.quantile(a=bf_temp, q=alpha)
+            #     pbar.update(1)
+            for kk, theta_0 in enumerate(theta_mat):
+                stats_mat[kk] = model_obj.compute_exact_bayes_factor_single_t0(
+                            obs_sample=sample_mat[kk, :, :],
+                            t0=theta_0)
                 pbar.update(1)
         else:
             raise ValueError('The variable test_statistic needs to be either acore, logavgacore, exactbf. '
