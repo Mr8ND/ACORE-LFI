@@ -1,5 +1,6 @@
 import numpy as np
-from math import ceil, sqrt
+from math import ceil, sqrt, pi
+from scipy.integrate import quad
 import sys
 
 sys.path.append('..')
@@ -175,8 +176,8 @@ class ToyMVNMultiDIsotropicLoader:
         '''
         if prior_type == 'uniform':
             density = np.array([
-                1 / (2*(self.high_int - self.low_int)) * (erf((self.high_int-x) / (np.sqrt(2) * self.true_cov[0, 0])) -
-                erf((self.low_int-x) / (np.sqrt(2) * self.true_cov[0, 0]))) for x in x_obs
+                0.5 * (erf((x - self.low_int) / (np.sqrt(2) * self.true_cov[0, 0])) -
+                erf((x - self.high_int) / (np.sqrt(2) * self.true_cov[0, 0]))) for x in x_obs
             ])
         else:
             raise ValueError("The prior type needs to be 'uniform'. Currently %s" % self.prior_type)

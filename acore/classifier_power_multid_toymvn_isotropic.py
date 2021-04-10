@@ -62,7 +62,6 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
     theta_vec = sample_check[:, :model_obj.d]
     x_vec = sample_check[:, (model_obj.d + 1):]
     bern_vec = sample_check[:, model_obj.d]
-
     true_prob_vec = tp_func(theta_vec=theta_vec, x_vec=x_vec)
     entropy_est = -np.average([np.log(true_prob_vec[kk]) if el == 1
                                else np.log(1 - true_prob_vec[kk])
@@ -147,9 +146,7 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
         else:
             theta_mat, sample_mat = msnh_sampling_func(b_prime=b_prime, sample_size=sample_size_obs)
         stats_mat = np.zeros((theta_mat.shape[0]))
-        # pbar = tqdm(total=t0_grid.shape[0] if test_statistic == 'exactbf' else theta_mat.shape[0],
-        #             desc='Generating test stats for b_prime, n=%s, b=%s' % (sample_size_obs, b_prime))
-        pbar = tqdm(total=theta_mat.shape[0],
+        pbar = tqdm(total=t0_grid.shape[0] if test_statistic == 'exactbf' else theta_mat.shape[0],
                     desc='Generating test stats for b_prime, n=%s, b=%s' % (sample_size_obs, b_prime))
         if test_statistic == 'acore':
             for kk, theta_0 in enumerate(theta_mat):
@@ -166,19 +163,19 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
                 pbar.update(1)
         elif test_statistic == 'exactbf':
             # Obtain the quantile by MC sampling
-            # mc_sample_exactbf = b_prime
-            # t0_pred_vec = np.zeros(t0_grid.shape[0])
-            # for kk, t0_val_temp in enumerate(t0_grid):
-            #     bf_temp = np.array([model_obj.compute_exact_bayes_factor_single_t0(
-            #                 obs_sample=gen_obs_func(sample_size=sample_size_obs, true_param=t0_val_temp),
-            #                 t0=t0_val_temp) for _ in range(mc_sample_exactbf)]).reshape(-1,)
-            #     t0_pred_vec[kk] = np.quantile(a=bf_temp, q=alpha)
-            #     pbar.update(1)
-            for kk, theta_0 in enumerate(theta_mat):
-                stats_mat[kk] = model_obj.compute_exact_bayes_factor_single_t0(
-                            obs_sample=sample_mat[kk, :, :],
-                            t0=theta_0)
+            mc_sample_exactbf = b_prime
+            t0_pred_vec = np.zeros(t0_grid.shape[0])
+            for kk, t0_val_temp in enumerate(t0_grid):
+                bf_temp = np.array([model_obj.compute_exact_bayes_factor_single_t0(
+                            obs_sample=gen_obs_func(sample_size=sample_size_obs, true_param=t0_val_temp),
+                            t0=t0_val_temp) for _ in range(mc_sample_exactbf)]).reshape(-1,)
+                t0_pred_vec[kk] = np.quantile(a=bf_temp, q=alpha)
                 pbar.update(1)
+            # for kk, theta_0 in enumerate(theta_mat):
+            #     stats_mat[kk] = model_obj.compute_exact_bayes_factor_single_t0(
+            #                 obs_sample=sample_mat[kk, :, :],
+            #                 t0=theta_0)
+            #     pbar.update(1)
         else:
             raise ValueError('The variable test_statistic needs to be either acore, logavgacore, exactbf. '
                              'Currently %s' % test_statistic)
@@ -211,7 +208,7 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
         clf_cde_fitted[clf_name] = {}
         clf_name_qr = classifier_cde
         clf_params = classifier_cde_dict[classifier_cde]
-        if test_statistic != 'exact_bf':
+        if test_statistic != 'exactbf':
             t0_pred_vec = train_qr_algo(model_obj=model_obj, theta_mat=theta_mat, stats_mat=stats_mat,
                                         algo_name=clf_params[0], learner_kwargs=clf_params[1],
                                         pytorch_kwargs=clf_params[2] if len(clf_params) > 2 else None,
@@ -223,7 +220,6 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
         for clf_name_qr, cutoff_val in clf_cde_fitted[clf_name].items():
 
             for tt, tau_obs_val in enumerate(tau_obs_val_list):
-
                 coverage = int(tau_obs_val[true_param_row_idx] >= cutoff_val[true_param_row_idx])
                 in_confint = (tau_obs_val >= cutoff_val).astype(float)
 
