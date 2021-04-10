@@ -172,7 +172,6 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
                             t0=t0_val_temp) for _ in range(mc_sample_exactbf)]).reshape(-1,)
                 t0_pred_vec[kk] = np.quantile(a=bf_temp, q=alpha)
                 pbar.update(1)
-            stats_mat = None
         else:
             raise ValueError('The variable test_statistic needs to be either acore, logavgacore, exactbf. '
                              'Currently %s' % test_statistic)
