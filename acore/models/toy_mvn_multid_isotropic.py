@@ -176,12 +176,28 @@ class ToyMVNMultiDIsotropicLoader:
         '''
         if prior_type == 'uniform':
             density = np.array([
+                1 / (2 * (self.high_int - self.low_int)) * (
+                            erf((self.high_int - x) / (np.sqrt(2) * self.true_cov[0, 0])) -
+                            erf((self.low_int - x) / (np.sqrt(2) * self.true_cov[0, 0]))) for x in x_obs
+            ])
+        else:
+            raise ValueError("The prior type needs to be 'uniform'. Currently %s" % self.prior_type)
+        return np.prod(density)
+
+    def _compute_marginal_bf_denominator(self, x_obs, prior_type='uniform'):
+        '''
+        In this calculation we are assuming that the covariance matrix is diagonal with all entries being equal, so
+        we only consider the first element for every point.
+        '''
+        if prior_type == 'uniform':
+            density = np.array([
                 0.5 * (erf((x - self.low_int) / (np.sqrt(2) * self.true_cov[0, 0])) -
                 erf((x - self.high_int) / (np.sqrt(2) * self.true_cov[0, 0]))) for x in x_obs
             ])
         else:
             raise ValueError("The prior type needs to be 'uniform'. Currently %s" % self.prior_type)
         return np.prod(density)
+
     
     def compute_exact_bayes_factor_with_marginal(self, theta_vec, x_vec):
         if self.prior_type == 'uniform':
@@ -190,7 +206,8 @@ class ToyMVNMultiDIsotropicLoader:
             
             f_val = np.array([self._compute_multivariate_normal_pdf(
                 x=x, mu=theta_vec[ii, :]) for ii, x in enumerate(x_vec)]).reshape(-1, )
-            g_val = np.array([self._compute_marginal_pdf(x, prior_type='uniform') for x in x_vec]).reshape(-1, )
+            g_val = np.array([self._compute_marginal_bf_denominator(x, prior_type='uniform') for x in x_vec]
+                             ).reshape(-1, )
         else:
             raise ValueError("The prior type needs to be 'uniform'. Currently %s" % self.prior_type)
         return f_val / g_val
