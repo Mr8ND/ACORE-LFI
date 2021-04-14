@@ -27,7 +27,8 @@ model_dict = {
 def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier_cde, test_statistic,
          classifier, monte_carlo_samples=500, debug=False, seed=7, size_check=5000, verbose=False,
          marginal=False, num_grid=21, size_marginal=1000, empirical_marginal=True, benchmark=1, explore_distr=False,
-         nuisance_parameters=False, guided_sim=False, guided_sample=1000, uniform_grid_sample_size=1000):
+         nuisance_parameters=False, guided_sim=False, guided_sample=1000, uniform_grid_sample_size=1000,
+         interval_limit=5):
 
     # Changing values if debugging
     b = b if not debug else 100
@@ -44,7 +45,7 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
         d_obs=d_obs, marginal=marginal, size_marginal=size_marginal, empirical_marginal=empirical_marginal,
         true_param=t0_val, nuisance_parameters=nuisance_parameters,
         benchmark=benchmark, num_acore_grid=num_grid, num_pred_grid=num_grid,
-        uniform_grid_sample_size=uniform_grid_sample_size
+        uniform_grid_sample_size=uniform_grid_sample_size, low_int=-interval_limit, high_int=interval_limit
     )
 
     # Get the correct functions
@@ -290,6 +291,8 @@ if __name__ == '__main__':
                         help='Sample size for the calculation of integral in the Logavgacore.')
     parser.add_argument('--unif_grid', action="store", type=int, default=1000,
                         help='Number of grid points to evaluate for ACORE maximimzation.')
+    parser.add_argument('--int_limit', action="store", type=int, default=5.0,
+                        help='Limit over which the integration/maximization is done for the mean value.')
     argument_parsed = parser.parse_args()
 
     
@@ -313,5 +316,6 @@ if __name__ == '__main__':
         monte_carlo_samples=argument_parsed.monte_carlo_samples,
         uniform_grid_sample_size=argument_parsed.unif_grid,
         classifier=argument_parsed.classifier,
-        explore_distr=argument_parsed.explore_distr
+        explore_distr=argument_parsed.explore_distr,
+        interval_limit=argument_parsed.int_limit
     )
