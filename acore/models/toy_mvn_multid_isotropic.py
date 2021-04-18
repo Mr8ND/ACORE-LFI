@@ -15,10 +15,10 @@ class ToyMVNMultiDIsotropicLoader:
 
     def __init__(self, d_obs=2, mean_instrumental=0.0, std_instrumental=4.0, low_int=-5.0, high_int=5.0,
                  true_param=0.0, true_std=1.0, mean_prior=0.0, std_prior=2.0, uniform_grid_sample_size=1000,
-                 out_dir='toy_mvn_isotropic/', prior_type='uniform',
+                 out_dir='toy_mvn_isotropic/', prior_type='uniform', diagnostic_flag=False,
                  marginal=False, size_marginal=5000, empirical_marginal=True, **kwargs):
 
-        if true_param != 0.0:
+        if true_param != 0.0 and not diagnostic_flag:
             raise ValueError('This class does not work outside of the case when the true parameter is the origin.')
 
         self.out_directory = out_dir
