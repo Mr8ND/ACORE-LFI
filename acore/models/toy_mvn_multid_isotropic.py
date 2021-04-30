@@ -146,7 +146,11 @@ class ToyMVNMultiDIsotropicLoader:
 
         f_val = np.array([self._compute_multivariate_normal_pdf(
             x=x, mu=theta_vec[ii, :]) for ii, x in enumerate(x_vec)]).reshape(-1, )
-        g_val = self.g_distribution.pdf(x=x_vec).reshape(-1, )
+
+        if self.empirical_marginal:
+            g_val = np.array([self._compute_marginal_pdf(x_obs=x_obs) for x_obs in x_vec]).reshape(-1, )
+        else:
+            g_val = self.g_distribution.pdf(x=x_vec).reshape(-1, )
         return (f_val * p) / (g_val * (1 - p))
 
     def compute_exact_likelihood(self, x_obs, true_param):
@@ -218,3 +222,17 @@ class ToyMVNMultiDIsotropicLoader:
         exact_bayes_t0 = np.sum(np.log(results)).astype(np.float64)
         assert isinstance(exact_bayes_t0, float)
         return exact_bayes_t0
+
+
+class ClfOddsExact:
+
+    def __init__(self, toy_mvn_model, d):
+        self.toy_mvn_model = toy_mvn_model
+        self.d = d
+
+    def predict_proba(self, param_mat):
+        prob_mat = np.apply_along_axis(arr=param_mat, axis=1,
+                                       func1d=lambda row: self.toy_mvn_model.compute_exact_odds(
+                                           theta_vec=row[:self.d], x_vec=row[self.d:]
+                                        ))
+        return np.hstack((np.ones(prob_mat.shape[0]).reshape(-1, 1), prob_mat.reshape(-1, 1)))

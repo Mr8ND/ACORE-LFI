@@ -14,7 +14,7 @@ from functools import partial
 from utils.functions import train_clf, compute_statistics_single_t0, clf_prob_value, compute_bayesfactor_single_t0, \
     compute_averageodds_single_t0, odds_ratio_loss, sample_from_matrix, compute_bayesfactor_single_t0_nuisance
 from models.inferno import ClfOddsExact
-from models.toy_mvn_multid_isotropic import ToyMVNMultiDIsotropicLoader
+from models.toy_mvn_multid_isotropic import ToyMVNMultiDIsotropicLoader, ClfOddsExact
 from utils.qr_functions import train_qr_algo
 from or_classifiers.toy_example_list import classifier_dict_complete
 from qr_algorithms.complete_list import classifier_cde_dict
@@ -28,7 +28,7 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
          classifier, monte_carlo_samples=500, debug=False, seed=7, size_check=5000, verbose=False,
          marginal=False, num_grid=21, size_marginal=1000, empirical_marginal=True, benchmark=1, explore_distr=False,
          nuisance_parameters=False, guided_sim=False, guided_sample=1000, uniform_grid_sample_size=1000,
-         interval_limit=5):
+         interval_limit=5, exact_odds=False):
 
     # Changing values if debugging
     b = b if not debug else 100
@@ -86,7 +86,10 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
     clf_cde_fitted = {}
     for clf_name, clf_model in sorted(classifier_dict.items(), key=lambda x: x[0]):
 
-        clf_odds = train_clf(d=model_obj.d, sample_size=b, clf_model=clf_model, gen_function=gen_sample_func,
+        if exact_odds:
+            clf_odds = ClfOddsExact(toy_mvn_model=model_obj, d=model_obj.d)
+        else:
+            clf_odds = train_clf(d=model_obj.d, sample_size=b, clf_model=clf_model, gen_function=gen_sample_func,
                                  clf_name=clf_name, nn_square_root=True)
         if verbose:
             print('----- %s Trained' % clf_name)
@@ -152,8 +155,8 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
         if test_statistic == 'acore':
             for kk, theta_0 in enumerate(theta_mat):
                 stats_mat[kk] = compute_statistics_single_t0(
-                clf=clf_odds, d=model_obj.d, d_obs=model_obj.d_obs, grid_param_t1=grid_param,
-                t0=theta_0, obs_sample=sample_mat[kk, :, :])
+                    clf=clf_odds, d=model_obj.d, d_obs=model_obj.d_obs, grid_param_t1=grid_param,
+                    t0=theta_0, obs_sample=sample_mat[kk, :, :])
                 pbar.update(1)
         elif test_statistic == 'logavgacore':
             for kk, theta_0 in enumerate(theta_mat):
@@ -235,9 +238,10 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
 
     # Saving the results
     out_df = pd.DataFrame.from_records(data=out_val, index=range(len(out_val)), columns=out_cols)
+    test_sts_name = test_statistic if not exact_odds else test_statistic + '_exactodds'
     out_dir = 'sims/classifier_power_multid/'
     out_filename = 'isotropic_d%s_%steststats_%sB_%sBprime_%s_%srep_alpha%s_sampleobs%s_t0val%s_%s_%sseed_%s.csv' % (
-        d_obs, test_statistic, b, b_prime, run, rep,
+        d_obs, test_sts_name, b, b_prime, run, rep,
         str(alpha).replace('.', '-'), sample_size_obs,
         str(t0_val).replace('.', '-'), classifier_cde, seed,
         datetime.strftime(datetime.today(), '%Y-%m-%d-%H-%M')
@@ -277,6 +281,8 @@ if __name__ == '__main__':
                              'direction and saves a pickle file.')
     parser.add_argument('--verbose', action='store_true', default=False,
                         help='If true, logs are printed to the terminal')
+    parser.add_argument('--exact_odds', action='store_true', default=False,
+                        help='If true, use the exact odds.')
     parser.add_argument('--sample_size_obs', action="store", type=int, default=10,
                         help='Sample size of the actual observed data.')
     parser.add_argument('--test_statistic', action="store", type=str, default='acore',
@@ -317,5 +323,6 @@ if __name__ == '__main__':
         uniform_grid_sample_size=argument_parsed.unif_grid,
         classifier=argument_parsed.classifier,
         explore_distr=argument_parsed.explore_distr,
-        interval_limit=argument_parsed.int_limit
+        interval_limit=argument_parsed.int_limit,
+        exact_odds=argument_parsed.exact_odds
     )
