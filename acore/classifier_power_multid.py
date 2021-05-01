@@ -17,6 +17,7 @@ from models.toy_mvn_multid import ToyMVNMultiDLoader
 from models.toy_mvn_multid_simplehyp import ToyMVNMultiDSimpleHypLoader
 from models.inferno import InfernoToyLoader, ClfOddsExact
 from models.camelus_wl import CamelusSimLoader
+from models.hep_counting import HepCountingNuisanceLoader
 from utils.qr_functions import train_qr_algo
 from or_classifiers.toy_example_list import classifier_inferno_dict_b1, classifier_inferno_dict_b4, \
     classifier_dict_multid_power, classifier_dict_multid_camelus
@@ -28,7 +29,8 @@ model_dict = {
     'mvn_multid': ToyMVNMultiDLoader,
     'mvn_multid_simplehyp': ToyMVNMultiDSimpleHypLoader,
     'inferno': InfernoToyLoader,
-    'camelus': CamelusSimLoader
+    'camelus': CamelusSimLoader,
+    'hep_counting': HepCountingNuisanceLoader
 }
 
 
@@ -390,8 +392,8 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
                         })
 
                     pkl_dir = 'sims/classifier_power_multid/plot_df/'
-                    pkl_filename = 'nuisance_%s_d%s_%s_%sB_%sBprime_%s.pkl' % (
-                        run, d_obs, test_statistic, b, b_prime,
+                    pkl_filename = 'nuisance_%s_d%s_%s_%sB_%sBprime_samplesizeobs%s_%s.pkl' % (
+                        run, d_obs, test_statistic, b, b_prime, sample_size_obs,
                         datetime.strftime(datetime.today(), '%Y-%m-%d-%H-%M')
                     )
                     plot_df.to_pickle(pkl_dir + pkl_filename)
