@@ -31,7 +31,7 @@ class HepCountingNuisanceLoader:
         self.cov_instrumental = None
         self.g_distribution = None
 
-        self.b_sample_vec = [50, 100, 500, 1000, 5000, 10000, 50000, 100000, 200000]
+        self.b_sample_vec = [50, 100, 500, 1000, 5000, 10000, 50000, 100000]
         self.b_prime_vec = [100, 500, 1000, 5000, 10000, 50000, 100000]
 
         self.d = 2

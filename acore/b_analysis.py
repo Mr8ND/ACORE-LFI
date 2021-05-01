@@ -16,6 +16,7 @@ from models.inferno import InfernoToyLoader
 from utils.functions import clf_prob_value, train_clf, odds_ratio_loss
 from models.toy_mvn_multid_simplehyp import ToyMVNMultiDSimpleHypLoader
 from models.toy_mvn_multid_isotropic import ToyMVNMultiDIsotropicLoader
+from models.hep_counting import HepCountingNuisanceLoader
 from or_classifiers.toy_example_list import classifier_dict_multid_power
 
 
@@ -24,11 +25,13 @@ model_dict = {
     'poisson': SenPoissonLoader,
     'inferno': InfernoToyLoader,
     'mvn_multid_simplehyp': ToyMVNMultiDSimpleHypLoader,
-    'mvn_iso': ToyMVNMultiDIsotropicLoader
+    'mvn_iso': ToyMVNMultiDIsotropicLoader,
+    'hep_counting': HepCountingNuisanceLoader
 }
 
 
-def main(d_obs, alpha, run, debug=False, seed=7, size_check=1000, size_reference=10000, benchmark=1, empirical_marginal=False):
+def main(d_obs, alpha, run, debug=False, seed=7, size_check=1000, size_reference=10000, benchmark=1,
+         empirical_marginal=False):
 
     # Setup the variables, also to account for debug runs
     np.random.seed(seed)
