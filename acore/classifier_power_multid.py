@@ -20,7 +20,7 @@ from models.camelus_wl import CamelusSimLoader
 from models.hep_counting import HepCountingNuisanceLoader
 from utils.qr_functions import train_qr_algo
 from or_classifiers.toy_example_list import classifier_inferno_dict_b1, classifier_inferno_dict_b4, \
-    classifier_dict_multid_power, classifier_dict_multid_camelus
+    classifier_dict_multid_power, classifier_dict_multid_camelus, classifier_dict_multid_hep
 from qr_algorithms.complete_list import classifier_cde_dict
 
 model_dict = {
@@ -55,6 +55,8 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
             raise NotImplementedError('OR Classification has been explored under Benchmark 1 and 4, not others.')
     elif 'camelus' in run:
         classifier_dict = classifier_dict_multid_camelus
+    elif 'hep_counting' in run:
+        classifier_dict = classifier_dict_multid_hep
     else:
         classifier_dict = classifier_dict_multid_power
 

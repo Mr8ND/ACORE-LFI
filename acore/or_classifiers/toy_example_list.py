@@ -54,6 +54,10 @@ classifier_dict_multid_camelus = {
     'XGBoost \n (d10, n100)': XGBClassifier(max_depth=10, n_estimators=100)
 }
 
+classifier_dict_multid_hep = {
+    'QDA': QuadraticDiscriminantAnalysis()
+}
+
 
 classifier_dict_complete = {
     'NN': KNeighborsClassifier(),
