@@ -9,8 +9,9 @@ from functools import partial
 
 class HepCountingNuisanceLoader:
 
-    def __init__(self, tau_param=1.0, signal_val=10, background_val=100, empirical_marginal=True,
-                 low_int_bg=80, high_int_bg=120, nuisance_parameters=True, num_pred_grid=201,
+    def __init__(self, tau_param=1.0, signal_val=10, background_val=100, epsilon_val=0.75, empirical_marginal=True,
+                 low_int_bg=80, high_int_bg=120, low_int_eps=0.5, high_int_eps=1.0,
+                 nuisance_parameters=True, num_pred_grid=201,
                  low_int_signal=0, high_int_signal=20, out_dir='hep_counting/',
                  num_acore_grid=101, *args, **kwargs):
 
@@ -20,11 +21,13 @@ class HepCountingNuisanceLoader:
         self.tau_param = tau_param
         self.low_int_bg = low_int_bg
         self.high_int_bg = high_int_bg
+        self.low_int_eps = low_int_eps
+        self.high_int_eps = high_int_eps
         self.low_int_signal = low_int_signal
         self.high_int_signal = high_int_signal
-        self.bounds_opt = Bounds([low_int_bg], [high_int_bg])
+        self.bounds_opt = Bounds([low_int_bg, low_int_eps], [high_int_bg, high_int_eps])
 
-        self.true_param = np.array([signal_val, background_val])
+        self.true_param = np.array([signal_val, background_val, epsilon_val])
         self.regen_flag = False
         self.out_directory = out_dir
         self.mean_instrumental = None
@@ -34,10 +37,10 @@ class HepCountingNuisanceLoader:
         self.b_sample_vec = [50, 100, 500, 1000, 5000, 10000, 50000, 100000]
         self.b_prime_vec = [100, 500, 1000, 5000, 10000, 50000, 100000]
 
-        self.d = 2
+        self.d = 3
         self.d_obs = 2
         self.nuisance_flag = nuisance_parameters
-        self.nuisance_params_cols = [1]
+        self.nuisance_params_cols = [1, 2]
         self.target_params_cols = [0]
 
         self.num_pred_grid = num_pred_grid
@@ -55,10 +58,12 @@ class HepCountingNuisanceLoader:
                                                size=size_reference).reshape(-1, 1)
         mu_vec_ref = np.random.uniform(low=self.low_int_signal, high=self.high_int_signal,
                                        size=size_reference).reshape(-1, 1)
-        theta_mat_ref = np.hstack((background_vec_ref, mu_vec_ref))
+        eps_vec_ref = np.random.uniform(low=self.low_int_eps, high=self.high_int_eps,
+                                       size=size_reference).reshape(-1, 1)
+        theta_mat_ref = np.hstack((background_vec_ref, mu_vec_ref, eps_vec_ref))
         sample_mat_ref = np.apply_along_axis(arr=theta_mat_ref, axis=1,
                                              func1d=lambda row: np.array([
-                                                 np.random.poisson(lam=row[0] + row[1], size=1),
+                                                 np.random.poisson(lam=row[2] * row[0] + row[1], size=1),
                                                  np.random.poisson(
                                                      lam=self.tau_param * row[1], size=1)]).reshape(-1, 2))
         sample_mat_ref = sample_mat_ref.reshape(-1, 2)
@@ -83,16 +88,19 @@ class HepCountingNuisanceLoader:
                                            size=sample_size).reshape(-1, 1)
         mu_vec = np.random.uniform(low=self.low_int_signal, high=self.high_int_signal,
                                    size=sample_size).reshape(-1, 1)
-        return np.hstack((mu_vec, background_vec))
+        eps_vec_ref = np.random.uniform(low=self.low_int_eps, high=self.high_int_eps,
+                                        size=sample_size).reshape(-1, 1)
+        return np.hstack((mu_vec, background_vec, eps_vec_ref))
 
     def sample_sim(self, sample_size, true_param):
-        first_dim = np.random.poisson(lam=true_param[0] + true_param[1], size=sample_size).reshape(-1, 1)
+        first_dim = np.random.poisson(lam=true_param[2] * true_param[0] + true_param[1],
+                                      size=sample_size).reshape(-1, 1)
         second_dim = np.random.poisson(lam=self.tau_param * true_param[1], size=sample_size).reshape(-1, 1)
         return np.hstack((first_dim, second_dim))
 
     def sample_sim_check(self, sample_size, n):
         theta_mat = self.sample_param_values(sample_size=sample_size)
-        assert theta_mat.shape == (sample_size, 2)
+        assert theta_mat.shape == (sample_size, 3)
 
         x_vec = np.array([
             self.sample_sim(sample_size=n, true_param=theta_0).reshape(-1, n) for theta_0 in theta_mat])
@@ -100,10 +108,10 @@ class HepCountingNuisanceLoader:
 
     def generate_sample(self, sample_size, p=0.5, marginal=False):
         theta_mat = self.sample_param_values(sample_size=sample_size)
-        assert theta_mat.shape == (sample_size, 2)
+        assert theta_mat.shape == (sample_size, 3)
 
         bern_vec = np.random.binomial(n=1, p=p, size=sample_size)
-        concat_mat = np.hstack((theta_mat.reshape(-1, 2), bern_vec.reshape(-1, 1)))
+        concat_mat = np.hstack((theta_mat.reshape(-1, 3), bern_vec.reshape(-1, 1)))
 
         if marginal:
             raise ValueError('Marginal not implemented for this example')
@@ -121,9 +129,9 @@ class HepCountingNuisanceLoader:
         return np.hstack((concat_mat, sample.reshape(-1, 2)))
 
     def compute_exact_or(self, t0, t1, x_obs):
-        f0_val = poisson.pmf(k=x_obs[:, 0].reshape(-1, ), mu=t0[0] + t0[1]) * \
+        f0_val = poisson.pmf(k=x_obs[:, 0].reshape(-1, ), mu=t0[2] * t0[0] + t0[1]) * \
             poisson.pmf(k=x_obs[:, 1].reshape(-1, ), mu=self.tau_param * t0[1])
-        f1_val = poisson.pmf(k=x_obs[:, 0].reshape(-1, ), mu=t1[0] + t1[1]) * \
+        f1_val = poisson.pmf(k=x_obs[:, 0].reshape(-1, ), mu=t0[2] * t1[0] + t1[1]) * \
             poisson.pmf(k=x_obs[:, 1].reshape(-1, ), mu=self.tau_param * t1[1])
 
         return f0_val / f1_val
@@ -136,7 +144,7 @@ class HepCountingNuisanceLoader:
 
     def sample_msnh_algo5(self, b_prime, sample_size):
         theta_mat = self.sample_param_values(sample_size=b_prime)
-        assert theta_mat.shape == (b_prime, 2)
+        assert theta_mat.shape == (b_prime, 3)
 
         sample_mat = np.apply_along_axis(arr=theta_mat, axis=1,
                                          func1d=lambda row: self.sample_sim(sample_size=sample_size, true_param=row))
@@ -154,7 +162,7 @@ class HepCountingNuisanceLoader:
         return odds_val
 
     def nuisance_parameter_minimization(self, x_obs, target_params, clf_odds):
-        x0_val = np.array([np.nan, 90])[self.nuisance_params_cols]
+        x0_val = np.array([np.nan, 90, 0.8])[self.nuisance_params_cols]
         res_min = minimize(
             fun=partial(self._nuisance_parameter_func, x_obs=x_obs,
                         target_params=target_params, clf_odds=clf_odds),
@@ -162,7 +170,7 @@ class HepCountingNuisanceLoader:
         return np.concatenate((np.array(res_min.x), np.array([-1 * res_min.fun])))
 
     def calculate_nuisance_parameters_over_grid(self, t0_grid, clf_odds, x_obs):
-        # We have t0_grid being shape (num_acore_grid, 1) and the nuisance parameter is a single one here
+        # We have t0_grid being shape (num_acore_grid, 1) and the nuisance parameter are two here
         nuisance_param_grid = np.apply_along_axis(
             arr=t0_grid.reshape(-1, 1), axis=1,
             func1d=lambda row: self.nuisance_parameter_minimization(
