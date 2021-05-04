@@ -120,7 +120,8 @@ class ToyMVNMultiDIsotropicLoader:
         return theta_mat, sample_mat.reshape(b_prime, sample_size, self.d_obs)
 
     def _compute_multivariate_normal_pdf(self, x, mu):
-        return multivariate_normal.pdf(x=x, mean=mu, cov=self.true_cov)
+        # Let's take advantage of the unit covariance matrix
+        return np.exp(-0.5 * np.dot(x-mu, x-mu)) * (pi ** (self.d_obs/2))
 
     def compute_exact_or(self, t0, t1, x_obs):
         return self._compute_multivariate_normal_pdf(
