@@ -116,7 +116,8 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
                 tau_obs = np.array([
                         compute_bayesfactor_single_t0(
                             clf=clf_odds, obs_sample=x_obs, t0=theta_0, gen_param_fun=gen_param_fun,
-                            d=model_obj.d, d_obs=model_obj.d_obs, log_out=True) for theta_0 in t0_grid])
+                            d=model_obj.d, d_obs=model_obj.d_obs, log_out=True, monte_carlo_samples=monte_carlo_samples)
+                    for theta_0 in t0_grid])
             elif test_statistic == 'exactbf':
                 tau_obs = np.array([
                         model_obj.compute_exact_bayes_factor_single_t0(
