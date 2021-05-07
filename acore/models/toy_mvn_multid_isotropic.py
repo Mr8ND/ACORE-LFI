@@ -196,14 +196,14 @@ class ToyMVNMultiDIsotropicLoader:
         '''
         if prior_type == 'uniform':
             density = np.array([
-                0.5 * (erf((x - self.low_int) / (np.sqrt(2) * self.true_cov[0, 0])) -
-                erf((x - self.high_int) / (np.sqrt(2) * self.true_cov[0, 0]))) for x in x_obs
+                0.5 * (erf((self.high_int - x) / (np.sqrt(2) * self.true_cov[0, 0])) -
+                       erf((self.low_int - x) / (np.sqrt(2) * self.true_cov[0, 0])))
+                for x in x_obs
             ])
         else:
             raise ValueError("The prior type needs to be 'uniform'. Currently %s" % self.prior_type)
         return np.prod(density)
 
-    
     def compute_exact_bayes_factor_with_marginal(self, theta_vec, x_vec):
         if self.prior_type == 'uniform':
             x_vec = x_vec.reshape(-1, self.d_obs)
