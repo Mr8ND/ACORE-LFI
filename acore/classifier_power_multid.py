@@ -160,11 +160,13 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
                         compute_bayesfactor_single_t0_nuisance(
                             clf=clf_odds, obs_sample=x_obs, t0=theta_0, gen_param_fun=gen_param_fun,
                             d=model_obj.d, d_obs=model_obj.d_obs, log_out=True,
+                            monte_carlo_samples=monte_carlo_samples,
                             d_param_interest=len(model_obj.target_params_cols)) for theta_0 in t0_grid])
                 else:
                     tau_obs = np.array([
                         compute_bayesfactor_single_t0(
                             clf=clf_odds, obs_sample=x_obs, t0=theta_0, gen_param_fun=gen_param_fun,
+                            monte_carlo_samples=monte_carlo_samples,
                             d=model_obj.d, d_obs=model_obj.d_obs, log_out=True) for theta_0 in t0_grid])
             elif test_statistic == 'averageodds':
                 tau_obs = np.array([
