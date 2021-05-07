@@ -195,11 +195,8 @@ class ToyMVNMultiDIsotropicLoader:
         we only consider the first element for every point.
         '''
         if prior_type == 'uniform':
-            density = np.array([
-                0.5 * (erf((self.high_int - x) / (np.sqrt(2) * self.true_cov[0, 0])) -
-                       erf((self.low_int - x) / (np.sqrt(2) * self.true_cov[0, 0])))
-                for x in x_obs
-            ])
+            density = 0.5 * (erf((self.high_int - x_obs) / (np.sqrt(2) * self.true_cov[0, 0])) -
+                             erf((self.low_int - x_obs) / (np.sqrt(2) * self.true_cov[0, 0])))
         else:
             raise ValueError("The prior type needs to be 'uniform'. Currently %s" % self.prior_type)
         return np.prod(density)
