@@ -104,7 +104,7 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
     out_cols = ['d_obs', 'test_statistic', 'b_prime', 'b', 'classifier', 'classifier_cde', 'run', 'rep', 'sample_size_obs',
                 'cross_entropy_loss', 't0_true_val', 'coverage', 'power', 'size_CI', 'true_entropy', 'or_loss_value',
                 'monte_carlo_samples', 'benchmark', 'nuisance_parameters', 'alternative_mu_norm', 'guided_sim',
-                'guided_sample']
+                'guided_sample', 'num_acore_grid']
     pbar = tqdm(total=rep, desc='Toy Example for Simulations, n=%s, b=%s' % (sample_size_obs, b))
     for jj in range(rep):
 
@@ -377,7 +377,7 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
                     d_obs, test_statistic, b_prime, b, clf_name, clf_name_qr, run, jj, sample_size_obs,
                     cross_ent_loss, t0_val, coverage, power,
                     size_temp, entropy_est, or_loss_value, monte_carlo_samples, benchmark, int(nuisance_parameters),
-                    alternative_norm, int(guided_sim), guided_sample
+                    alternative_norm, int(guided_sim), guided_sample, num_acore_grid
                 ])
                 
                 #### RECORD for each tau_obs_val point: its location (d1, d2), tau value, cutoff value, decision (1 or 0)
