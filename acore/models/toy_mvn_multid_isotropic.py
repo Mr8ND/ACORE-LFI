@@ -174,16 +174,13 @@ class ToyMVNMultiDIsotropicLoader:
     def calculate_nuisance_parameters_over_grid(self, *args, **kwargs):
         raise NotImplementedError('No nuisance parameter for this class.')
 
-    def _compute_marginal_pdf(self, x_obs, prior_type='uniform'):
+    def _compute_marginal_pdf(self, x_obs):
         '''
         In this calculation we are assuming that the covariance matrix is diagonal with all entries being equal, so
         we only consider the first element for every point.
         '''
-        if prior_type == 'uniform':
-            density = 0.5 * (erf((self.high_int - x_obs) / (np.sqrt(2) * self.true_cov[0, 0])) -
-                             erf((self.low_int - x_obs) / (np.sqrt(2) * self.true_cov[0, 0])))
-        else:
-            raise ValueError("The prior type needs to be 'uniform'. Currently %s" % self.prior_type)
+        density = 0.5 * (erf((self.high_int - x_obs) / (np.sqrt(2) * self.true_cov[0, 0])) -
+                         erf((self.low_int - x_obs) / (np.sqrt(2) * self.true_cov[0, 0])))
         return np.prod(density)
 
     def _compute_marginal_bf_denominator(self, x_obs, prior_type='uniform'):
@@ -192,7 +189,8 @@ class ToyMVNMultiDIsotropicLoader:
         we only consider the first element for every point.
         '''
         if prior_type == 'uniform':
-            density = 0.5 * (erf((self.high_int - x_obs) / (np.sqrt(2) * self.true_cov[0, 0])) -
+            unif_distr = (1 / (self.high_int - self.low_int)) ** self.d_obs
+            density = 0.5 * unif_distr * (erf((self.high_int - x_obs) / (np.sqrt(2) * self.true_cov[0, 0])) -
                              erf((self.low_int - x_obs) / (np.sqrt(2) * self.true_cov[0, 0])))
         else:
             raise ValueError("The prior type needs to be 'uniform'. Currently %s" % self.prior_type)
