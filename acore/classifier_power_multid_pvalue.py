@@ -18,8 +18,9 @@ from models.toy_mvn import ToyMVNLoader
 from models.toy_mvn_simplehyp import ToyMVNSimpleHypLoader
 from models.toy_mvn_multid import ToyMVNMultiDLoader
 from models.toy_mvn_multid_simplehyp import ToyMVNMultiDSimpleHypLoader
+from models.hep_counting import HepCountingNuisanceLoader
 from or_classifiers.toy_example_list import classifier_dict_multid_power, classifier_inferno_dict_b4, \
-    classifier_inferno_dict_b1, classifier_pvalue_dict
+    classifier_inferno_dict_b1, classifier_pvalue_dict, classifier_dict_multid_hep
 from models.inferno import InfernoToyLoader
 
 model_dict = {
@@ -28,7 +29,8 @@ model_dict = {
     'mvn_simplehyp': ToyMVNSimpleHypLoader,
     'mvn_multid': ToyMVNMultiDLoader,
     'mvn_multid_simplehyp': ToyMVNMultiDSimpleHypLoader,
-    'inferno': InfernoToyLoader
+    'inferno': InfernoToyLoader,
+    'hep_counting': HepCountingNuisanceLoader
 }
 
 
@@ -51,6 +53,8 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_stati
             classifier_dict = classifier_inferno_dict_b4
         else:
             raise NotImplementedError('OR Classification has been explored under Benchmark 1 and 4, not others.')
+    elif 'hep_counting' in run:
+        classifier_dict = classifier_dict_multid_hep
     else:
         classifier_dict = classifier_dict_multid_power
 
@@ -134,6 +138,7 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_stati
                         compute_bayesfactor_single_t0_nuisance(
                             clf=clf_odds, obs_sample=x_obs, t0=theta_0, gen_param_fun=gen_param_fun,
                             d=model_obj.d, d_obs=model_obj.d_obs, log_out=True,
+                            monte_carlo_samples=monte_carlo_samples,
                             d_param_interest=len(model_obj.target_params_cols)) for theta_0 in t0_grid])
                 else:
                     tau_obs = np.array([
@@ -158,7 +163,6 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_stati
             # Calculating or loss
             or_loss_value = odds_ratio_loss(clf=clf_odds, x_vec=x_vec, theta_vec=theta_vec,
                                             bern_vec=bern_vec, d=model_obj.d, d_obs=model_obj.d_obs)
-            # or_loss_value = or_loss(clf=clf_odds, first_sample=first_term_sample, second_sample=second_term_sample)
             clf_odds_fitted[clf_name] = (tau_obs, loss_value, or_loss_value)
 
             # Train the P-value regression algorithm for confidence levels
