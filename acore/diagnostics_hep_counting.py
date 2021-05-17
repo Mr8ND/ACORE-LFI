@@ -24,7 +24,7 @@ model_dict = {
 def main(d_obs, run, b, b_prime, alpha, t0_val, sample_size_obs, classifier, classifier_cde, test_statistic,
          alternative_norm, diagnostic_sample=2000, monte_carlo_samples=500, debug=False, seed=7,
          size_marginal=1000, empirical_marginal=True, benchmark=1, nuisance_parameters=False, num_grid=11,
-         marginal=False):
+         marginal=False, num_acore_grid=101):
 
     # Changing values if debugging
     b = b if not debug else 100
@@ -40,7 +40,7 @@ def main(d_obs, run, b, b_prime, alpha, t0_val, sample_size_obs, classifier, cla
     model_obj = model_dict[run](
         d_obs=d_obs, marginal=marginal, size_marginal=size_marginal, empirical_marginal=empirical_marginal,
         true_param=t0_val, alt_mu_norm=alternative_norm, nuisance_parameters=nuisance_parameters,
-        benchmark=benchmark, num_acore_grid=num_grid, num_pred_grid=num_grid
+        benchmark=benchmark, num_acore_grid=num_acore_grid, num_pred_grid=num_grid
     )
 
     # Get the correct functions
@@ -248,6 +248,8 @@ if __name__ == '__main__':
                         help='Sample for diagnostics meaning.')
     parser.add_argument('--num_grid', action="store", type=int, default=11,
                         help='Number of points in the parameter grid.')
+    parser.add_argument('--num_acore_grid', action="store", type=int, default=1000,
+                        help='Number of grid points for the grid over which to evaluate ACORE maximization grid.')
     argument_parsed = parser.parse_args()
 
     main(
@@ -271,5 +273,6 @@ if __name__ == '__main__':
         nuisance_parameters=argument_parsed.nuisance,
         classifier=argument_parsed.classifier,
         diagnostic_sample=argument_parsed.diagnostic_sample,
-        num_grid=argument_parsed.num_grid
+        num_grid=argument_parsed.num_grid,
+        num_acore_grid=argument_parsed.num_acore_grid
     )
