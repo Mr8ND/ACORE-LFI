@@ -36,8 +36,8 @@ model_dict = {
 
 def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_statistic, alternative_norm,
          monte_carlo_samples=500, debug=False, seed=7, size_check=1000, verbose=False, marginal=False,
-         size_marginal=1000, empirical_marginal=False, benchmark=1, num_grid=21,
-         nuisance_parameters=False, guided_sim=False, guided_sample=1000):
+         size_marginal=1000, empirical_marginal=False, benchmark=1, num_grid=101,
+         nuisance_parameters=False, guided_sim=False, guided_sample=1000, num_acore_grid=101):
     # Changing values if debugging
     b = b if not debug else 100
     b_prime = b_prime if not debug else 100
@@ -61,7 +61,7 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_stati
     model_obj = model_dict[run](
         d_obs=d_obs, marginal=marginal, size_marginal=size_marginal, empirical_marginal=empirical_marginal,
         true_param=t0_val, alt_mu_norm=alternative_norm, nuisance_parameters=nuisance_parameters,
-        benchmark=benchmark, num_acore_grid=num_grid, num_pred_grid=num_grid
+        benchmark=benchmark, num_acore_grid=num_acore_grid, num_pred_grid=num_grid
     )
 
     # Get the correct functions
@@ -416,6 +416,8 @@ if __name__ == '__main__':
     parser.add_argument('--num_grid', action="store", type=int, default=21,
                         help='Number of grid points for the grid over which to evaluate t0 and ACORE maximization '
                              'grid.')
+    parser.add_argument('--num_acore_grid', action="store", type=int, default=1000,
+                        help='Number of grid points for the grid over which to evaluate ACORE maximization grid.')
     argument_parsed = parser.parse_args()
 
     # b_vec = [100, 500, 1000]
@@ -442,5 +444,6 @@ if __name__ == '__main__':
         nuisance_parameters=argument_parsed.nuisance,
         guided_sim=argument_parsed.guided_sim,
         guided_sample=argument_parsed.guided_sample,
-        num_grid=argument_parsed.num_grid
+        num_grid=argument_parsed.num_grid,
+        num_acore_grid=argument_parsed.num_acore_grid
     )
