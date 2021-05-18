@@ -113,9 +113,11 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, test_stati
             if test_statistic == 'acore':
                 # If nuisance parameters are involved, we do profiling, so we have to adapt the grids accordingly
                 if model_obj.nuisance_flag:
-                    t0_grid, acore_grid = model_obj.calculate_nuisance_parameters_over_grid(
+                    t0_grid, _ = model_obj.calculate_nuisance_parameters_over_grid(
                         t0_grid=model_obj.pred_grid, clf_odds=clf_odds, x_obs=x_obs)
-                    gen_param_fun = partial(sample_from_matrix, t0_grid=t0_grid)
+                    _, acore_grid = model_obj.calculate_nuisance_parameters_over_grid(
+                        t0_grid=model_obj.acore_grid, clf_odds=clf_odds, x_obs=x_obs)
+                    gen_param_fun = partial(sample_from_matrix, t0_grid=acore_grid)
                     grid_param = acore_grid
 
                     tau_obs = np.array([
