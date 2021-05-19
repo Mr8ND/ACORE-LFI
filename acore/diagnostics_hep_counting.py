@@ -8,6 +8,7 @@ from tqdm.auto import tqdm
 from datetime import datetime
 from functools import partial
 from xgboost import XGBClassifier
+from scipy.stats import chi2
 
 from utils.functions import train_clf, compute_statistics_single_t0, compute_bayesfactor_single_t0, \
     sample_from_matrix, matrix_mesh, compute_bayesfactor_single_t0_nuisance
@@ -159,6 +160,11 @@ def main(d_obs, run, b, b_prime, alpha, t0_val, sample_size_obs, classifier, cla
 
     # Compute whether they are in the confidence interval
     in_confint = (tau_obs_vec >= pred_quantile_vec).astype(float)
+    in_confint_asymptotic = None
+    if test_statistic == 'acore':
+        chisquare_cutoff = chi2.ppf(q=1.0 - alpha, df=1)
+        cutoff_val_asymp = np.array([-0.5 * chisquare_cutoff] * tau_obs_vec.shape[0])
+        in_confint_asymptotic = (tau_obs_vec >= cutoff_val_asymp).astype(float)
     t0_vec_coverage_pred = theta0_mat[:, 0].reshape(-1, 1)
     predict_mat = np.linspace(start=model_obj.low_int_signal, stop=model_obj.high_int_signal, num=100).reshape(-1, 1)
 
@@ -188,7 +194,8 @@ def main(d_obs, run, b, b_prime, alpha, t0_val, sample_size_obs, classifier, cla
         'run': run,
         'benchmark': benchmark,
         'nuisance': model_obj.nuisance_flag,
-        'test_statistic': test_statistic
+        'test_statistic': test_statistic,
+        'in_confint_asymptotic': in_confint_asymptotic
     }
     out_dir = 'sims/classifier_power_multid/'
     out_filename = 'hepcounting_b%s_diagnostic_%steststats_%sB_%sBprime_%sseed_alpha%s_sampleobs%s_t0val%s_%s_%s.pkl' % (
