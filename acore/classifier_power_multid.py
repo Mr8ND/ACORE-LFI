@@ -8,6 +8,7 @@ from tqdm.auto import tqdm
 from datetime import datetime
 from sklearn.metrics import log_loss
 from functools import partial
+from scipy.stats import chi2
 
 from utils.functions import train_clf, compute_statistics_single_t0, clf_prob_value, compute_bayesfactor_single_t0, \
     compute_averageodds_single_t0, odds_ratio_loss, sample_from_matrix, compute_bayesfactor_single_t0_nuisance
@@ -104,7 +105,7 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
     out_cols = ['d_obs', 'test_statistic', 'b_prime', 'b', 'classifier', 'classifier_cde', 'run', 'rep', 'sample_size_obs',
                 'cross_entropy_loss', 't0_true_val', 'coverage', 'power', 'size_CI', 'true_entropy', 'or_loss_value',
                 'monte_carlo_samples', 'benchmark', 'nuisance_parameters', 'alternative_mu_norm', 'guided_sim',
-                'guided_sample', 'num_acore_grid']
+                'guided_sample', 'num_acore_grid', 'power_asymptotic', 'coverage_asymptotic', 'size_asymptotic']
     pbar = tqdm(total=rep, desc='Toy Example for Simulations, n=%s, b=%s' % (sample_size_obs, b))
     for jj in range(rep):
 
@@ -371,13 +372,28 @@ def main(d_obs, run, rep, b, b_prime, alpha, t0_val, sample_size_obs, classifier
                               np.delete(cutoff_val, [true_param_row_idx])).astype(float)
                 size_temp = np.mean(in_confint)
                 coverage = int(tau_obs_val[true_param_row_idx] >= cutoff_val[true_param_row_idx])
-                power = 1 - in_confint if isinstance(in_confint, float) else (in_confint.shape[0] - 
-                                                                  np.sum(in_confint)) / in_confint.shape[0]
+                power = 1 - in_confint if isinstance(in_confint, float) else \
+                    (in_confint.shape[0] - np.sum(in_confint)) / in_confint.shape[0]
+
+                # Also including in the power and coverage obtained by using the asymptotic approximation
+                # with a chisquare distribution. This only works for `acore`
+                power_asymptotic, coverage_asymptotic, size_asymptotic = None, None, None
+                if test_statistic == 'acore':
+                    chisquare_cutoff = chi2.ppf(q=1.0 - alpha, df=1)
+                    cutoff_val_asymp = np.array([-0.5 * chisquare_cutoff] * tau_obs_val.shape[0])
+                    in_confint_asymp = (np.delete(tau_obs_val, [true_param_row_idx]) >=
+                                        np.delete(cutoff_val_asymp, [true_param_row_idx])).astype(float)
+                    size_asymptotic = np.mean(in_confint_asymp)
+                    coverage_asymptotic = int(tau_obs_val[true_param_row_idx] >= cutoff_val_asymp[true_param_row_idx])
+                    power_asymptotic = 1 - in_confint_asymp if isinstance(in_confint_asymp, float) else \
+                        (in_confint_asymp.shape[0] - np.sum(in_confint_asymp)) / in_confint_asymp.shape[0]
+
                 out_val.append([
                     d_obs, test_statistic, b_prime, b, clf_name, clf_name_qr, run, jj, sample_size_obs,
                     cross_ent_loss, t0_val, coverage, power,
                     size_temp, entropy_est, or_loss_value, monte_carlo_samples, benchmark, int(nuisance_parameters),
-                    alternative_norm, int(guided_sim), guided_sample, num_acore_grid
+                    alternative_norm, int(guided_sim), guided_sample, num_acore_grid,
+                    power_asymptotic, coverage_asymptotic, size_asymptotic
                 ])
                 
                 #### RECORD for each tau_obs_val point: its location (d1, d2), tau value, cutoff value, decision (1 or 0)
