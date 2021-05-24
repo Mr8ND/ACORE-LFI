@@ -48,7 +48,6 @@ def main(d_obs, run, b, b_prime, alpha, t0_val, sample_size_obs, classifier, cla
     gen_obs_func = model_obj.sample_sim
     gen_sample_func = model_obj.generate_sample
     gen_param_fun = model_obj.sample_param_values
-    t0_grid = model_obj.pred_grid
     grid_param = model_obj.acore_grid
     np.random.seed(seed)
 
@@ -67,31 +66,19 @@ def main(d_obs, run, b, b_prime, alpha, t0_val, sample_size_obs, classifier, cla
     clf_odds = train_clf(d=model_obj.d, sample_size=b, clf_model=clf_model, gen_function=gen_sample_func,
                          clf_name=clf_name, nn_square_root=True)
 
-    # Compute the nuisance parameters if necessary
-    theta0_mat = np.zeros((diagnostic_sample, 3))
-
-    # As a shortcut we compute the nuisance parameters only once
-    # Compute the nuisance parameter values of the parameter of interest
-    nuisance_vec_lik = model_obj.nuisance_parameter_minimization(
-        x_obs=sample_mat[0, :, :], target_params=param_mat[0, 0].reshape(-1, ), clf_odds=clf_odds)
+    # Compute the nuisance parameters
+    theta0_nuisance_mat = np.zeros((diagnostic_sample, 3))
+    for kk in range(diagnostic_sample):
+        theta0_nuisance_mat[kk, 0] = param_mat[kk, 0]
+        theta0_nuisance_mat[kk, 1:] = model_obj.nuisance_parameter_minimization(
+            x_obs=sample_mat[kk, :, :], target_params=param_mat[kk, 0].reshape(-1, ), clf_odds=clf_odds)[:2]
 
     # Then we compute the various grids over which we minimize ACORE or we sample BFF (logavgacore)
-    t0_grid_out, acore_grid_out = model_obj.calculate_nuisance_parameters_over_grid(
-        t0_grid=t0_grid, clf_odds=clf_odds, x_obs=sample_mat[0, :, :])
-
-    # Append everything to their own list
-    theta0_mat[:, 0] = param_mat[:, 0]
-    theta0_mat[:, 1:] = nuisance_vec_lik[:2].reshape(-1, 2)
-    t0_grid_list = [t0_grid_out] * diagnostic_sample
-    acore_grid_list = [acore_grid_out] * diagnostic_sample
-
-    # Create the B' sample to check the diagnostic over
-    theta_mat, sample_mat = model_obj.sample_msnh_algo5(b_prime=b_prime, sample_size=sample_size_obs)
-    b_prime_sample_list = [(theta_mat, sample_mat)] * diagnostic_sample
+    _, acore_grid_out = model_obj.calculate_nuisance_parameters_over_grid(
+        t0_grid=grid_param, clf_odds=clf_odds, x_obs=sample_mat[0, :, :])
 
     # Create the confidence sets now
     tau_obs_vec = np.zeros(diagnostic_sample)
-    pred_quantile_vec = np.zeros(diagnostic_sample)
     pbar = tqdm(total=diagnostic_sample, desc='Compute Confidence sets')
     for idx in range(diagnostic_sample):
 
@@ -99,73 +86,57 @@ def main(d_obs, run, b, b_prime, alpha, t0_val, sample_size_obs, classifier, cla
         if test_statistic == 'acore':
             tau_obs = np.array([
                 compute_statistics_single_t0(
-                    clf=clf_odds, obs_sample=sample_mat[idx, :, :], t0=theta_0, grid_param_t1=acore_grid_list[idx],
-                    d=model_obj.d, d_obs=model_obj.d_obs) for theta_0 in theta0_mat[idx, :].reshape(1, -1)])
+                    clf=clf_odds, obs_sample=sample_mat[idx, :, :], t0=theta_0, grid_param_t1=acore_grid_out,
+                    d=model_obj.d, d_obs=model_obj.d_obs) for theta_0 in theta0_nuisance_mat[idx, :].reshape(1, -1)])
         elif test_statistic == 'logavgacore':
-            if model_obj.nuisance_flag:
-                tau_obs = np.array([
-                    compute_bayesfactor_single_t0_nuisance(
-                        clf=clf_odds, obs_sample=sample_mat[idx, :, :],
-                        t0=theta_0[:len(model_obj.target_params_cols)],
-                        gen_param_fun=gen_param_fun,
-                        d=model_obj.d, d_obs=model_obj.d_obs, log_out=True,
-                        d_param_interest=len(model_obj.target_params_cols),
-                        monte_carlo_samples=monte_carlo_samples)
-                    for theta_0 in theta0_mat[idx, :].reshape(1, -1)])
-            else:
-                tau_obs = np.array([
-                    compute_bayesfactor_single_t0(
-                        clf=clf_odds, obs_sample=sample_mat[idx, :, :], t0=theta_0, gen_param_fun=gen_param_fun,
-                        d=model_obj.d, d_obs=model_obj.d_obs, log_out=True, monte_carlo_samples=monte_carlo_samples)
-                    for theta_0 in theta0_mat[idx, :].reshape(1, -1)])
+            tau_obs = np.array([
+                compute_bayesfactor_single_t0_nuisance(
+                    clf=clf_odds, obs_sample=sample_mat[idx, :, :],
+                    t0=theta_0[:len(model_obj.target_params_cols)],
+                    gen_param_fun=gen_param_fun,
+                    d=model_obj.d, d_obs=model_obj.d_obs, log_out=True,
+                    d_param_interest=len(model_obj.target_params_cols),
+                    monte_carlo_samples=monte_carlo_samples)
+                for theta_0 in theta0_nuisance_mat[idx, :].reshape(1, -1)])
         else:
             raise ValueError('The variable test_statistic needs to be either acore or logavgacore. '
                              'Currently %s' % test_statistic)
         tau_obs_vec[idx] = tau_obs
-
-        # Compute the test statistics for the B' sample
-        theta_mat_bprime, sample_mat_bprime = b_prime_sample_list[idx]
-        if test_statistic == 'acore':
-            stats_mat_bprime = np.array([compute_statistics_single_t0(
-                clf=clf_odds, d=model_obj.d, d_obs=model_obj.d_obs, grid_param_t1=acore_grid_list[idx],
-                t0=theta_0, obs_sample=sample_mat_bprime[kk, :, :]) for kk, theta_0 in enumerate(theta_mat_bprime)
-            ])
-        elif test_statistic == 'logavgacore':
-            if model_obj.nuisance_flag:
-                theta_mat = theta_mat[:, :len(model_obj.target_params_cols)]
-                stats_mat_bprime = np.array([compute_bayesfactor_single_t0_nuisance(
-                    clf=clf_odds, d=model_obj.d, d_obs=model_obj.d_obs, gen_param_fun=gen_param_fun,
-                    monte_carlo_samples=monte_carlo_samples, log_out=True,
-                    t0=theta_0, obs_sample=sample_mat[kk, :, :],
-                    d_param_interest=len(model_obj.target_params_cols))
-                    for kk, theta_0 in enumerate(theta_mat)
-                ])
-            else:
-                stats_mat_bprime = np.array([compute_bayesfactor_single_t0(
-                    clf=clf_odds, d=model_obj.d, d_obs=model_obj.d_obs, gen_param_fun=gen_param_fun,
-                    monte_carlo_samples=monte_carlo_samples, log_out=True,
-                    t0=theta_0, obs_sample=sample_mat_bprime[kk, :, :]) for kk, theta_0 in enumerate(theta_mat_bprime)
-                ])
-        else:
-            raise ValueError('The variable test_statistic needs to be either acore or logavgacore. '
-                             'Currently %s' % test_statistic)
-
-        clf_params = classifier_cde_dict[classifier_cde]
-        t0_pred_vec = train_qr_algo(model_obj=model_obj, theta_mat=theta_mat_bprime, stats_mat=stats_mat_bprime,
-                                    algo_name=clf_params[0], learner_kwargs=clf_params[1],
-                                    pytorch_kwargs=clf_params[2] if len(clf_params) > 2 else None,
-                                    alpha=alpha, prediction_grid=theta0_mat[idx, :].reshape(-1, 1))
-        pred_quantile_vec[idx] = t0_pred_vec.reshape(-1, )
         pbar.update(1)
 
+    # Create the B' sample to check the diagnostic over
+    theta_mat_bprime, sample_mat_bprime = model_obj.sample_msnh_algo5(b_prime=b_prime, sample_size=sample_size_obs)
+    if test_statistic == 'acore':
+        stats_mat_bprime = np.array([compute_statistics_single_t0(
+            clf=clf_odds, d=model_obj.d, d_obs=model_obj.d_obs, grid_param_t1=acore_grid_out,
+            t0=theta_0, obs_sample=sample_mat_bprime[kk, :, :]) for kk, theta_0 in enumerate(theta_mat_bprime)
+        ])
+    elif test_statistic == 'logavgacore':
+        stats_mat_bprime = np.array([compute_bayesfactor_single_t0_nuisance(
+            clf=clf_odds, d=model_obj.d, d_obs=model_obj.d_obs, gen_param_fun=gen_param_fun,
+            monte_carlo_samples=monte_carlo_samples, log_out=True,
+            t0=theta_0, obs_sample=sample_mat_bprime[kk, :, :],
+            d_param_interest=len(model_obj.target_params_cols))
+            for kk, theta_0 in enumerate(theta_mat_bprime[:, :len(model_obj.target_params_cols)])
+        ])
+    else:
+        raise ValueError('The variable test_statistic needs to be either acore or logavgacore. '
+                         'Currently %s' % test_statistic)
+
+    clf_params = classifier_cde_dict[classifier_cde]
+    t0_pred_vec = train_qr_algo(model_obj=model_obj, theta_mat=theta_mat_bprime, stats_mat=stats_mat_bprime,
+                                algo_name=clf_params[0], learner_kwargs=clf_params[1],
+                                pytorch_kwargs=clf_params[2] if len(clf_params) > 2 else None,
+                                alpha=alpha, prediction_grid=theta0_nuisance_mat).reshape(-1, )
+
     # Compute whether they are in the confidence interval
-    in_confint = (tau_obs_vec >= pred_quantile_vec).astype(float)
+    in_confint = (tau_obs_vec >= t0_pred_vec).astype(float)
     in_confint_asymptotic = None
     if test_statistic == 'acore':
         chisquare_cutoff = chi2.ppf(q=1.0 - alpha, df=1)
         cutoff_val_asymp = np.array([-0.5 * chisquare_cutoff] * tau_obs_vec.shape[0])
         in_confint_asymptotic = (tau_obs_vec >= cutoff_val_asymp).astype(float)
-    t0_vec_coverage_pred = theta0_mat[:, 0].reshape(-1, 1)
+    t0_vec_coverage_pred = theta0_nuisance_mat[:, 0].reshape(-1, 1)
     predict_mat = np.linspace(start=model_obj.low_int_signal, stop=model_obj.high_int_signal, num=100).reshape(-1, 1)
 
     # Now we can use some sort of logistic regression/XGboost to compute coverage across the parameter space
@@ -177,9 +148,9 @@ def main(d_obs, run, b, b_prime, alpha, t0_val, sample_size_obs, classifier, cla
     average_coverage = np.average(pred_cov_mean)
 
     out_dict = {
-        'theta_mat': theta0_mat,
+        'theta_mat': theta0_nuisance_mat,
         'tau_obs_vec': tau_obs_vec,
-        'pred_quantile_vec': pred_quantile_vec,
+        'pred_quantile_vec': t0_pred_vec,
         'in_confint_vec': in_confint,
         'pred_cov_mean_xgb': pred_cov_mean,
         'percent_correct_coverage_xgb': percent_correct_coverage,
