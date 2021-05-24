@@ -106,22 +106,23 @@ def main(d_obs, run, b, b_prime, alpha, t0_val, sample_size_obs, classifier, cla
 
     # Create the B' sample to check the diagnostic over
     theta_mat_bprime, sample_mat_bprime = model_obj.sample_msnh_algo5(b_prime=b_prime, sample_size=sample_size_obs)
-    if test_statistic == 'acore':
-        stats_mat_bprime = np.array([compute_statistics_single_t0(
-            clf=clf_odds, d=model_obj.d, d_obs=model_obj.d_obs, grid_param_t1=acore_grid_out,
-            t0=theta_0, obs_sample=sample_mat_bprime[kk, :, :]) for kk, theta_0 in enumerate(theta_mat_bprime)
-        ])
-    elif test_statistic == 'logavgacore':
-        stats_mat_bprime = np.array([compute_bayesfactor_single_t0_nuisance(
-            clf=clf_odds, d=model_obj.d, d_obs=model_obj.d_obs, gen_param_fun=gen_param_fun,
-            monte_carlo_samples=monte_carlo_samples, log_out=True,
-            t0=theta_0, obs_sample=sample_mat_bprime[kk, :, :],
-            d_param_interest=len(model_obj.target_params_cols))
-            for kk, theta_0 in enumerate(theta_mat_bprime[:, :len(model_obj.target_params_cols)])
-        ])
-    else:
-        raise ValueError('The variable test_statistic needs to be either acore or logavgacore. '
-                         'Currently %s' % test_statistic)
+    stats_mat_bprime = np.zeros(b_prime)
+    pbar = tqdm(total=b_prime, desc='Compute B Prime sample')
+    for kk, theta_0 in enumerate(theta_mat_bprime):
+        if test_statistic == 'acore':
+            stats_mat_bprime[kk] = compute_statistics_single_t0(
+                clf=clf_odds, d=model_obj.d, d_obs=model_obj.d_obs, grid_param_t1=acore_grid_out,
+                t0=theta_0, obs_sample=sample_mat_bprime[kk, :, :])
+        elif test_statistic == 'logavgacore':
+            stats_mat_bprime[kk] = compute_bayesfactor_single_t0_nuisance(
+                clf=clf_odds, d=model_obj.d, d_obs=model_obj.d_obs, gen_param_fun=gen_param_fun,
+                monte_carlo_samples=monte_carlo_samples, log_out=True,
+                t0=theta_0[:len(model_obj.target_params_cols)], obs_sample=sample_mat_bprime[kk, :, :],
+                d_param_interest=len(model_obj.target_params_cols))
+        else:
+            raise ValueError('The variable test_statistic needs to be either acore or logavgacore. '
+                             'Currently %s' % test_statistic)
+        pbar.update(1)
 
     clf_params = classifier_cde_dict[classifier_cde]
     t0_pred_vec = train_qr_algo(model_obj=model_obj, theta_mat=theta_mat_bprime, stats_mat=stats_mat_bprime,
