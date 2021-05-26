@@ -3,7 +3,9 @@ import os
 import pandas as pd
 import numpy as np
 import logging
+import warnings
 from typing import Iterable, Union
+from tqdm import tqdm
 
 
 class MuonFeatures:
@@ -13,15 +15,18 @@ class MuonFeatures:
     # TODO: ensure or_sample and qr_sample are non-overlapping, unless no more unused data
 
     def __init__(self,
-                 data: Union[str, pd.DataFrame],
                  t0_grid_granularity: int,
+                 data: Union[str, pd.DataFrame, None] = None,
+                 simulated_data: Union[str, pd.DataFrame, None] = None, 
+                 observed_data: Union[str, pd.DataFrame, None] = None,
                  true_param_low: int = 100,  # GeV
                  true_param_high: int = 2000,  # GeV
                  param_dims: int = 1,  # only true energy
                  observed_dims: int = 16,  # 16 features
                  observed_sample_fraction: float = 0.2,
                  reference_g='marginal',
-                 param_column: int = -1,
+                 param_column: Union[int, list, np.array] = -1,
+                 verbose=True,
                  debug: bool = False):
         if debug:
             logging_level = logging.DEBUG
@@ -34,25 +39,49 @@ class MuonFeatures:
             level=logging_level,
             format='%(asctime)s %(module)s %(levelname)s %(message)s'
         )
-
+        
         if isinstance(data, str):
             self.data = MuonFeatures.read_file(path=data)
         elif isinstance(data, pd.DataFrame):
             self.data = data
+        elif data is None:
+            if simulated_data is not None:
+                self.data = simulated_data
+            else:
+                raise ValueError("Either data or simulated_data must be specified")
         else:
             raise ValueError(f'data must be either a filepath (str type) or a pandas DataFrame, got {type(data)}')
+        
+        if isinstance(param_column, int):
+            assert param_dims == len([param_column])
+            assert observed_dims == (self.data.shape[1] - 1)
+        else:
+            assert param_dims == len(list(param_column))
+            assert observed_dims == (self.data.shape[1] - len(list(param_column)))
+            warnings.warn("Check the code to make sure it's consistent for multidimensional parameter")
+
         # keep observed split to follow ACORE code structure
-        self.train_set, self.obs_x, self.obs_param = \
-            MuonFeatures.train_obs_split(data=self.data,
-                                         observed_fraction=observed_sample_fraction,
-                                         param_column=param_column)
+        if data is None:
+            self.train_set = simulated_data.to_numpy()
+            self.obs_x = observed_data.drop(observed_data.columns[param_column], axis=1).to_numpy()
+            self.obs_param = observed_data.iloc[:, param_column].to_numpy()
+        else:
+            self.train_set, self.obs_x, self.obs_param = \
+                MuonFeatures.train_obs_split(data=self.data,
+                                             observed_fraction=observed_sample_fraction,
+                                             param_column=param_column)
         self.train_set_left = self.train_set
         self.d = param_dims
         self.observed_dims = observed_dims
+        self.true_param_low = true_param_low
+        self.true_param_high = true_param_high
         self.param_grid = np.linspace(true_param_low, true_param_high, t0_grid_granularity)
         self.reference_g = reference_g
 
         self.param_column = param_column
+
+        self.verbose = verbose
+        self.sampling_progress_bar = None
 
     @staticmethod
     def read_file(path: str):
@@ -140,7 +169,10 @@ class MuonFeatures:
 
     def label_dependent_sampling(self, label: int, data: Union[np.ndarray, None] = None):
         # TODO: should reshape every time as (sample_size, param_dims) and (sample_size, observed_dims)?
-        # TODO: when sampling from reference, should theta come from self.param_grid or from self.sample_param_values
+        # TODO: when sampling from reference, should theta come from self.param_grid or from self.sample_param_values?
+        if self.verbose:
+            self.sampling_progress_bar.update(1)
+
         theta = self.sample_param_values(sample_size=1, data=data)
         if label == 1:
             sim = self.sample_sim(sample_size=1, true_param=theta, data=data)
@@ -153,29 +185,43 @@ class MuonFeatures:
 
     # need kwargs cause some functions in ACORE call generate_sample with args we have not specified or don't need
     def generate_sample(self, sample_size, p=0.5, data: Union[np.ndarray, None] = None, **kwargs):
+        if self.verbose:
+            self.sampling_progress_bar = tqdm(total=sample_size, desc='Sampling %s simulations' % sample_size)
+
         labels = np.random.binomial(n=1, p=p, size=sample_size).reshape(-1, 1)
         param_and_sample = np.apply_along_axis(arr=labels, axis=1,
                                                func1d=lambda label: self.label_dependent_sampling(label, data=data))
         out = np.concatenate((labels,
                               param_and_sample.reshape(-1, self.d + self.observed_dims)), axis=1)
+
         logging.debug(f'generated sample dimensions: {out.shape}')
+        if self.verbose:
+            self.sampling_progress_bar.close()
+            self.sampling_progress_bar = None
         return out
 
     def sample_msnh(self, b_prime: int, sample_size: int):
 
-        # TODO: use of label-dependent sampling will not work if sample_size > 1.
+        # TODO: use of label-dependent sampling will not work if obs_sample_size > 1.
         #  Will need multiple rows with same param and different obs (?)
         if sample_size > 1:
-            raise NotImplementedError("Label-dependent sampling will not work if sample_size > 1. See TODO above")
+            raise NotImplementedError("Label-dependent sampling will not work if obs_sample_size > 1. See TODO above")
 
         logging.info("Sampling for many simple null hypothesis")
+
+        if self.verbose:
+            self.sampling_progress_bar = tqdm(total=b_prime, desc='Sampling %s simulations' % b_prime)
 
         # need to sample one at a time -> label dependent sampling with label always equal to 1
         labels = np.random.binomial(n=1, p=1, size=b_prime).reshape(-1, 1)
         assert labels.shape == (b_prime, 1)
 
-        theta_sample_matrix = np.apply_along_axis(arr=labels, axis=1, func1d=lambda label:
-                                                  self.label_dependent_sampling(label=label)
+        theta_sample_matrix = np.apply_along_axis(arr=labels, axis=1,
+                                                  func1d=lambda label: self.label_dependent_sampling(label=label)
                                                   ).reshape(-1, self.d + self.observed_dims)
+        if self.verbose:
+            self.sampling_progress_bar.close()
+            self.sampling_progress_bar = None
+
         theta_matrix, sample_matrix = theta_sample_matrix[:, :self.d], theta_sample_matrix[:, self.d:]
         return theta_matrix, sample_matrix

@@ -38,6 +38,7 @@ def train_clf(sample_size, gen_function, clf_model,
     # this line below assumes sample has form (theta, label, X), where both theta and X can be multidimensional
     #col_selected = [el for el in range(gen_sample.shape[1]) if el != d]
     #X, y = gen_sample[:, col_selected], gen_sample[:, d]
+    # TODO: make this independent of the position of columns. Or at least error-proof
     X, y = gen_sample[:, 1:], gen_sample[:, 0]  # my code puts the label first
 
     if 'nn' in clf_name.lower():
@@ -128,11 +129,11 @@ def pinball_loss(y_true, y_pred, alpha):
     return np.average(np.max(diff_mat, axis=1))
 
 
-def compute_statistics_single_t0(clf, obs_sample, t0, grid_param_t1, d=1, d_obs=1):
+def compute_statistics_single_t0(clf, obs_sample, obs_sample_size, t0, grid_param_t1, d=1, d_obs=1):
     # Stack the data
     # First column: we repeat t0 for n times, and then repeat t1 for n times each
     # Second column: We duplicate the data n_t1 + 1 times
-    n = obs_sample.shape[0]
+    n = obs_sample.reshape(obs_sample_size, d_obs).shape[0]
     n_t1 = grid_param_t1.shape[0]
 
     if d > 1:
@@ -180,6 +181,67 @@ def compute_statistics_single_t0(clf, obs_sample, t0, grid_param_t1, d=1, d_obs=
     assert grouped_sum_t1.shape[0] == n_t1
 
     return np.sum(odds_t0) - np.max(grouped_sum_t1)
+
+
+def _compute_statistics_single_t0(clf,
+                                  obs_sample,
+                                  obs_sample_size,  # size of observed sample from same theta
+                                  t0, grid_param_t1,
+                                  d=1, d_obs=1,
+                                  n_samples=1):  # construct conf set for each (> 1 if conf band, i.e. all together)
+
+    # Stack the data
+    # First column: we repeat t0 for n times, and then repeat t1 for n times each
+    # Second column: We duplicate the data n_t1 + 1 times
+    n_t1 = grid_param_t1.shape[0]
+
+    if obs_sample_size > 1:  # need to check predict_mat, obs_sample should be 3dim if n_samples/obs_sample_size > 1
+        raise NotImplementedError
+
+    if d > 1:
+        # still have to check the logic for this case (in theory it should similar to d=1 ...)
+        raise NotImplementedError
+    else:
+        predict_mat = np.hstack((
+            np.vstack((
+                np.repeat(t0, obs_sample_size*n_samples).reshape(-1, 1),
+                np.tile(np.repeat(grid_param_t1, obs_sample_size).reshape(-1, 1),
+                        (n_samples, 1))
+            )),
+            np.vstack((
+                obs_sample.reshape(-1, d_obs),
+                # TODO: check this to ensure obs_sample_size > 1 works
+                np.repeat(obs_sample, n_t1, axis=0).reshape(-1, d_obs)
+            ))
+        ))
+    assert predict_mat.shape == (n_samples * obs_sample_size * n_t1 + n_samples * obs_sample_size, d + d_obs)
+
+    # Do the prediction step
+    prob_mat = clf.predict_proba(predict_mat)
+    prob_mat[prob_mat == 0] = 1e-15
+    assert prob_mat.shape == (n_samples * obs_sample_size * n_t1 + n_samples * obs_sample_size, 2)
+
+    # Calculate odds
+    # We extract t0 values
+    odds_t0 = np.log(prob_mat[0:obs_sample_size*n_samples, 1]) - np.log(prob_mat[0:obs_sample_size*n_samples, 0])
+    assert odds_t0.shape[0] == obs_sample_size*n_samples
+
+    # We then extract t1_values
+    odds_t1 = np.log(prob_mat[obs_sample_size*n_samples:, 1]) - np.log(prob_mat[obs_sample_size*n_samples:, 0])
+    # TODO: check this shape when obs_sample_size > 1
+    assert odds_t1.shape[0] == n_samples * n_t1
+
+    # Calculate sum of logs for each ...
+    # ... of the samples from the same theta, for which size==observed_sample_size
+    grouped_sum_t0 = odds_t0.reshape(-1, obs_sample_size).sum(axis=1)
+    assert grouped_sum_t0.shape[0] == n_samples
+
+    # ... and of the value of the t1 grid
+    # TODO: should add 3rd dim and add sum over same_theta_sample if obs_sample_size > 1
+    grouped_max_sum_t1 = odds_t1.reshape(-1, n_t1).max(axis=1)
+    assert grouped_max_sum_t1.shape[0] == n_samples
+
+    return grouped_sum_t0 - grouped_max_sum_t1
 
 
 def compute_clf_tau_distr(clf, gen_obs_func, theta_0, t1_linspace, n_sampled=1000, sample_size_obs=200):
