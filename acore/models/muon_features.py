@@ -84,6 +84,9 @@ class MuonFeatures:
         self.reference_g = reference_g
 
         self.param_column = param_column
+        # handy for sample_sim TODO: valid for full calo data?
+        self.no_param_mask = np.full(self.data.shape[1], True)
+        self.no_param_mask[param_column] = False
 
         self.verbose = verbose
         self.sampling_progress_bar = None
@@ -127,11 +130,12 @@ class MuonFeatures:
 
         logging.debug(f'sampling {sample_size} params from data of shape {data.shape}')
 
-        # unique needed because some params are equal
-        return np.random.choice(np.unique(data[:, self.param_column]), size=sample_size)
+        idxs = np.arange(0, data.shape[0], 1)
+        sampled_param_idxs = np.random.choice(idxs, size=sample_size)
+        return sampled_param_idxs, data[sampled_param_idxs, self.param_column]
 
     # TODO: think about how to rewrite this more efficiently
-    def sample_sim(self, sample_size: int, true_param: np.ndarray, data: Union[np.ndarray, None] = None):
+    def sample_sim(self, sample_size: int, true_param_idx: np.ndarray, data: Union[np.ndarray, None] = None):
         if data is None:
             using_train_set = True
             data = self.train_set_left
@@ -142,22 +146,13 @@ class MuonFeatures:
         if sample_size > len(data):
             raise ValueError(f'Only {len(data)} simulations available, got {sample_size}')
 
-        if not isinstance(true_param, np.ndarray):
-            true_param = np.array([true_param])
+        if not isinstance(true_param_idx, np.ndarray):
+            true_param = np.array([true_param_idx])
 
-        # [0] because np.where returns tuple
-        # TODO: np.isin uses == operator? If yes, better change to something like |value - target| < epsilon
-        idxs = np.where(np.isin(data[:, self.param_column], true_param))[0]
-        # params can be equal for multiple rows -> take only one occurrence for each (total_sims == sample_size)
-        idxs_unique = list(  # TODO: can avoid this step and use np.unique directly in idxs above?
-            set(np.unique(data[:, self.param_column], return_index=True)[1]).intersection(set(idxs))  # [1] for idx obj
-        )
-        assert len(idxs_unique) == sample_size, \
-            f'{sample_size} samples requested, got {len(idxs_unique)}. These params where not matched: {true_param}'
-        simulations = np.delete(data[idxs_unique, :], self.param_column, axis=1)
+        simulations = data[true_param_idx, self.no_param_mask]
         if using_train_set:
             # avoid reusing same data points until we have unused available
-            self.train_set_left = np.delete(data, idxs_unique, axis=0)
+            self.train_set_left = np.delete(data, true_param_idx, axis=0)
             if len(self.train_set_left) == 0:
                 self.train_set_left = self.train_set
                 logging.info('no more simulations available, training dataset re-instantiated')
@@ -168,8 +163,8 @@ class MuonFeatures:
         if self.reference_g == 'marginal':
             # sample another simulation; will be matched with the (different) param sampled in label_dependent_sampling
             # -> EMPIRICAL MARGINAL, ensures independence between x and theta
-            true_param = self.sample_param_values(sample_size=sample_size, data=data)
-            return self.sample_sim(sample_size, true_param, data=data)
+            idx, true_param = self.sample_param_values(sample_size=sample_size, data=data)
+            return self.sample_sim(sample_size, idx, data=data)
         else:
             self.reference_g.rvs(size=sample_size)
 
@@ -179,9 +174,9 @@ class MuonFeatures:
         if self.verbose:
             self.sampling_progress_bar.update(1)
 
-        theta = self.sample_param_values(sample_size=1, data=data)
+        idx, theta = self.sample_param_values(sample_size=1, data=data)
         if label == 1:
-            sim = self.sample_sim(sample_size=1, true_param=theta, data=data)
+            sim = self.sample_sim(sample_size=1, true_param_idx=idx, data=data)
         elif label == 0:
             sim = self.sample_reference_g(sample_size=1, data=data)
         else:
@@ -196,9 +191,9 @@ class MuonFeatures:
 
         labels = np.random.binomial(n=1, p=p, size=sample_size).reshape(-1, 1)
         param_and_sample = np.apply_along_axis(arr=labels, axis=1,
-                                               func1d=lambda label: self.label_dependent_sampling(label, data=data))
-        out = np.concatenate((labels,
-                              param_and_sample.reshape(-1, self.d + self.observed_dims)), axis=1)
+                                               func1d=lambda label: self.label_dependent_sampling(label, data=data)
+                                               ).reshape(-1, self.d + self.observed_dims)
+        out = np.concatenate((labels, param_and_sample), axis=1)
 
         logging.debug(f'generated sample dimensions: {out.shape}')
         if self.verbose:
@@ -206,10 +201,11 @@ class MuonFeatures:
             self.sampling_progress_bar = None
         return out
 
-    def sample_msnh(self, b_prime: int, sample_size: int):
+    def sample_msnh(self, b_prime: int, sample_size: int, data: Union[np.ndarray, None] = None):
 
         # TODO: use of label-dependent sampling will not work if obs_sample_size > 1.
         #  Will need multiple rows with same param and different obs (?)
+        # TODO: this can be done without label-dependent sampling. Simply sample B' obs from data
         if sample_size > 1:
             raise NotImplementedError("Label-dependent sampling will not work if obs_sample_size > 1. See TODO above")
 
