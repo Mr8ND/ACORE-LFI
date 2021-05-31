@@ -55,10 +55,15 @@ class MuonFeatures:
         if isinstance(param_column, int):
             assert param_dims == len([param_column])
             assert observed_dims == (self.data.shape[1] - 1)
+            # check that param_column is the correct one
+            theoretical_range = true_param_high - true_param_low
+            observed_range = self.data.iloc[:, param_column].max() - self.data.iloc[:, param_column].min()
+            if abs(theoretical_range - observed_range) > 0.01*theoretical_range:
+                warnings.warn(f"Are you sure you set the correct parameter column? Got {param_column}")
         else:
             assert param_dims == len(list(param_column))
             assert observed_dims == (self.data.shape[1] - len(list(param_column)))
-            warnings.warn("Check the code to make sure it's consistent for multidimensional parameter")
+            warnings.warn("Check the code to make sure it's consistent for multidimensional parameter", )
 
         # keep observed split to follow ACORE code structure
         if data is None:
@@ -125,6 +130,7 @@ class MuonFeatures:
         # unique needed because some params are equal
         return np.random.choice(np.unique(data[:, self.param_column]), size=sample_size)
 
+    # TODO: think about how to rewrite this more efficiently
     def sample_sim(self, sample_size: int, true_param: np.ndarray, data: Union[np.ndarray, None] = None):
         if data is None:
             using_train_set = True
@@ -160,7 +166,7 @@ class MuonFeatures:
     def sample_reference_g(self, sample_size, data: Union[np.ndarray, None] = None):
 
         if self.reference_g == 'marginal':
-            # sample another simulation, which will be matched with the (different) param sampled in generate_sample
+            # sample another simulation; will be matched with the (different) param sampled in label_dependent_sampling
             # -> EMPIRICAL MARGINAL, ensures independence between x and theta
             true_param = self.sample_param_values(sample_size=sample_size, data=data)
             return self.sample_sim(sample_size, true_param, data=data)

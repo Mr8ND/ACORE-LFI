@@ -1,28 +1,37 @@
 import logging
 from datetime import datetime
 from tqdm import tqdm
-from typing import Union
+from typing import Union, Callable
+import warnings
+from itertools import product, repeat
+from multiprocessing import Pool
+import os
+import argparse
+import json
+import pickle
+
 import numpy as np
 import pandas as pd
-import warnings
-
-from models import muon_features
-from or_classifiers.complete_list import classifier_dict
-from qr_algorithms.complete_list import classifier_cde_dict
-from utils.functions import train_clf, compute_statistics_single_t0, _compute_statistics_single_t0
-from utils.qr_functions import train_qr_algo
 import matplotlib.pyplot as plt
 import seaborn as sns
+from sklearn.metrics import log_loss
+
+from models import muon_features
+from or_classifiers.complete_list import classifier_dict, classifier_conv_dict
+from qr_algorithms.complete_list import classifier_cde_dict
+from utils.functions import train_clf, compute_statistics_single_t0, \
+    _compute_statistics_single_t0, choose_clf_settings_subroutine
+from utils.qr_functions import train_qr_algo
 
 
 class ACORE:
 
     def __init__(self,
                  model: muon_features.MuonFeatures,
-                 b: int,
+                 b: Union[int, None],
                  b_prime: int,
                  alpha: float,
-                 classifier_or: str,
+                 classifier_or: Union[str, None],
                  classifier_qr: str,
                  obs_sample_size: int,
                  seed: Union[int, None] = None,  # TODO: cascade seed down to methods involving randomness
@@ -48,8 +57,12 @@ class ACORE:
         self.b = b
         self.b_prime = b_prime
         self.alpha = alpha
-        self.classifier_or = classifier_dict[classifier_or]
-        self.classifier_or_name = classifier_or.replace('\n', '').replace(' ', '-')
+        if classifier_or is not None:
+            self.classifier_or = classifier_dict[classifier_or]
+            self.classifier_or_name = classifier_or.replace('\n', '').replace(' ', '-')
+        else:
+            self.classifier_or = None
+            self.classifier_or_name = None
         self.classifier_qr = classifier_cde_dict[classifier_qr]
         self.obs_sample_size = obs_sample_size
 
@@ -65,7 +78,58 @@ class ACORE:
         self.conf_region = None
         self.conf_band = None
 
+    # TODO: clfs should be trained on overlapping samples or should b_train be used to draw a new sample for each clf?
+    def choose_OR_clf_settings(self,
+                               classifier_names: Union[str, list], # from complete_list -> classifier_conv_dict
+                               b_train: Union[int, list],
+                               b_eval: int,
+                               target_loss: Union[str, Callable] = "cross_entropy_loss",
+                               write_df=True):
+
+        if not isinstance(b_train, list):
+            b_train = [b_train]
+        if not isinstance(classifier_names, list):
+            classifiers = [classifier_names]
+        if target_loss == "cross_entropy_loss":
+            target_loss = log_loss
+        elif isinstance(target_loss, Callable):
+            # TODO: should check it takes y_true and y_pred
+            target_loss = target_loss
+        else:
+            raise ValueError(f"{target_loss} not currently supported")
+
+        # convert names to classifiers
+        classifiers = [classifier_dict[classifier_conv_dict[clf]] for clf in classifier_names]
+
+        # evaluation set for cross-entropy loss
+        eval_set = self.model.generate_sample(sample_size=b_eval)
+        eval_X, eval_y = eval_set[:, 1:], eval_set[:, 0]
+
+        pool_args = zip(product(b_train, zip(classifiers, classifier_names)),
+                        repeat(self.model.generate_sample),
+                        repeat(self.model.d),
+                        repeat(eval_X),
+                        repeat(eval_y),
+                        repeat(target_loss))
+        pool_args = [(a,b,c,d,e,f,g,h) for (a,(b,c)),d,e,f,g,h in pool_args]
+        # use all CPUs minus 1 to avoid freezing
+        with Pool(processes=os.cpu_count() - 1) as pool:
+            results_df = pd.DataFrame(pool.starmap(choose_clf_settings_subroutine, pool_args),
+                                      columns = ['clf_name', 'B', 'loss'])
+
+        # plot and return df
+        sns.lineplot(data=results_df, x="B", y="loss", hue="clf_name", markers=True)
+
+        if write_df:
+            results_df.to_csv('./choose_clf_and_b.csv', index=False)
+        return results_df
+
     def estimate_tau(self):
+
+        if self.b is None:
+            raise ValueError("Unspecified B")
+        if self.classifier_or is None:
+            raise ValueError("Unspecified Odds Ratios Classifier and Classifier Name")
 
         start_time = datetime.now()
         clf = train_clf(sample_size=self.b,
@@ -103,6 +167,11 @@ class ACORE:
 
     def _estimate_tau(self):
 
+        if self.b is None:
+            raise ValueError("Unspecified B")
+        if self.classifier_or is None:
+            raise ValueError("Unspecified Odds Ratios Classifier and Classifier Name")
+
         start_time = datetime.now()
         clf = train_clf(sample_size=self.b,
                         clf_model=self.classifier_or,
@@ -114,8 +183,7 @@ class ACORE:
         train_time = datetime.now()
         if self.verbose:
             print('----- %s Trained' % self.classifier_or_name, flush=True)
-            # TODO: not general; assumes observed_sample_size == 1
-            progress_bar = tqdm(total=len(self.model.param_grid), desc='Calculate Odds')
+            progress_bar = tqdm(total=len(self.model.param_grid), desc='Calculate observed statistics')
 
         tau_obs = []
         # TODO: not general; assumes observed_sample_size == 1
@@ -150,7 +218,8 @@ class ACORE:
                                                               grid_param_t1=self.model.param_grid,
                                                               t0=theta_0, obs_sample=sample_matrix[kk, :],
                                                               obs_sample_size=self.obs_sample_size)
-                                 for kk, theta_0 in enumerate(theta_matrix)])
+                                 for kk, theta_0 in tqdm(enumerate(theta_matrix),
+                                                         desc='Calculate statistics for critical value')])
         bprime_time = datetime.now()
 
         if self.verbose:
@@ -324,13 +393,103 @@ if __name__ == "__main__":
                          debug=True)
 
     acore = ACORE(model=model,
-                  b=5000,
+                  b=None,
                   b_prime=5000,
                   alpha=0.05,
-                  classifier_or='QDA',
+                  classifier_or=None,
                   classifier_qr='xgb_d3_n100',
                   obs_sample_size=1,
                   debug=True)
 
-    acore.confidence_band()
+    result = acore.choose_OR_clf_settings(classifiers=['MLP', 'QDA', 'Log. Regr.', 'XGBoost \n (d3, n100)'],
+                                          b_train=[500, 3000, 5000],
+                                          b_eval=500,
+                                          target_loss='cross_entropy_loss')
+    print("Done!")
 """
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument('--simulated_data', action="store", type=str,
+                        help='Simulated data to use to train ACORE')
+    parser.add_argument('--observed_data', action="store", type=str,
+                        help='Observed data to use to evaluate ACORE')
+    parser.add_argument('--which_features', action='store', type=str,
+                        help='Which features to use: ig (integrated_energy), v0v1, af (all_features)')
+    parser.add_argument('--json_args', action='store', type=str,
+                        help='Json file containing all required args apart from data')
+    parser.add_argument('--write_path', action='store', type=str, default="../../acore_runs/",
+                        help='Path where outputs are stored if desired')
+
+    argument_parsed = parser.parse_args()
+
+    with open(argument_parsed.json_args) as json_file:
+        json_args = json.load(json_file)
+    if json_args["debug"] == "True":
+        debug = True
+    else:
+        debug = False
+
+    # get features df
+    if argument_parsed.which_features == "ig":
+        def integrated_energy_df(data):
+            integrated_energy = data.iloc[:, [0, 1]].sum(axis=1)
+            output_df = data.iloc[:, [-1]].rename(columns={16: "true_energy"})
+            output_df.loc[:, "integrated_energy"] = integrated_energy
+            return output_df.iloc[:, [1, 0]]
+
+        simulated_data = integrated_energy_df(pd.read_csv(argument_parsed.simulated_data, sep=" ", header=None))
+        observed_data = integrated_energy_df(pd.read_csv(argument_parsed.observed_data, sep=" ", header=None))
+
+    elif argument_parsed.which_features == "v0v1":
+        simulated_data = pd.read_csv(argument_parsed.simulated_data, sep=" ", header=None).loc[:, [0, 1, 16]]
+        observed_data = pd.read_csv(argument_parsed.observed_data, sep=" ", header=None).loc[:, [0, 1, 16]]
+
+    else:  # all features (or full calorimeter data later)
+        simulated_data = pd.read_csv(argument_parsed.simulated_data, sep=" ", header=None)
+        observed_data = pd.read_csv(argument_parsed.observed_data, sep=" ", header=None)
+
+    print(f"Simulated data shape: {simulated_data.shape}")
+    print(f"Observed data shape: {observed_data.shape}")
+
+    model = muon_features.MuonFeatures(simulated_data=simulated_data,
+                                       observed_data=observed_data,
+                                       t0_grid_granularity=json_args["t0_grid_granularity"],
+                                       true_param_low=json_args["true_param_low"],
+                                       true_param_high=json_args["true_param_high"],
+                                       param_dims=json_args["param_dims"],
+                                       observed_dims=json_args["observed_dims"],
+                                       reference_g=json_args["reference_g"],
+                                       param_column=json_args["param_column"],
+                                       debug=debug)
+
+    if json_args["b"] == "None":
+        b = None
+    else:
+        b = json_args["b"]
+    if json_args["classifier_or"] == "None":
+        classifier_or = None
+    else:
+        classifier_or = json_args["classifier_or"]
+
+    acore = ACORE(model=model,
+                  b=b,
+                  b_prime=json_args["b_prime"],
+                  alpha=json_args["alpha"],
+                  classifier_or=classifier_or,
+                  classifier_qr=json_args["classifier_qr"],
+                  obs_sample_size=json_args["obs_sample_size"],
+                  debug=debug)
+
+    # acore.choose_OR_clf_settings(classifier_names=eval(json_args["choose_classifiers"]),
+    #                             b_train=eval(json_args["b_train"]),
+    #                             b_eval=json_args["b_eval"],
+    #                             target_loss=json_args["target_loss"],
+    #                             write_df=True)
+    #
+
+    acore.confidence_band()
+    filename = f'acore_{argument_parsed.which_features}_grid{json_args["t0_grid_granularity"]}_b{b}_bp{json_args["b_prime"]}_a{json_args["alpha"]}_clfOR{classifier_or}_clfQR{json_args["classifier_qr"]}'
+    with open(os.path.join(argument_parsed.write_path, filename), "wb") as file:
+        pickle.dump(acore, file)

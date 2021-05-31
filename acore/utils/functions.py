@@ -1,7 +1,6 @@
 import numpy as np
 import sys
 import warnings
-import pdb
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.model_selection import GridSearchCV
 
@@ -66,6 +65,24 @@ def train_clf(sample_size, gen_function, clf_model,
     else:
         clf_model.fit(X=X, y=y)
     return clf_model
+
+
+def choose_clf_settings_subroutine(b_train,
+                                   clf_model,
+                                   clf_name,
+                                   gen_function,
+                                   d,
+                                   eval_X,
+                                   eval_y,
+                                   target_loss):
+
+    clf = train_clf(sample_size=b_train, clf_model=clf_model,
+                    gen_function=gen_function, d=d, clf_name=clf_name)
+
+    est_prob_vec = clf.predict_proba(eval_X)[:, 1]
+    loss_value = target_loss(y_true=eval_y, y_pred=est_prob_vec)
+
+    return [clf_name, b_train, loss_value]
 
 
 def compute_odds(clf, obs_data, theta_val, clf_name='xgboost'):
