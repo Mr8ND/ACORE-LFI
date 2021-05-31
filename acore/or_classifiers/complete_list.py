@@ -24,7 +24,7 @@ classifier_dict = {
     'Gauss_Proc2': GaussianProcessClassifier(RBF(.1)),
     'Gauss_Proc3': GaussianProcessClassifier(RBF(.5)),
     'Gauss_Proc4': GaussianProcessClassifier(0.5 * RBF(.1)),
-    ':q': MLPClassifier((32, 16), activation='tanh', alpha=0, max_iter=25000),
+    'MLP1t': MLPClassifier((32, 16), activation='tanh', alpha=0, max_iter=25000),
     'MLP1': MLPClassifier((32, 16), activation='relu', alpha=0, max_iter=25000),
     'MLP2t': MLPClassifier((64, 32, 32), activation='tanh', alpha=0, max_iter=25000),
     'MLP2': MLPClassifier((64, 32, 32), activation='relu', alpha=0, max_iter=25000),
