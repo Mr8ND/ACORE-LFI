@@ -84,7 +84,7 @@ class ACORE:
                                b_train: Union[int, list],
                                b_eval: int,
                                target_loss: Union[str, Callable] = "cross_entropy_loss",
-                               write_df=True):
+                               write_df: Union[str, bool] = False):
 
         if not isinstance(b_train, list):
             b_train = [b_train]
@@ -120,8 +120,8 @@ class ACORE:
         # plot and return df
         sns.lineplot(data=results_df, x="B", y="loss", hue="clf_name", markers=True)
 
-        if write_df:
-            results_df.to_csv('./choose_clf_and_b.csv', index=False)
+        if isinstance(write_df, str):
+            results_df.to_csv(write_df, index=False)
         return results_df
 
     def estimate_tau(self):
@@ -482,14 +482,15 @@ if __name__ == "__main__":
                   obs_sample_size=json_args["obs_sample_size"],
                   debug=debug)
 
-    # acore.choose_OR_clf_settings(classifier_names=eval(json_args["choose_classifiers"]),
-    #                             b_train=eval(json_args["b_train"]),
-    #                             b_eval=json_args["b_eval"],
-    #                             target_loss=json_args["target_loss"],
-    #                             write_df=True)
-    #
+    acore.choose_OR_clf_settings(classifier_names=eval(json_args["choose_classifiers"]),
+                                 b_train=eval(json_args["b_train"]),
+                                 b_eval=json_args["b_eval"],
+                                 target_loss=json_args["target_loss"],
+                                 write_df=os.path.join(argument_parsed.write_path,
+                                                       'all_features_choose_clf_and_b.csv'))
 
-    acore.confidence_band()
-    filename = f'acore_{argument_parsed.which_features}_grid{json_args["t0_grid_granularity"]}_b{b}_bp{json_args["b_prime"]}_a{json_args["alpha"]}_clfOR{classifier_or}_clfQR{json_args["classifier_qr"]}'
-    with open(os.path.join(argument_parsed.write_path, filename), "wb") as file:
-        pickle.dump(acore, file)
+
+    #acore.confidence_band()
+    #filename = f'acore_{argument_parsed.which_features}_grid{json_args["t0_grid_granularity"]}_b{b}_bp{json_args["b_prime"]}_a{json_args["alpha"]}_clfOR{classifier_or}_clfQR{json_args["classifier_qr"]}'
+    #with open(os.path.join(argument_parsed.write_path, filename), "wb") as file:
+    #    pickle.dump(acore, file)
