@@ -5,12 +5,14 @@ from xgboost import XGBClassifier
 from sklearn.neural_network import MLPClassifier
 from sklearn.gaussian_process import GaussianProcessClassifier
 from sklearn.gaussian_process.kernels import RBF
+from sklearn.ensemble import RandomForestClassifier
 
 
 classifier_dict = {
     'Log. Regr.': LogisticRegression(penalty='none', solver='saga', max_iter=10000),
     'QDA': QuadraticDiscriminantAnalysis(),
     'NN': KNeighborsClassifier(),
+    'RF_n200': RandomForestClassifier(n_estimators=200),
     'XGBoost \n (d3, n1000)': XGBClassifier(n_estimators=1000),
     'XGBoost \n (d3, n100)': XGBClassifier(n_estimators=100),
     'XGBoost \n (d3, n500)': XGBClassifier(n_estimators=500),
@@ -48,6 +50,7 @@ classifier_conv_dict = {
     'nn': 'NN',
     'qda': 'QDA',
     'lg': 'Log. Regr.',
+    'rf_n200': 'RF_n200',
     'xgb_d3_n1000': 'XGBoost \n (d3, n1000)',
     'xgb_d3_n500': 'XGBoost \n (d3, n500)',
     'xgb_d3_n100': 'XGBoost \n (d3, n100)',
