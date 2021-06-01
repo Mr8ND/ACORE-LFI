@@ -31,6 +31,7 @@ class ACORE:
                  b: Union[int, None],
                  b_prime: int,
                  alpha: float,
+                 statistics: Union[str, Callable],  # 'bff' or 'acore' for now
                  classifier_or: Union[str, None],
                  classifier_qr: str,
                  obs_sample_size: int,
@@ -57,6 +58,10 @@ class ACORE:
         self.b = b
         self.b_prime = b_prime
         self.alpha = alpha
+        if isinstance(statistics, Callable):
+            # TODO: allow for custom-defined statistics
+            raise NotImplementedError
+        self.statistics = statistics
         if classifier_or is not None:
             self.classifier_or = classifier_dict[classifier_or]
             self.classifier_or_name = classifier_or.replace('\n', '').replace(' ', '-')
@@ -189,7 +194,8 @@ class ACORE:
         tau_obs = []
         # TODO: not general; assumes observed_sample_size == 1
         for theta_0 in self.model.param_grid:
-            tau_obs.append(list(_compute_statistics_single_t0(clf=clf, obs_sample=self.model.obs_x, t0=theta_0,
+            tau_obs.append(list(_compute_statistics_single_t0(name=self.statistics,
+                                                              clf=clf, obs_sample=self.model.obs_x, t0=theta_0,
                                                               d=self.model.d, d_obs=self.model.observed_dims,
                                                               grid_param_t1=self.model.param_grid,
                                                               obs_sample_size=self.obs_sample_size,
@@ -214,11 +220,12 @@ class ACORE:
         theta_matrix, sample_matrix = self.model.sample_msnh(b_prime=self.b_prime, sample_size=self.obs_sample_size)
 
         # Compute the tau values for QR training
-        stats_matrix = np.array([compute_statistics_single_t0(clf=self.classifier_or_fit, d=self.model.d,
-                                                              d_obs=self.model.observed_dims,
-                                                              grid_param_t1=self.model.param_grid,
-                                                              t0=theta_0, obs_sample=sample_matrix[kk, :],
-                                                              obs_sample_size=self.obs_sample_size)
+        stats_matrix = np.array([_compute_statistics_single_t0(name=self.statistics,
+                                                               clf=self.classifier_or_fit, d=self.model.d,
+                                                               d_obs=self.model.observed_dims,
+                                                               grid_param_t1=self.model.param_grid,
+                                                               t0=theta_0, obs_sample=sample_matrix[kk, :],
+                                                               obs_sample_size=self.obs_sample_size)
                                  for kk, theta_0 in tqdm(enumerate(theta_matrix),
                                                          desc='Calculate statistics for critical value')])
         bprime_time = datetime.now()
@@ -478,6 +485,7 @@ if __name__ == "__main__":
                   b=b,
                   b_prime=json_args["b_prime"],
                   alpha=json_args["alpha"],
+                  statistics=json_args["statistics"],
                   classifier_or=classifier_or,
                   classifier_qr=json_args["classifier_qr"],
                   obs_sample_size=json_args["obs_sample_size"],

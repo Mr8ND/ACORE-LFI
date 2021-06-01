@@ -81,6 +81,8 @@ class MuonFeatures:
         self.true_param_low = true_param_low
         self.true_param_high = true_param_high
         self.param_grid = np.linspace(true_param_low, true_param_high, t0_grid_granularity)
+        if reference_g != 'marginal':
+            warnings.warn("bff implementation only valid for marginal reference. Have you made it general?")
         self.reference_g = reference_g
 
         self.param_column = param_column
@@ -152,6 +154,7 @@ class MuonFeatures:
         simulations = data[true_param_idx, self.no_param_mask]
         if using_train_set:
             # avoid reusing same data points until we have unused available
+            # TODO: replace np.delete with row masking (add a False each time a idx is sampled)
             self.train_set_left = np.delete(data, true_param_idx, axis=0)
             if len(self.train_set_left) == 0:
                 self.train_set_left = self.train_set
