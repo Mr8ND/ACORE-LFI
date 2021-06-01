@@ -93,7 +93,7 @@ class ACORE:
         if target_loss == "cross_entropy_loss":
             target_loss = log_loss
         elif isinstance(target_loss, Callable):
-            # TODO: should check it takes y_true and y_pred
+            # TODO: should check it takes y_true and y_pred == predict_proba
             target_loss = target_loss
         else:
             raise ValueError(f"{target_loss} not currently supported")
@@ -102,7 +102,8 @@ class ACORE:
         classifiers = [classifier_dict[classifier_conv_dict[clf]] for clf in classifier_names]
 
         # evaluation set for cross-entropy loss
-        eval_set = self.model.generate_sample(sample_size=b_eval)
+        eval_set = self.model.generate_sample(sample_size=b_eval,
+                                              data=np.hstack((self.model.obs_x, self.model.obs_param.reshape(-1, 1))))
         eval_X, eval_y = eval_set[:, 1:], eval_set[:, 0]
 
         pool_args = zip(product(b_train, zip(classifiers, classifier_names)),

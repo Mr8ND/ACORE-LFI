@@ -8,6 +8,7 @@ classifier_cde_dict = {
     'xgb_d10_n100': ('xgb', {'max_depth': 10, 'n_estimators': 100}),
     'xgb_d10_n250': ('xgb', {'max_depth': 10, 'n_estimators': 100}),
     'RF100': ('rf', {'n_estimators': 100}),
+    'RF200': ('rf', {'n_estimators': 200}),
     'RF250': ('rf', {'n_estimators': 250}),
     'RF500': ('rf', {'n_estimators': 500}),
     'lgb': ('lgb', {'num_leaves': 128, 'learning_rate': 0.1, 'n_estimators': 100,
