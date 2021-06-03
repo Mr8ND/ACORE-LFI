@@ -198,7 +198,7 @@ class ACORE:
                                  c='red', label=f'theta = {eval_X[idx, :self.model.d]}')
                 ax[i][j].legend()
                 label = 'simulator F' if eval_y[idx] == 1 else 'reference G'
-                ax[i][j].title(f'Sample from {label}')
+                ax[i][j].set_title(f'Sample from {label}')
         plt.show()
 
     def estimate_tau(self):
@@ -477,23 +477,23 @@ if __name__ == "__main__":
         debug = False
 
     # get features df
-    if argument_parsed.which_features == "ig":
+    if argument_parsed.which_feat == "ig":
         def integrated_energy_df(data):
             integrated_energy = data.iloc[:, [0, 1]].sum(axis=1)
             output_df = data.iloc[:, [-1]].rename(columns={16: "true_energy"})
             output_df.loc[:, "integrated_energy"] = integrated_energy
             return output_df.iloc[:, [1, 0]]
 
-        simulated_data = integrated_energy_df(pd.read_csv(argument_parsed.simulated_data, sep=" ", header=None))
-        observed_data = integrated_energy_df(pd.read_csv(argument_parsed.observed_data, sep=" ", header=None))
+        simulated_data = integrated_energy_df(pd.read_csv(argument_parsed.sim_data, sep=" ", header=None))
+        observed_data = integrated_energy_df(pd.read_csv(argument_parsed.obs_data, sep=" ", header=None))
 
-    elif argument_parsed.which_features == "v0v1":
-        simulated_data = pd.read_csv(argument_parsed.simulated_data, sep=" ", header=None).loc[:, [0, 1, 16]]
-        observed_data = pd.read_csv(argument_parsed.observed_data, sep=" ", header=None).loc[:, [0, 1, 16]]
+    elif argument_parsed.which_feat == "v0v1":
+        simulated_data = pd.read_csv(argument_parsed.sim_data, sep=" ", header=None).loc[:, [0, 1, 16]]
+        observed_data = pd.read_csv(argument_parsed.obs_data, sep=" ", header=None).loc[:, [0, 1, 16]]
 
     else:  # all features (or full calorimeter data later)
-        simulated_data = pd.read_csv(argument_parsed.simulated_data, sep=" ", header=None)
-        observed_data = pd.read_csv(argument_parsed.observed_data, sep=" ", header=None)
+        simulated_data = pd.read_csv(argument_parsed.sim_data, sep=" ", header=None)
+        observed_data = pd.read_csv(argument_parsed.obs_data, sep=" ", header=None)
 
     print(f"Simulated data shape: {simulated_data.shape}")
     print(f"Observed data shape: {observed_data.shape}")
@@ -534,14 +534,14 @@ if __name__ == "__main__":
                                      b_eval=json_args["b_eval"],
                                      target_loss=json_args["target_loss"],
                                      write_df=os.path.join(argument_parsed.write_path,
-                                                           f'{argument_parsed.which_features}_power_analysis.csv'))
+                                                           f'{argument_parsed.which_feat}_power_analysis.csv'))
     elif argument_parsed.what_to_do == 'likelihood':
         pass
     elif argument_parsed.what_to_do == 'coverage':
         pass
     elif  argument_parsed.what_to_do == 'confidence_band':
         acore.confidence_band()
-        filename = f'acore_{argument_parsed.which_features}_grid{json_args["t0_grid_granularity"]}_b{b}_bp{json_args["b_prime"]}_a{json_args["alpha"]}_clfOR-{classifier_or}_clfQR-{json_args["classifier_qr"]}.pickle'
+        filename = f'acore_{argument_parsed.which_feat}_grid{json_args["t0_grid_granularity"]}_b{b}_bp{json_args["b_prime"]}_a{json_args["alpha"]}_clfOR-{classifier_or}_clfQR-{json_args["classifier_qr"]}.pickle'
         with open(os.path.join(argument_parsed.write_path, filename), "wb") as file:
             pickle.dump(acore, file)
     else:
