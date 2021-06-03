@@ -19,7 +19,7 @@ from sklearn.metrics import log_loss
 from models import muon_features
 from or_classifiers.complete_list import classifier_dict, classifier_conv_dict
 from qr_algorithms.complete_list import classifier_cde_dict
-from utils.functions import train_clf, compute_statistics_single_t0, \
+from utils.functions import train_clf, _train_clf, compute_statistics_single_t0, \
     _compute_statistics_single_t0, choose_clf_settings_subroutine
 from utils.qr_functions import train_qr_algo
 
@@ -94,7 +94,7 @@ class ACORE:
         if not isinstance(b_train, list):
             b_train = [b_train]
         if not isinstance(classifier_names, list):
-            classifiers = [classifier_names]
+            classifier_names = [classifier_names]
         if target_loss == "cross_entropy_loss":
             target_loss = log_loss
         elif isinstance(target_loss, Callable):
@@ -129,6 +129,77 @@ class ACORE:
         if isinstance(write_df, str):
             results_df.to_csv(write_df, index=False)
         return results_df
+
+    def check_estimated_likelihood(self,
+                                   classifier,
+                                   b_train,
+                                   b_eval,
+                                   p_eval_set=0.5,  # 1 -> all samples from F; 0 -> all samples from G
+                                   n_eval_samples=6,
+                                   figsize=(30, 15),
+                                   reuse_train_set=True,
+                                   reuse_eval_set=True,
+                                   save_pickle=True):
+
+        assert n_eval_samples == 6, "make plotting more general for any n_eval_samples"
+
+        if reuse_eval_set:
+            eval_set = self._check_likld_eval_set
+        else:
+            # evaluation set to check likelihood at some observations
+            eval_set = self.model.generate_sample(sample_size=b_eval,
+                                                  p=p_eval_set,
+                                                  data=np.hstack((self.model.obs_x,
+                                                                  self.model.obs_param.reshape(-1, 1))))
+            self._check_likld_eval_set = eval_set
+        eval_X, eval_y = eval_set[:, 1:], eval_set[:, 0]
+
+        if reuse_train_set:
+            clf = _train_clf(sample=self._check_likld_train_set,
+                             sample_size=b_train, clf_model=classifier_dict[classifier_conv_dict[classifier]],
+                             gen_function=self.model.generate_sample, d=self.model.d, clf_name=classifier)
+        else:
+            self._check_likld_train_set, clf = _train_clf(sample=None, sample_size=b_train,
+                                                          clf_model=classifier_dict[classifier_conv_dict[classifier]],
+                                                          gen_function=self.model.generate_sample,
+                                                          d=self.model.d, clf_name=classifier)
+
+        # select n_eval_samples from eval_set, fix x and make theta vary
+        dfs = []
+        sample_idxs = []
+        for _ in tqdm(range(n_eval_samples)):
+            sample_idx = np.random.randint(0, eval_X.shape[0], 1)
+            sample = eval_X[sample_idx, self.model.d:].reshape(-1, self.model.observed_dims)
+            sample_vary_theta = np.hstack((
+                self.model.param_grid.reshape(-1, self.model.d),
+                np.tile(sample, self.model.t0_grid_granularity).reshape(-1, self.model.observed_dims)
+            ))
+            assert sample_vary_theta.shape == (self.model.t0_grid_granularity, self.model.observed_dims + self.model.d)
+            sample_idxs.append(sample_idx)
+
+            est_prob_vec = clf.predict_proba(sample_vary_theta)[:, 1]
+            likelihood = est_prob_vec / 0.5  # TODO: p = 0.5 should be a parameter passed from self.model
+
+            dfs.append(pd.DataFrame({"theta": self.model.param_grid, "likelihood": likelihood}))
+
+        if save_pickle:
+            with open("./likelihood_dfs.pickle", "wb") as f:
+                pickle.dump(dfs, f)
+            with open("./likelihood_sample_idxs.pickle", "wb") as f:
+                pickle.dump(sample_idxs, f)
+
+        # plot
+        fig, ax = plt.subplots(2, 3, figsize=figsize)
+        for i in range(2):
+            for j in range(3):
+                sns.lineplot(data=dfs.pop(), x="theta", y="likelihood", ax=ax[i][j])
+                idx = sample_idxs.pop()
+                ax[i][j].axvline(x=eval_X[idx, :self.model.d],
+                                 c='red', label=f'theta = {eval_X[idx, :self.model.d]}')
+                ax[i][j].legend()
+                label = 'simulator F' if eval_y[idx] == 1 else 'reference G'
+                ax[i][j].title(f'Sample from {label}')
+        plt.show()
 
     def estimate_tau(self):
 
@@ -380,51 +451,17 @@ class ACORE:
         plt.savefig('images/%s/' % model_obj.out_directory + image_name)
         """
 
-"""
-if __name__ == "__main__":
-
-    import sys
-    sys.path.append('../../ada_code/toy_test_acore/')
-    from toy_gauss import generate_data
-
-    data = generate_data(sample_size=10000, beta_a=1, beta_b=1, lower_theta=0, higher_theta=100, scale=5, split=False)
-
-    model = muon_features.MuonFeatures(data=data,
-                         t0_grid_granularity=100,
-                         true_param_low=0,
-                         true_param_high=100,
-                         param_dims=1,
-                         observed_dims=2,
-                         observed_sample_fraction=0.02,
-                         reference_g='marginal',
-                         param_column=0,
-                         debug=True)
-
-    acore = ACORE(model=model,
-                  b=None,
-                  b_prime=5000,
-                  alpha=0.05,
-                  classifier_or=None,
-                  classifier_qr='xgb_d3_n100',
-                  obs_sample_size=1,
-                  debug=True)
-
-    result = acore.choose_OR_clf_settings(classifiers=['MLP', 'QDA', 'Log. Regr.', 'XGBoost \n (d3, n100)'],
-                                          b_train=[500, 3000, 5000],
-                                          b_eval=500,
-                                          target_loss='cross_entropy_loss')
-    print("Done!")
-"""
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('--simulated_data', action="store", type=str,
+    parser.add_argument('--sim_data', action="store", type=str,
                         help='Simulated data to use to train ACORE')
-    parser.add_argument('--observed_data', action="store", type=str,
+    parser.add_argument('--obs_data', action="store", type=str,
                         help='Observed data to use to evaluate ACORE')
-    parser.add_argument('--which_features', action='store', type=str,
+    parser.add_argument('--which_feat', action='store', type=str,
                         help='Which features to use: ig (integrated_energy), v0v1, af (all_features)')
+    parser.add_argument('--what_to_do', action='store', type=str,
+                        help='power, likelihood, coverage, confidence_band')
     parser.add_argument('--json_args', action='store', type=str,
                         help='Json file containing all required args apart from data')
     parser.add_argument('--write_path', action='store', type=str, default="../../acore_runs/",
@@ -491,15 +528,21 @@ if __name__ == "__main__":
                   obs_sample_size=json_args["obs_sample_size"],
                   debug=debug)
 
-    acore.choose_OR_clf_settings(classifier_names=eval(json_args["choose_classifiers"]),
-                                 b_train=eval(json_args["b_train"]),
-                                 b_eval=json_args["b_eval"],
-                                 target_loss=json_args["target_loss"],
-                                 write_df=os.path.join(argument_parsed.write_path,
-                                                       'all_features_choose_clf_and_b.csv'))
-
-
-    #acore.confidence_band()
-    #filename = f'acore_{argument_parsed.which_features}_grid{json_args["t0_grid_granularity"]}_b{b}_bp{json_args["b_prime"]}_a{json_args["alpha"]}_clfOR{classifier_or}_clfQR{json_args["classifier_qr"]}'
-    #with open(os.path.join(argument_parsed.write_path, filename), "wb") as file:
-    #    pickle.dump(acore, file)
+    if argument_parsed.what_to_do == 'power':
+        acore.choose_OR_clf_settings(classifier_names=eval(json_args["choose_classifiers"]),
+                                     b_train=eval(json_args["b_train"]),
+                                     b_eval=json_args["b_eval"],
+                                     target_loss=json_args["target_loss"],
+                                     write_df=os.path.join(argument_parsed.write_path,
+                                                           f'{argument_parsed.which_features}_power_analysis.csv'))
+    elif argument_parsed.what_to_do == 'likelihood':
+        pass
+    elif argument_parsed.what_to_do == 'coverage':
+        pass
+    elif  argument_parsed.what_to_do == 'confidence_band':
+        acore.confidence_band()
+        filename = f'acore_{argument_parsed.which_features}_grid{json_args["t0_grid_granularity"]}_b{b}_bp{json_args["b_prime"]}_a{json_args["alpha"]}_clfOR-{classifier_or}_clfQR-{json_args["classifier_qr"]}.pickle'
+        with open(os.path.join(argument_parsed.write_path, filename), "wb") as file:
+            pickle.dump(acore, file)
+    else:
+        raise NotImplementedError(f"argument_parsed.what_to_do not available")

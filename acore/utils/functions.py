@@ -67,6 +67,65 @@ def train_clf(sample_size, gen_function, clf_model,
     return clf_model
 
 
+def _train_clf(sample, sample_size, gen_function, clf_model,
+              d=1, p=0.5, clf_name='xgboost', cv_nn=5, marginal=False, nn_square_root=False):
+    '''
+    This function works for multiple dimensions of the theta_parameters and the generated sample.
+
+    :param sample_size: value of the number of samples to be generated to train the classifier model
+    :param gen_function: a function to generate samples from the problem at hand
+    :param clf_model: classifier model (sklearn compatible)
+    :param d: the dimensionality of the parameter theta
+    :param p: probability of Algorithm 1: generate a point from G or F_theta
+    :param clf_name: Name of the classifier used
+    :param cv_nn: Number of folds to be used in CV for nearest neighbors
+    :param marginal: Whether or not we should attempt a parametric approximation of the marginal
+    :param nn_square_root: If true, the number of neighbors for NN is chosen with the square root of the data
+    :return: Trained classifier model
+    '''
+
+    if sample is not None:
+        gen_sample = sample
+    else:
+        gen_sample = gen_function(sample_size=sample_size, p=p, marginal=marginal)
+
+    # this line below assumes sample has form (theta, label, X), where both theta and X can be multidimensional
+    #col_selected = [el for el in range(gen_sample.shape[1]) if el != d]
+    #X, y = gen_sample[:, col_selected], gen_sample[:, d]
+    # TODO: make this independent of the position of columns. Or at least error-proof
+    X, y = gen_sample[:, 1:], gen_sample[:, 0]  # my code puts the label first
+
+    if 'nn' in clf_name.lower():
+
+        if nn_square_root:
+            clf_model = KNeighborsClassifier(n_neighbors=int(np.sqrt(X.shape[0])))
+            clf_model.fit(X=X, y=y)
+
+        else:
+            grid_params = {'n_neighbors': np.array(neighbor_range)}
+            # The following lines makes sure that we are not selecting a number of neighbors which is too
+            # large with respect to the data we are going to use for CV
+            grid_params['n_neighbors'] = [x for x in grid_params['n_neighbors'] if x < (X.shape[0]*(1 - (1/cv_nn)))]
+            gs = GridSearchCV(
+                KNeighborsClassifier(),
+                grid_params,
+                verbose=0,
+                cv=cv_nn,
+                n_jobs=-1,
+                scoring='neg_log_loss',
+                iid=True
+            )
+            gs_results = gs.fit(X, y)
+            clf_model = gs_results.best_estimator_
+    else:
+        clf_model.fit(X=X, y=y)
+
+    if sample is not None:
+        return clf_model
+    else:
+        return gen_sample, clf_model
+
+
 def choose_clf_settings_subroutine(b_train,
                                    clf_model,
                                    clf_name,

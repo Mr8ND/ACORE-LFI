@@ -81,6 +81,7 @@ class MuonFeatures:
         self.true_param_low = true_param_low
         self.true_param_high = true_param_high
         self.param_grid = np.linspace(true_param_low, true_param_high, t0_grid_granularity)
+        self.t0_grid_granularity = t0_grid_granularity
         if reference_g != 'marginal':
             warnings.warn("bff implementation only valid for marginal reference. Have you made it general?")
         self.reference_g = reference_g
@@ -143,18 +144,21 @@ class MuonFeatures:
             data = self.train_set_left
         else:
             using_train_set = False
+            warnings.warn("Check this because you might sample the same observations multiple times. No delete here")
         logging.debug(f'sampling {sample_size} simulations from data of shape {data.shape}')
 
         if sample_size > len(data):
             raise ValueError(f'Only {len(data)} simulations available, got {sample_size}')
 
+        # TODO: is this necessary? Think it comes from previous version of implementation
         if not isinstance(true_param_idx, np.ndarray):
-            true_param = np.array([true_param_idx])
+            true_param_idx = np.array([true_param_idx])
 
         simulations = data[true_param_idx, self.no_param_mask]
         if using_train_set:
             # avoid reusing same data points until we have unused available
             # TODO: replace np.delete with row masking (add a False each time a idx is sampled)
+            # TODO: not easy cause true_param_idx changes as train_set_left decreases
             self.train_set_left = np.delete(data, true_param_idx, axis=0)
             if len(self.train_set_left) == 0:
                 self.train_set_left = self.train_set
