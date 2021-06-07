@@ -127,21 +127,26 @@ def _train_clf(sample, sample_size, gen_function, clf_model,
 
 
 def choose_clf_settings_subroutine(b_train,
+                                   train_sample,
                                    clf_model,
                                    clf_name,
+                                   eval_x,
+                                   eval_y,
                                    gen_function,
                                    d,
-                                   eval_X,
-                                   eval_y,
                                    target_loss):
 
-    clf = train_clf(sample_size=b_train, clf_model=clf_model,
-                    gen_function=gen_function, d=d, clf_name=clf_name)
+    clf = _train_clf(sample=train_sample, sample_size=b_train, clf_model=clf_model,
+                     gen_function=gen_function, d=d, clf_name=clf_name)
 
-    est_prob_vec = clf.predict_proba(eval_X)[:, 1]
-    loss_value = target_loss(y_true=eval_y, y_pred=est_prob_vec)
+    train_x, train_y = train_sample[:, 1:], train_sample[:, 0]
+    train_prob_vec = clf.predict_proba(train_x)[:, 1]
+    train_loss = target_loss(y_true=train_y, y_pred=train_prob_vec)
 
-    return [clf_name, b_train, loss_value]
+    eval_prob_vec = clf.predict_proba(eval_x)[:, 1]
+    eval_loss = target_loss(y_true=eval_y, y_pred=eval_prob_vec)
+
+    return [clf_name, b_train, train_loss, eval_loss]
 
 
 def compute_odds(clf, obs_data, theta_val, clf_name='xgboost'):

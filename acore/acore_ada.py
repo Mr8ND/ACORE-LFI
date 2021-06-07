@@ -15,6 +15,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import log_loss
+from sklearn.model_selection import KFold
 
 from models import muon_features
 from or_classifiers.complete_list import classifier_dict, classifier_conv_dict
@@ -37,7 +38,7 @@ class ACORE:
                  obs_sample_size: int,
                  seed: Union[int, None] = None,  # TODO: cascade seed down to methods involving randomness
                  debug: bool = False,
-                 verbose=True):
+                 verbose: bool = True):
         if debug:
             logging_level = logging.DEBUG
         else:
@@ -68,7 +69,10 @@ class ACORE:
         else:
             self.classifier_or = None
             self.classifier_or_name = None
-        self.classifier_qr = classifier_cde_dict[classifier_qr]
+        if classifier_qr is not None:
+            self.classifier_qr = classifier_cde_dict[classifier_qr]
+        else:
+            self.classifier_qr = None
         self.obs_sample_size = obs_sample_size
 
         # utils
@@ -83,14 +87,18 @@ class ACORE:
         self.conf_region = None
         self.conf_band = None
 
-    # TODO: clfs should be trained on overlapping samples or should b_train be used to draw a new sample for each clf?
     def choose_OR_clf_settings(self,
                                classifier_names: Union[str, list], # from complete_list -> classifier_conv_dict
                                b_train: Union[int, list],
-                               b_eval: int,
+                               b_eval: Union[int, None],  # None if doing cross validation
                                target_loss: Union[str, Callable] = "cross_entropy_loss",
-                               write_df: Union[str, bool] = False):
+                               cv_folds: Union[None, int] = 5,
+                               write_df_path: Union[str, None] = None,
+                               save_fig_path: Union[str, None] = None,
+                               processes=None):
 
+        if processes is None:
+            processes = os.cpu_count()
         if not isinstance(b_train, list):
             b_train = [b_train]
         if not isinstance(classifier_names, list):
@@ -106,42 +114,109 @@ class ACORE:
         # convert names to classifiers
         classifiers = [classifier_dict[classifier_conv_dict[clf]] for clf in classifier_names]
 
-        # evaluation set for cross-entropy loss
-        eval_set = self.model.generate_sample(sample_size=b_eval,
-                                              data=np.hstack((self.model.obs_x, self.model.obs_param.reshape(-1, 1))))
-        eval_X, eval_y = eval_set[:, 1:], eval_set[:, 0]
+        if cv_folds is None:
+            with Pool(processes=processes) as pool:
+                train_sets = pool.map(self.model.generate_sample, b_train)
+            # evaluation set for cross-entropy loss
+            eval_set = self.model.generate_sample(sample_size=b_eval,
+                                                  data=np.hstack((self.model.obs_x,
+                                                                  self.model.obs_param.reshape(-1, 1))))
+            eval_x, eval_y = eval_set[:, 1:], eval_set[:, 0]
 
-        pool_args = zip(product(b_train, zip(classifiers, classifier_names)),
-                        repeat(self.model.generate_sample),
-                        repeat(self.model.d),
-                        repeat(eval_X),
-                        repeat(eval_y),
-                        repeat(target_loss))
-        pool_args = [(a,b,c,d,e,f,g,h) for (a,(b,c)),d,e,f,g,h in pool_args]
-        # use all CPUs minus 1 to avoid freezing
-        with Pool(processes=os.cpu_count() - 1) as pool:
+            pool_args = zip(product(zip(b_train, train_sets), zip(classifiers, classifier_names)),
+                            repeat(eval_x),
+                            repeat(eval_y),
+                            repeat(self.model.generate_sample),
+                            repeat(self.model.d),
+                            repeat(target_loss))
+            pool_args = [(a, b, c, d, e, f, g, h, i) for ((a,b), (c, d)), e, f, g, h, i in pool_args]
+        else:
+            # e.g. if 5 folds and b=50k, then total sample size needed is 62500 to loop across folds
+            sample_sizes = [int(b*cv_folds/(cv_folds-1)) for b in b_train]
+            with Pool(processes=processes) as pool:
+                samples = pool.map(self.model.generate_sample, sample_sizes)
+            kfolds_generators = [KFold(n_splits=cv_folds, shuffle=True).split(sample) for sample in samples]
+            pairs_args = []
+            for i, fold_gen in enumerate(kfolds_generators):
+                folds_idxs = list(fold_gen)
+                for train_idx, test_idx in folds_idxs:
+                    assert b_train[i] == len(train_idx)
+                    pairs_args.append((b_train[i],  # b_train
+                                       samples[i][train_idx, :],  # train_set
+                                       samples[i][test_idx, :][:, 1:],  # eval_x
+                                       samples[i][test_idx, :][:, 0]))  # eval_y
+
+            pool_args = zip(product(pairs_args, zip(classifiers, classifier_names)),
+                            repeat(self.model.generate_sample),
+                            repeat(self.model.d),
+                            repeat(target_loss))
+            # move 3rd and 4th args to respect order in choose_clf_settings_subroutine
+            pool_args = [(a, b, e, f, c, d, g, h, i) for ((a, b, c, d), (e, f)), g, h, i in pool_args]
+
+        with Pool(processes=processes) as pool:
             results_df = pd.DataFrame(pool.starmap(choose_clf_settings_subroutine, pool_args),
-                                      columns = ['clf_name', 'B', 'loss'])
+                                      columns=['clf_name', 'B', 'train_loss', 'eval_loss'])
 
-        # plot and return df
-        sns.lineplot(data=results_df, x="B", y="loss", hue="clf_name", markers=True)
+        # plot
+        if cv_folds is None:
+            fig, ax = plt.subplots(1, 2, figsize=(20, 10))
+            sns.lineplot(data=results_df, x="B", y="train_loss", hue="clf_name", markers=True, style="B", ax=ax[0])
+            ax[0].set_title("Cross-entropy training loss")
+            sns.lineplot(data=results_df, x="B", y="eval_loss", hue="clf_name", markers=True, style="B", ax=ax[1])
+            ax[1].set_title("Cross-entropy validation loss")
+        else:
+            # out columns: [B, clf_name, train_loss_mean, train_loss_se, eval_loss_mean, eval_loss_se]
+            results_df = results_df.groupby(["B", "clf_name"]).agg([np.mean, lambda x: np.std(x)/np.sqrt(cv_folds)])\
+                                                              .reset_index().rename(columns={"<lambda_0>": "se"})
+            results_df.columns = ["_".join(col) for col in results_df.columns.to_flat_index()]
+            results_df.rename(columns={"B_": "B", "clf_name_": "clf_name"}, inplace=True)
 
-        if isinstance(write_df, str):
-            results_df.to_csv(write_df, index=False)
+            plot_temp_df = results_df.copy()
+            plot_temp_df.loc[:, "y_train_below"] = plot_temp_df.train_loss_mean - plot_temp_df.train_loss_se
+            plot_temp_df.loc[:, "y_train_above"] = plot_temp_df.train_loss_mean + plot_temp_df.train_loss_se
+            plot_temp_df.loc[:, "y_eval_below"] = plot_temp_df.eval_loss_mean - plot_temp_df.eval_loss_se
+            plot_temp_df.loc[:, "y_eval_above"] = plot_temp_df.eval_loss_mean + plot_temp_df.eval_loss_se
+
+            fig, ax = plt.subplots(1, 2, figsize=(20, 10))
+            sns.lineplot(data=plot_temp_df,
+                         x="B", y="train_loss_mean", hue="clf_name",
+                         markers=True, style="clf_name", ax=ax[0])
+            sns.lineplot(data=plot_temp_df,
+                         x="B", y="eval_loss_mean", hue="clf_name",
+                         markers=True, style="clf_name", ax=ax[1])
+            for clf in classifier_names:
+                clf_df = plot_temp_df.loc[plot_temp_df.clf_name == clf, :]
+                ax[0].fill_between(x=clf_df.B, y1=clf_df.y_train_below, y2=clf_df.y_train_above, alpha=0.2)
+                ax[1].fill_between(x=clf_df.B, y1=clf_df.y_eval_below, y2=clf_df.y_eval_above, alpha=0.2)
+            ax[0].set_title("Cross-entropy training loss")
+            ax[1].set_title("Cross-entropy validation loss")
+
+        if save_fig_path is not None:
+            plt.savefig(save_fig_path, bbox_inches='tight')
+        plt.show()
+
+        if write_df_path is not None:
+            results_df.to_csv(write_df_path, index=False)
         return results_df
 
-    def check_estimated_likelihood(self,
-                                   classifier,
-                                   b_train,
-                                   b_eval,
-                                   p_eval_set=0.5,  # 1 -> all samples from F; 0 -> all samples from G
-                                   n_eval_samples=6,
-                                   figsize=(30, 15),
-                                   reuse_train_set=True,
-                                   reuse_eval_set=True,
-                                   save_pickle=True):
+    def check_estimates(self,
+                        what_to_check,
+                        classifier,
+                        b_train,
+                        b_eval,
+                        p_eval_set=1,  # 1 -> all eval samples from F; 0 -> all eval samples from G
+                        n_eval_samples=6,
+                        figsize=(30, 15),
+                        reuse_train_set=True,
+                        reuse_eval_set=True,
+                        reuse_sample_idxs: Union[bool, list] = False,
+                        save_pickle_path=None,
+                        save_fig_path=None):
 
+        assert (what_to_check in ['likelihood', 'acore', 'bff'])
         assert n_eval_samples == 6, "make plotting more general for any n_eval_samples"
+        if reuse_sample_idxs is not False:
+            assert n_eval_samples == len(reuse_sample_idxs)
 
         if reuse_eval_set:
             eval_set = self._check_likld_eval_set
@@ -167,39 +242,73 @@ class ACORE:
         # select n_eval_samples from eval_set, fix x and make theta vary
         dfs = []
         sample_idxs = []
-        for _ in tqdm(range(n_eval_samples)):
-            sample_idx = np.random.randint(0, eval_X.shape[0], 1)
+        for i in tqdm(range(n_eval_samples)):
+            if reuse_sample_idxs is False:
+                sample_idx = np.random.randint(0, eval_X.shape[0], 1)
+            else:
+                sample_idx = reuse_sample_idxs[i]
             sample = eval_X[sample_idx, self.model.d:].reshape(-1, self.model.observed_dims)
             sample_vary_theta = np.hstack((
                 self.model.param_grid.reshape(-1, self.model.d),
                 np.tile(sample, self.model.t0_grid_granularity).reshape(-1, self.model.observed_dims)
             ))
-            assert sample_vary_theta.shape == (self.model.t0_grid_granularity, self.model.observed_dims + self.model.d)
+            assert sample_vary_theta.shape == (self.model.t0_grid_granularity,
+                                               self.model.observed_dims + self.model.d)
+
             sample_idxs.append(sample_idx)
+            est_prob_vec = clf.predict_proba(sample_vary_theta)
 
-            est_prob_vec = clf.predict_proba(sample_vary_theta)[:, 1]
-            likelihood = est_prob_vec / 0.5  # TODO: p = 0.5 should be a parameter passed from self.model
+            if what_to_check == 'likelihood':
+                if p_eval_set == 0:
+                    p_eval_set = 1e-15
+                estimates = est_prob_vec[:, 1] / p_eval_set
+            elif what_to_check == 'bff':
+                est_prob_vec[est_prob_vec[:, 0] == 0, 0] = 1e-15
+                estimates = est_prob_vec[:, 1] / est_prob_vec[:, 0]
+            else:  # what_to_check == 'acore':
+                estimates = []
+                t1_mask = np.full(self.model.t0_grid_granularity, True)
+                for i, t0 in tqdm(enumerate(self.model.param_grid), desc='Computing acore statistics'):
+                    t1_mask[i] = False
+                    odds_t0 = np.log(est_prob_vec[i, 1]) - np.log(est_prob_vec[i, 0])
+                    odds_t1 = np.log(est_prob_vec[t1_mask, 1]) - np.log(est_prob_vec[t1_mask, 0])
+                    assert odds_t1.shape[0] == (self.model.t0_grid_granularity - 1)
+                    estimates.append(odds_t0 / np.max(odds_t1))
+                    t1_mask[i] = True
+            dfs.append(pd.DataFrame({"theta": self.model.param_grid, f"{what_to_check}": estimates}))
 
-            dfs.append(pd.DataFrame({"theta": self.model.param_grid, "likelihood": likelihood}))
-
-        if save_pickle:
-            with open("./likelihood_dfs.pickle", "wb") as f:
+        if save_pickle_path is not None:
+            with open(os.path.join(save_pickle_path, f"./{what_to_check}_dfs.pickle"), "wb") as f:
                 pickle.dump(dfs, f)
-            with open("./likelihood_sample_idxs.pickle", "wb") as f:
+            with open(os.path.join(save_pickle_path, f"./{what_to_check}_sample_idxs.pickle"), "wb") as f:
                 pickle.dump(sample_idxs, f)
 
         # plot
         fig, ax = plt.subplots(2, 3, figsize=figsize)
         for i in range(2):
             for j in range(3):
-                sns.lineplot(data=dfs.pop(), x="theta", y="likelihood", ax=ax[i][j])
+                sns.lineplot(data=dfs.pop(), x="theta", y=f"{what_to_check}", ax=ax[i][j])
                 idx = sample_idxs.pop()
                 ax[i][j].axvline(x=eval_X[idx, :self.model.d],
                                  c='red', label=f'theta = {eval_X[idx, :self.model.d]}')
                 ax[i][j].legend()
                 label = 'simulator F' if eval_y[idx] == 1 else 'reference G'
                 ax[i][j].set_title(f'Sample from {label}')
+
+        if save_fig_path is not None:
+            plt.savefig(os.path.join(save_fig_path, f'./{what_to_check}.png'), bbox_inches='tight')
         plt.show()
+
+    def evaluate_coverage(self,
+                          classifier,
+                          b: int,
+                          b_prime: Union[int, list],
+                          b_double_prime: int,
+                          b_eval):
+
+        if not isinstance(b_prime, list):
+            b_prime = [b_prime]
+        pass
 
     def estimate_tau(self):
 
@@ -451,7 +560,9 @@ class ACORE:
         plt.savefig('images/%s/' % model_obj.out_directory + image_name)
         """
 
+
 if __name__ == "__main__":
+
     parser = argparse.ArgumentParser()
 
     parser.add_argument('--sim_data', action="store", type=str,
@@ -513,28 +624,48 @@ if __name__ == "__main__":
         b = None
     else:
         b = json_args["b"]
+    if json_args["b_prime"] == "None":
+        b_prime = None
+    else:
+        b_prime = json_args["b_prime"]
+    if json_args["b_eval"] == "None":
+        b_eval = None
+    else:
+        b_eval = json_args["b_eval"]
     if json_args["classifier_or"] == "None":
         classifier_or = None
     else:
         classifier_or = json_args["classifier_or"]
+    if json_args["classifier_qr"] == "None":
+        classifier_qr = None
+    else:
+        classifier_qr = json_args["classifier_qr"]
+    if json_args["cv_folds"] == "None":
+        cv_folds = None
+    else:
+        cv_folds = json_args["cv_folds"]
 
     acore = ACORE(model=model,
                   b=b,
-                  b_prime=json_args["b_prime"],
+                  b_prime=b_prime,
                   alpha=json_args["alpha"],
                   statistics=json_args["statistics"],
                   classifier_or=classifier_or,
-                  classifier_qr=json_args["classifier_qr"],
+                  classifier_qr=classifier_qr,
                   obs_sample_size=json_args["obs_sample_size"],
                   debug=debug)
 
     if argument_parsed.what_to_do == 'power':
         acore.choose_OR_clf_settings(classifier_names=eval(json_args["choose_classifiers"]),
                                      b_train=eval(json_args["b_train"]),
-                                     b_eval=json_args["b_eval"],
+                                     b_eval=b_eval,
                                      target_loss=json_args["target_loss"],
-                                     write_df=os.path.join(argument_parsed.write_path,
-                                                           f'{argument_parsed.which_feat}_power_analysis.csv'))
+                                     cv_folds=cv_folds,
+                                     write_df_path=os.path.join(argument_parsed.write_path,
+                                                                f'{argument_parsed.which_feat}_power_analysis.csv'),
+                                     save_fig_path=os.path.join(argument_parsed.write_path,
+                                                                f'{argument_parsed.which_feat}_power_analysis.png'),
+                                     processes=os.cpu_count()-1)
     elif argument_parsed.what_to_do == 'likelihood':
         pass
     elif argument_parsed.what_to_do == 'coverage':
@@ -545,4 +676,4 @@ if __name__ == "__main__":
         with open(os.path.join(argument_parsed.write_path, filename), "wb") as file:
             pickle.dump(acore, file)
     else:
-        raise NotImplementedError(f"argument_parsed.what_to_do not available")
+        raise NotImplementedError(f"{argument_parsed.what_to_do} not available")
