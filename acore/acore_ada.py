@@ -16,35 +16,40 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import log_loss
 from sklearn.model_selection import KFold
+import statsmodels.api as sm
 
 from models import muon_features
-from or_classifiers.complete_list import classifier_dict, classifier_conv_dict
+from or_classifiers.complete_list import classifier_dict
 from qr_algorithms.complete_list import classifier_cde_dict
-from utils.functions import train_clf, _train_clf, compute_statistics_single_t0, \
-    _compute_statistics_single_t0, choose_clf_settings_subroutine
+from utils.functions import train_clf, compute_statistics_single_t0, _compute_statistics_single_t0, \
+    choose_clf_settings_subroutine
 from utils.qr_functions import train_qr_algo
 
+# TODO: abstract some duplicated or similar code and put it in functions.py (or somewhere else)
 
 class ACORE:
 
     def __init__(self,
                  model: muon_features.MuonFeatures,
                  b: Union[int, None],
-                 b_prime: int,
+                 b_prime: Union[int, None],
+                 b_double_prime: Union[int, None],
                  alpha: float,
                  statistics: Union[str, Callable],  # 'bff' or 'acore' for now
-                 classifier_or: Union[str, None],
-                 classifier_qr: str,
+                 or_classifier_name: Union[str, None],
+                 qr_classifier_name: Union[str, None],
                  obs_sample_size: int,
                  seed: Union[int, None] = None,  # TODO: cascade seed down to methods involving randomness
                  debug: bool = False,
-                 verbose: bool = True):
+                 verbose: bool = True,
+                 processes: int = os.cpu_count() - 1):  # leave one free to avoid freezing
         if debug:
             logging_level = logging.DEBUG
         else:
             logging_level = logging.INFO
 
-        # just to ease debugging
+        # for now, just to ease debugging
+        # TODO: implement a good logging scheme
         logging.basicConfig(
             filename="./debugging.log",
             level=logging_level,
@@ -58,49 +63,47 @@ class ACORE:
         self.model = model
         self.b = b
         self.b_prime = b_prime
+        self.b_double_prime = b_double_prime
         self.alpha = alpha
         if isinstance(statistics, Callable):
             # TODO: allow for custom-defined statistics
             raise NotImplementedError
-        self.statistics = statistics
-        if classifier_or is not None:
-            self.classifier_or = classifier_dict[classifier_or]
-            self.classifier_or_name = classifier_or.replace('\n', '').replace(' ', '-')
         else:
-            self.classifier_or = None
-            self.classifier_or_name = None
-        if classifier_qr is not None:
-            self.classifier_qr = classifier_cde_dict[classifier_qr]
-        else:
-            self.classifier_qr = None
+            self.statistics = statistics
+        self.or_classifier_name = or_classifier_name
+        self.qr_classifier_name = qr_classifier_name
         self.obs_sample_size = obs_sample_size
 
         # utils
         self.verbose = verbose
         self.model.verbose = verbose
         self.time = dict()
+        self.processes = processes
+
+        # temporary
+        self._check_estimates_train_set = None
+        self._check_estimates_eval_set = None
 
         # results
-        self.classifier_or_fit = None
+        self.or_classifier_fit = None
         self.tau_obs = None
-        self.t0_pred = None
-        self.conf_region = None
-        self.conf_band = None
+        self.predicted_quantiles = None
+        self.confidence_region = None
+        self.confidence_band = None  # for multiple observed values
 
-    def choose_OR_clf_settings(self,
-                               classifier_names: Union[str, list], # from complete_list -> classifier_conv_dict
-                               b_train: Union[int, list],
-                               b_eval: Union[int, None],  # None if doing cross validation
+    def choose_or_clf_settings(self,
+                               classifier_names: Union[str, list],  # from complete_list -> classifier_conv_dict
+                               b: Union[int, list],
+                               b_eval: Union[int, None],  # to evaluate loss. None if doing cross validation
                                target_loss: Union[str, Callable] = "cross_entropy_loss",
-                               cv_folds: Union[None, int] = 5,
+                               cv_folds: Union[int, None] = 5,
                                write_df_path: Union[str, None] = None,
-                               save_fig_path: Union[str, None] = None,
-                               processes=None):
+                               save_fig_path: Union[str, None] = None):
 
-        if processes is None:
-            processes = os.cpu_count()
-        if not isinstance(b_train, list):
-            b_train = [b_train]
+        # TODO: samples should be "nested" in order to not waste too much data
+
+        if not isinstance(b, list):
+            b = [b]
         if not isinstance(classifier_names, list):
             classifier_names = [classifier_names]
         if target_loss == "cross_entropy_loss":
@@ -112,36 +115,37 @@ class ACORE:
             raise ValueError(f"{target_loss} not currently supported")
 
         # convert names to classifiers
-        classifiers = [classifier_dict[classifier_conv_dict[clf]] for clf in classifier_names]
+        classifiers = [classifier_dict[clf] for clf in classifier_names]
 
         if cv_folds is None:
-            with Pool(processes=processes) as pool:
-                train_sets = pool.map(self.model.generate_sample, b_train)
+            with Pool(processes=self.processes) as pool:
+                train_sets = pool.map(self.model.generate_sample, b)
             # evaluation set for cross-entropy loss
             eval_set = self.model.generate_sample(sample_size=b_eval,
                                                   data=np.hstack((self.model.obs_x,
                                                                   self.model.obs_param.reshape(-1, 1))))
             eval_x, eval_y = eval_set[:, 1:], eval_set[:, 0]
-
-            pool_args = zip(product(zip(b_train, train_sets), zip(classifiers, classifier_names)),
+            # prepare args for multiprocessing
+            pool_args = zip(product(zip(b, train_sets), zip(classifiers, classifier_names)),
                             repeat(eval_x),
                             repeat(eval_y),
                             repeat(self.model.generate_sample),
                             repeat(self.model.d),
                             repeat(target_loss))
-            pool_args = [(a, b, c, d, e, f, g, h, i) for ((a,b), (c, d)), e, f, g, h, i in pool_args]
+            # unpack inner tuples
+            pool_args = [(x, y, z, w, h, k, j, i, l) for ((x, y), (z, w)), h, k, j, i, l in pool_args]
         else:
             # e.g. if 5 folds and b=50k, then total sample size needed is 62500 to loop across folds
-            sample_sizes = [int(b*cv_folds/(cv_folds-1)) for b in b_train]
-            with Pool(processes=processes) as pool:
+            sample_sizes = [int(b_val*cv_folds/(cv_folds-1)) for b_val in b]
+            with Pool(processes=self.processes) as pool:
                 samples = pool.map(self.model.generate_sample, sample_sizes)
             kfolds_generators = [KFold(n_splits=cv_folds, shuffle=True).split(sample) for sample in samples]
             pairs_args = []
             for i, fold_gen in enumerate(kfolds_generators):
                 folds_idxs = list(fold_gen)
                 for train_idx, test_idx in folds_idxs:
-                    assert b_train[i] == len(train_idx)
-                    pairs_args.append((b_train[i],  # b_train
+                    assert b[i] == len(train_idx)
+                    pairs_args.append((b[i],  # b_train
                                        samples[i][train_idx, :],  # train_set
                                        samples[i][test_idx, :][:, 1:],  # eval_x
                                        samples[i][test_idx, :][:, 0]))  # eval_y
@@ -151,13 +155,14 @@ class ACORE:
                             repeat(self.model.d),
                             repeat(target_loss))
             # move 3rd and 4th args to respect order in choose_clf_settings_subroutine
-            pool_args = [(a, b, e, f, c, d, g, h, i) for ((a, b, c, d), (e, f)), g, h, i in pool_args]
+            pool_args = [(x, y, h, k, z, w, j, i, l) for ((x, y, z, w), (h, k)), j, i, l in pool_args]
 
-        with Pool(processes=processes) as pool:
+        with Pool(processes=self.processes) as pool:
             results_df = pd.DataFrame(pool.starmap(choose_clf_settings_subroutine, pool_args),
                                       columns=['clf_name', 'B', 'train_loss', 'eval_loss'])
 
         # plot
+        # TODO: put plotting facilities in separate module and call them on demand
         if cv_folds is None:
             fig, ax = plt.subplots(1, 2, figsize=(20, 10))
             sns.lineplot(data=results_df, x="B", y="train_loss", hue="clf_name", markers=True, style="B", ax=ax[0])
@@ -200,10 +205,10 @@ class ACORE:
         return results_df
 
     def check_estimates(self,
-                        what_to_check,
-                        classifier,
-                        b_train,
-                        b_eval,
+                        what_to_check: str,  # 'log-likelihood', 'acore', 'log-odds' (bff for n=1 and G=marginal)
+                        classifier_name: str,
+                        b: int,
+                        b_eval: int,
                         p_eval_set=1,  # 1 -> all eval samples from F; 0 -> all eval samples from G
                         n_eval_samples=6,
                         figsize=(30, 15),
@@ -213,31 +218,32 @@ class ACORE:
                         save_pickle_path=None,
                         save_fig_path=None):
 
-        assert (what_to_check in ['likelihood', 'acore', 'bff'])
-        assert n_eval_samples == 6, "make plotting more general for any n_eval_samples"
+        assert (what_to_check in ['log-likelihood', 'acore', 'log-odds'])
+        assert n_eval_samples == 6, "make plotting more general for any n_eval_samples"  # TODO
         if reuse_sample_idxs is not False:
             assert n_eval_samples == len(reuse_sample_idxs)
 
         if reuse_eval_set:
-            eval_set = self._check_likld_eval_set
+            eval_set = self._check_estimates_eval_set
         else:
-            # evaluation set to check likelihood at some observations
+            # evaluation set to check estimates at some observations
             eval_set = self.model.generate_sample(sample_size=b_eval,
                                                   p=p_eval_set,
                                                   data=np.hstack((self.model.obs_x,
                                                                   self.model.obs_param.reshape(-1, 1))))
-            self._check_likld_eval_set = eval_set
+            self._check_estimates_eval_set = eval_set
         eval_X, eval_y = eval_set[:, 1:], eval_set[:, 0]
 
         if reuse_train_set:
-            clf = _train_clf(sample=self._check_likld_train_set,
-                             sample_size=b_train, clf_model=classifier_dict[classifier_conv_dict[classifier]],
-                             gen_function=self.model.generate_sample, d=self.model.d, clf_name=classifier)
+            clf = train_clf(gen_sample=self._check_estimates_train_set,
+                            clf_model=classifier_dict[classifier_name],
+                            gen_function=self.model.generate_sample, d=self.model.d, clf_name=classifier_name)
         else:
-            self._check_likld_train_set, clf = _train_clf(sample=None, sample_size=b_train,
-                                                          clf_model=classifier_dict[classifier_conv_dict[classifier]],
-                                                          gen_function=self.model.generate_sample,
-                                                          d=self.model.d, clf_name=classifier)
+            train_sample = self.model.generate_sample(sample_size=b)
+            self._check_estimates_train_set, clf = train_clf(gen_sample=train_sample,
+                                                             clf_model=classifier_dict[classifier_name],
+                                                             gen_function=self.model.generate_sample,
+                                                             d=self.model.d, clf_name=classifier_name)
 
         # select n_eval_samples from eval_set, fix x and make theta vary
         dfs = []
@@ -258,13 +264,14 @@ class ACORE:
             sample_idxs.append(sample_idx)
             est_prob_vec = clf.predict_proba(sample_vary_theta)
 
-            if what_to_check == 'likelihood':
+            if what_to_check == 'log-likelihood':
                 if p_eval_set == 0:
                     p_eval_set = 1e-15
-                estimates = est_prob_vec[:, 1] / p_eval_set
-            elif what_to_check == 'bff':
+                # log-likelihood
+                estimates = np.log(est_prob_vec[:, 1] / p_eval_set)
+            elif what_to_check == 'log-odds':
                 est_prob_vec[est_prob_vec[:, 0] == 0, 0] = 1e-15
-                estimates = est_prob_vec[:, 1] / est_prob_vec[:, 0]
+                estimates = np.log(est_prob_vec[:, 1] / est_prob_vec[:, 0])
             else:  # what_to_check == 'acore':
                 estimates = []
                 t1_mask = np.full(self.model.t0_grid_granularity, True)
@@ -299,113 +306,199 @@ class ACORE:
             plt.savefig(os.path.join(save_fig_path, f'./{what_to_check}.png'), bbox_inches='tight')
         plt.show()
 
-    def evaluate_coverage(self,
-                          classifier,
-                          b: int,
-                          b_prime: Union[int, list],
-                          b_double_prime: int,
-                          b_eval):
+    def check_coverage(self,
+                       b_prime: Union[int, list],
+                       qr_classifier_names: Union[str, list],
+                       b_double_prime: Union[int, None] = None,
+                       or_classifier_name: Union[str, None] = None,
+                       b: Union[str, None] = None,
+                       clf_estimate_coverage_prob: str = 'logistic_regression'):
 
+        if or_classifier_name is None:
+            if self.or_classifier_name is None:
+                raise ValueError("Please specify an OR classifier to use")
+            else:
+                or_classifier_name = self.or_classifier_name
+        if b is None:
+            if self.b is None:
+                raise ValueError("Please specify B")
+            else:
+                b = self.b
+        if b_double_prime is None:
+            if self.b_double_prime is None:
+                raise ValueError("Please specify B double prime")
+            else:
+                b_double_prime = self.b_double_prime
         if not isinstance(b_prime, list):
             b_prime = [b_prime]
-        pass
+        if not isinstance(qr_classifier_names, list):
+            qr_classifier_names = [qr_classifier_names]
 
-    def estimate_tau(self):
+        # generate observed sample
+        observed_param, observed_x = self.model.sample_msnh(b_double_prime, self.obs_sample_size)
 
-        if self.b is None:
-            raise ValueError("Unspecified B")
-        if self.classifier_or is None:
-            raise ValueError("Unspecified Odds Ratios Classifier and Classifier Name")
+        # estimate observed statistics
+        or_clf_fit, tau_obs = self.estimate_tau(or_classifier_name=or_classifier_name,
+                                                b=b, observed_x=observed_x,
+                                                store_results=False)
 
+        # generate b_prime samples by drawing the biggest one and getting the others as subsets of it
+        sorted_b_prime = sorted(b_prime)
+        max_b_prime_sample = self.model.sample_msnh(b_prime=sorted_b_prime[-1], obs_sample_size=self.obs_sample_size)
+        b_prime_samples = [(max_b_prime_sample[0][:bprime, :], max_b_prime_sample[1][:bprime, :])
+                           for bprime in sorted_b_prime[:-1]] + [max_b_prime_sample]
+        assert all([(theta.shape[0] == sorted_b_prime[idx]) and (x.shape[0] == sorted_b_prime[idx])
+                    for idx, (theta, x) in enumerate(b_prime_samples)])
+
+        # estimate critical values
+        pool_args = [(z, x, y, w, k) for (((x, y), z), w, k) in zip(product(zip(sorted_b_prime, b_prime_samples),
+                                                                            qr_classifier_names),
+                                                                    repeat(or_clf_fit), repeat(False))]
+        with Pool(processes=self.processes) as pool:
+            # list of numpy arrays of alpha quantiles for each theta (one for each combination of args)
+            predicted_quantiles = pool.starmap(self.estimate_critical_value, pool_args)
+
+        # construct confidence *sets* for each observed x; one confidence *band* for each combination of args
+        confidence_bands = [self.compute_confidence_band(tau_obs=tau_obs,
+                                                         predicted_quantiles=predicted_quantiles[idx],
+                                                         store_results=False)
+                            for idx in tqdm(range(len(predicted_quantiles)),
+                                            desc="Computing confidence bands for each QR classifier and B prime")]
+
+        # construct W vector of indicators; one vector for each combination of args
+        w = [np.array([1 if (np.min(confidence_set) <= observed_param[idx] <= np.max(confidence_set)) else 0
+                       for idx, confidence_set in enumerate(confidence_band)])
+             for confidence_band in confidence_bands]
+        assert all([len(w_combination) == self.model.t0_grid_granularity for w_combination in w])
+
+        # estimate conditional coverage
+        if clf_estimate_coverage_prob == "logistic_regression":
+            theta = sm.add_constant(observed_param)
+            fig, ax = plt.subplots(nrows=len(w), ncols=1, figsize=(10, 4*len(w)))
+            color_map = plt.cm.get_cmap("hsv", len(w))
+            for idx, w_combination in enumerate(w):
+                log_reg = sm.Logit(w_combination, theta).fit(full_output=False)
+                probabilities = log_reg.predict(theta)
+                # estimate confidence interval for predicted probabilities -> Delta method
+                cov_matrix = log_reg.cov_params()
+                gradient = (probabilities * (1 - probabilities) * theta.T).T  # matrix of gradients for each obs
+                std_errors = np.array([np.sqrt(np.dot(np.dot(g, cov_matrix), g)) for g in gradient])
+                c = 1  # multiplier for confidence interval
+                upper = np.maximum(0, np.minimum(1, probabilities + std_errors * c))
+                lower = np.maximum(0, np.minimum(1, probabilities - std_errors * c))
+
+                # plot
+                sns.lineplot(x=observed_param.reshape(-1,), y=probabilities, ax=ax[idx], color=color_map(idx),
+                             label=f"B'={pool_args[idx][1]}, QR clf = {pool_args[idx][0]}")
+                sns.lineplot(x=observed_param.reshape(-1,), y=lower, ax=ax[idx], color=color_map(idx))
+                sns.lineplot(x=observed_param.reshape(-1,), y=upper, ax=ax[idx], color=color_map(idx))
+                ax[idx].fill_between(x=observed_param.reshape(-1,), y1=lower, y2=upper, alpha=0.2, color=color_map(idx))
+
+                ax[idx].axhline(y=1 - self.alpha, color='black', linestyle='--', linewidth=2)
+                ax[idx].legend(loc='lower left', fontsize=15)
+                ax[idx].set_ylim([0.5, 1])
+                ax[idx].set_xlim([np.min(observed_param), np.max(observed_param)])
+            plt.show()
+        else:
+            raise NotImplementedError
+
+    def estimate_tau(self,
+                     or_classifier_name: Union[str, None] = None,
+                     b: Union[int, None] = None,
+                     observed_x: Union[np.array, None] = None,
+                     store_results: bool = True):
+
+        if or_classifier_name is None:
+            if self.or_classifier_name is None:
+                raise ValueError("Unspecified Odds Ratios Classifier and Classifier Name")
+            else:
+                or_classifier_name = self.or_classifier_name
+        if b is None:
+            if self.b is None:
+                raise ValueError("Unspecified sample size B")
+            else:
+                b = self.b
+        if observed_x is None:
+            observed_x = self.model.obs_x
+        else:
+            assert observed_x.shape[1] == self.model.observed_dims
+
+        b_sample = self.model.generate_sample(sample_size=b)
         start_time = datetime.now()
-        clf = train_clf(sample_size=self.b,
-                        clf_model=self.classifier_or,
+        clf = train_clf(gen_sample=b_sample,
+                        clf_model=classifier_dict[or_classifier_name],
                         gen_function=self.model.generate_sample,
                         d=self.model.d,
-                        clf_name=self.classifier_or_name)
-        self.classifier_or_fit = clf
+                        clf_name=self.or_classifier_name)
 
         train_time = datetime.now()
         if self.verbose:
-            print('----- %s Trained' % self.classifier_or_name, flush=True)
-            # TODO: not general; assumes observed_sample_size == 1
-            progress_bar = tqdm(total=len(self.model.param_grid)*len(self.model.obs_x),
-                                desc='Calculate Odds')
-
-        tau_obs = []
-        # TODO: should this loop over self.model.obs_x as well? Since my observed_sample_size == 1; assume YES for now
-        for obs_x in self.model.obs_x:
-            tau_obs_x = []
-            # TODO: not general; assumes observed_sample_size == 1
-            for theta_0 in self.model.param_grid:
-                tau_obs_x.append(compute_statistics_single_t0(clf=clf, obs_sample=obs_x, t0=theta_0,
-                                                              d=self.model.d, d_obs=self.model.observed_dims,
-                                                              grid_param_t1=self.model.param_grid,
-                                                              obs_sample_size=self.obs_sample_size))
-                if self.verbose:
-                    progress_bar.update(1)
-            tau_obs.append(tau_obs_x)
-        progress_bar.close()
-        pred_time = datetime.now()
-        self.time['or_training_time'] = (train_time - start_time).total_seconds()
-        self.time['tau_prediction_time'] = (pred_time - train_time).total_seconds()
-        self.tau_obs = tau_obs
-
-    def _estimate_tau(self):
-
-        if self.b is None:
-            raise ValueError("Unspecified B")
-        if self.classifier_or is None:
-            raise ValueError("Unspecified Odds Ratios Classifier and Classifier Name")
-
-        start_time = datetime.now()
-        clf = train_clf(sample_size=self.b,
-                        clf_model=self.classifier_or,
-                        gen_function=self.model.generate_sample,
-                        d=self.model.d,
-                        clf_name=self.classifier_or_name)
-        self.classifier_or_fit = clf
-
-        train_time = datetime.now()
-        if self.verbose:
-            print('----- %s Trained' % self.classifier_or_name, flush=True)
+            print('----- %s Trained' % self.or_classifier_name, flush=True)
             progress_bar = tqdm(total=len(self.model.param_grid), desc='Calculate observed statistics')
 
         tau_obs = []
         # TODO: not general; assumes observed_sample_size == 1
         for theta_0 in self.model.param_grid:
             tau_obs.append(list(_compute_statistics_single_t0(name=self.statistics,
-                                                              clf=clf, obs_sample=self.model.obs_x, t0=theta_0,
+                                                              clf_fit=clf, obs_sample=observed_x, t0=theta_0,
                                                               d=self.model.d, d_obs=self.model.observed_dims,
                                                               grid_param_t1=self.model.param_grid,
                                                               obs_sample_size=self.obs_sample_size,
-                                                              n_samples=self.model.obs_x.shape[0])))
+                                                              n_samples=observed_x.shape[0])))
             if self.verbose:
                 progress_bar.update(1)
         if self.verbose:
             progress_bar.close()
         pred_time = datetime.now()
-        self.time['or_training_time'] = (train_time - start_time).total_seconds()
-        self.time['tau_prediction_time'] = (pred_time - train_time).total_seconds()
 
-        # need a sequence of plausible theta_0 for each obs_x
-        self.tau_obs = list(zip(*tau_obs))
+        # need a sequence of tau_obs (at each plausible theta_0) for each obs_x
+        tau_obs = list(zip(*tau_obs))
+        assert all([len(tau_obs_x) == self.model.t0_grid_granularity for tau_obs_x in tau_obs])
 
-    def estimate_critical_value(self):
+        if store_results:
+            self.or_classifier_fit = clf
+            self.time['or_training_time'] = (train_time - start_time).total_seconds()
+            self.time['tau_prediction_time'] = (pred_time - train_time).total_seconds()
+            self.tau_obs = tau_obs
+        else:
+            return clf, tau_obs
 
-        if self.classifier_or_fit is None:
-            raise ValueError('Classifier for Odds Ratios not trained yet')
+    def estimate_critical_value(self,
+                                qr_classifier_name: Union[str, None] = None,
+                                b_prime: Union[int, None] = None,
+                                b_prime_sample: Union[tuple, None] = None,
+                                or_classifier_fit: Union[object, None] = None,
+                                store_results: bool = True):
 
+        if qr_classifier_name is None:
+            if self.qr_classifier_name is None:
+                raise ValueError("Unspecified Odds Ratios Classifier and Classifier Name")
+            else:
+                qr_classifier_name = self.qr_classifier_name
+        if b_prime is None:
+            if self.b_prime is None:
+                raise ValueError("Unspecified sample size B prime")
+            else:
+                b_prime = self.b_prime
+        if or_classifier_fit is None:
+            if self.or_classifier_fit is None:
+                raise ValueError('Classifier for Odds Ratios not trained yet')
+            else:
+                or_classifier_fit = self.or_classifier_fit
         start_time = datetime.now()
-        theta_matrix, sample_matrix = self.model.sample_msnh(b_prime=self.b_prime, sample_size=self.obs_sample_size)
+        if b_prime_sample is None:
+            theta_matrix, sample_matrix = self.model.sample_msnh(b_prime=b_prime, obs_sample_size=self.obs_sample_size)
+        else:
+            theta_matrix, sample_matrix = b_prime_sample
 
         # Compute the tau values for QR training
         stats_matrix = np.array([_compute_statistics_single_t0(name=self.statistics,
-                                                               clf=self.classifier_or_fit, d=self.model.d,
+                                                               clf_fit=or_classifier_fit, d=self.model.d,
                                                                d_obs=self.model.observed_dims,
                                                                grid_param_t1=self.model.param_grid,
                                                                t0=theta_0, obs_sample=sample_matrix[kk, :],
-                                                               obs_sample_size=self.obs_sample_size)
+                                                               obs_sample_size=self.obs_sample_size,
+                                                               n_samples=sample_matrix[kk, :].shape[0])
                                  for kk, theta_0 in tqdm(enumerate(theta_matrix),
                                                          desc='Calculate statistics for critical value')])
         bprime_time = datetime.now()
@@ -413,21 +506,27 @@ class ACORE:
         if self.verbose:
             print('----- Training Quantile Regression Algorithm', flush=True)
 
-        t0_pred_vec = train_qr_algo(model_obj=self.model, alpha=self.alpha,
-                                    theta_mat=theta_matrix, stats_mat=stats_matrix,
-                                    algo_name=self.classifier_qr[0], learner_kwargs=self.classifier_qr[1],
-                                    pytorch_kwargs=self.classifier_qr[2] if len(self.classifier_qr) > 2 else None,
-                                    prediction_grid=self.model.param_grid)
+        qr_classifier = classifier_cde_dict[qr_classifier_name]
+        predicted_quantiles = train_qr_algo(model_obj=self.model, alpha=self.alpha,
+                                            theta_mat=theta_matrix, stats_mat=stats_matrix,
+                                            algo_name=qr_classifier[0], learner_kwargs=qr_classifier[1],
+                                            pytorch_kwargs=qr_classifier[2] if len(qr_classifier) > 2 else None,
+                                            prediction_grid=self.model.param_grid)
         cutoff_time = datetime.now()
-        self.t0_pred = t0_pred_vec
-        self.time['bprime_time'] = (bprime_time - start_time).total_seconds()
-        self.time['cutoff_time'] = (cutoff_time - bprime_time).total_seconds()
+        if store_results:
+            self.predicted_quantiles = predicted_quantiles
+            self.time['bprime_time'] = (bprime_time - start_time).total_seconds()
+            self.time['cutoff_time'] = (cutoff_time - bprime_time).total_seconds()
+        else:
+            return predicted_quantiles
 
-    def confidence_region(self,
-                          tau_obs: Union[list, None] = None,
-                          conf_band: bool = False):
+    def compute_confidence_region(self,
+                                  tau_obs: Union[list, None] = None,
+                                  predicted_quantiles: Union[np.array, None] = None,
+                                  confidence_band: bool = False,
+                                  store_results: bool = True):
 
-        if self.verbose and not conf_band:
+        if self.verbose and not confidence_band:
             print('----- Creating Confidence Region', flush=True)
 
         if tau_obs is None:
@@ -435,43 +534,72 @@ class ACORE:
                 raise ValueError('Observed Tau statistics not computed yet')
             else:
                 tau_obs = self.tau_obs
-        if self.t0_pred is None:
-            raise ValueError('Critical values not computed yet')
+        if predicted_quantiles is None:
+            if self.predicted_quantiles is None:
+                raise ValueError('Critical values not computed yet')
+            else:
+                predicted_quantiles = self.predicted_quantiles
+        assert len(tau_obs) == len(predicted_quantiles) == len(self.model.param_grid)
 
-        simultaneous_nh_decision = []
-        for jj, t0_pred in enumerate(self.t0_pred):                 # TODO: in acore.py this was <. Typo?
-            simultaneous_nh_decision.append([t0_pred, tau_obs[jj], int(tau_obs[jj] > t0_pred)])
+        confidence_region = []
+        for idx, tau in enumerate(tau_obs):  # we have one (tau_observed, cutoff) for each possible theta
+            if tau > predicted_quantiles[idx]:
+                confidence_region.append(self.model.param_grid[idx])
 
-        confidence_region = [theta for jj, theta in enumerate(self.model.param_grid)
-                             if simultaneous_nh_decision[jj][2]]
-        if conf_band:
-            if self.conf_band is None:
-                self.conf_band = []
-            self.conf_band.append(confidence_region)
+        if confidence_band:
+            if store_results:
+                if self.confidence_band is None:
+                    self.confidence_band = []
+                self.confidence_band.append(confidence_region)
+            else:
+                return confidence_region
         else:
-            self.conf_region = confidence_region
+            if store_results:
+                self.confidence_region = confidence_region
+            else:
+                return confidence_region
 
-    # need one confidence interval for each observed x
-    def confidence_band(self):
-
-        self._estimate_tau()
-        self.estimate_critical_value()
+    def compute_confidence_band(self,
+                                tau_obs: Union[list, None] = None,  # list of lists, one for each observed x
+                                predicted_quantiles: Union[np.array, None] = None,  # one value for each theta
+                                store_results: bool = True):  # one confidence interval for each observed x
 
         if self.verbose:
             print('----- Creating Confidence Band', flush=True)
 
-        if not all((isinstance(elem, list) or isinstance(elem, tuple)) for elem in self.tau_obs):
+        if tau_obs is None:
+            if self.tau_obs is None:
+                raise ValueError('Observed Tau statistics not computed yet')
+            else:
+                tau_obs = self.tau_obs
+        if predicted_quantiles is None:
+            if self.predicted_quantiles is None:
+                raise ValueError('Critical values not computed yet')
+            else:
+                predicted_quantiles = self.predicted_quantiles
+        if not all((isinstance(elem, list) or isinstance(elem, tuple)) for elem in tau_obs):
             raise ValueError('Need a list of lists of tau_obs to compute a confidence set for each observed x')
 
-
-        for tau_obs_x in self.tau_obs:
-            self.confidence_region(tau_obs=tau_obs_x, conf_band=True)
+        if store_results:
+            for tau_obs_x in tau_obs:
+                self.compute_confidence_region(tau_obs=tau_obs_x, predicted_quantiles=predicted_quantiles,
+                                               confidence_band=True, store_results=store_results)
+        else:
+            confidence_band = []
+            for tau_obs_x in tau_obs:
+                confidence_band.append(
+                    self.compute_confidence_region(tau_obs=tau_obs_x, predicted_quantiles=predicted_quantiles,
+                                                   confidence_band=True, store_results=store_results)
+                )
+            return confidence_band
 
     def plot_confidence_band(self, return_df=False):
 
+        # TODO: check this plots the expected thing
+
         df_plot = pd.DataFrame({"obs_theta": self.model.obs_param,
-                                "lower": [min(conf_region) for conf_region in self.conf_band],
-                                "upper": [max(conf_region) for conf_region in self.conf_band]})
+                                "lower": [min(conf_region) for conf_region in self.confidence_band],
+                                "upper": [max(conf_region) for conf_region in self.confidence_band]})
 
         df_plot.loc[:, "covered"] = (df_plot.obs_theta >= df_plot.lower) & (df_plot.obs_theta <= df_plot.upper)
 
@@ -516,51 +644,6 @@ class ACORE:
         if return_df:
             return df_plot.sort_values(by="obs_theta")
 
-        """
-        plot_df = pd.DataFrame.from_dict({
-            'background': t0_grid[:, 0],
-            'signal': t0_grid[:, 1],
-            'tau_statistics': tau_obs,
-            'simul_nh_cutoff': [el[0] for el in simultaneous_nh_decision],
-            'simul_nh_decision': [el[2] for el in simultaneous_nh_decision]
-        })
-    
-        col_vec = ['blue']
-        alpha_vec = [0.75, 0.1]
-        theta_0_plot = plot_df['background'].values
-        theta_1_plot = plot_df['signal'].values
-    
-        plt.figure(figsize=(12, 8))
-        for ii, col in enumerate(['simul_nh_decision']):
-            value_temp = plot_df[col].values
-            marker = np.array(["x" if el else "o" for el in value_temp])
-            unique_markers = set(marker)
-    
-            for j, um in enumerate(unique_markers):
-                mask = marker == um
-                plt.scatter(x=theta_0_plot[mask], y=theta_1_plot[mask],
-                            marker=um, color=col_vec[ii], alpha=alpha_vec[j])
-    
-            plt.scatter(x=t0_val[0], y=t0_val[1], color='r', marker='*', s=500)
-            plt.xlabel('Background', fontsize=25)
-            plt.ylabel('Signal', fontsize=25)
-            plt.xticks(fontsize=20)
-            plt.yticks(fontsize=20)
-            plt.title("2D Confidence Interval, %s Example, B=%s, B'=%s, n=%s%s%s" % (
-                run.title(), b, b_prime, obs_sample_size,
-                '' if not t_star else '\n tau_star',
-                '' if not c_star else ', c_star'), fontsize=25)
-    
-        plt.tight_layout()
-        image_name = '2d_confint_%s_b_%s_bprime_%s_%s_%s_%s_n%s%s%s_%s.pdf' % (
-            run, b, b_prime, t0_val[0], t0_val[1], obs_sample_size, classifier,
-            '' if not t_star else '_taustar',
-            '' if not c_star else '_cstar',
-            datetime.strftime(datetime.today(), '%Y-%m-%d'))
-        plt.savefig('images/%s/' % model_obj.out_directory + image_name)
-        """
-
-
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
@@ -572,7 +655,7 @@ if __name__ == "__main__":
     parser.add_argument('--which_feat', action='store', type=str,
                         help='Which features to use: ig (integrated_energy), v0v1, af (all_features)')
     parser.add_argument('--what_to_do', action='store', type=str,
-                        help='power, likelihood, coverage, confidence_band')
+                        help='power, check_estimates, coverage, confidence_band')
     parser.add_argument('--json_args', action='store', type=str,
                         help='Json file containing all required args apart from data')
     parser.add_argument('--write_path', action='store', type=str, default="../../acore_runs/",
@@ -602,9 +685,11 @@ if __name__ == "__main__":
         simulated_data = pd.read_csv(argument_parsed.sim_data, sep=" ", header=None).loc[:, [0, 1, 16]]
         observed_data = pd.read_csv(argument_parsed.obs_data, sep=" ", header=None).loc[:, [0, 1, 16]]
 
-    else:  # all features (or full calorimeter data later)
+    elif argument_parsed.which_feat == "af":  # all features
         simulated_data = pd.read_csv(argument_parsed.sim_data, sep=" ", header=None)
         observed_data = pd.read_csv(argument_parsed.obs_data, sep=" ", header=None)
+    else:
+        raise NotImplementedError(f"Not implemented for {argument_parsed.which_feat}")
 
     print(f"Simulated data shape: {simulated_data.shape}")
     print(f"Observed data shape: {observed_data.shape}")
@@ -620,59 +705,43 @@ if __name__ == "__main__":
                                        param_column=json_args["param_column"],
                                        debug=debug)
 
-    if json_args["b"] == "None":
-        b = None
-    else:
-        b = json_args["b"]
-    if json_args["b_prime"] == "None":
-        b_prime = None
-    else:
-        b_prime = json_args["b_prime"]
-    if json_args["b_eval"] == "None":
-        b_eval = None
-    else:
-        b_eval = json_args["b_eval"]
-    if json_args["classifier_or"] == "None":
-        classifier_or = None
-    else:
-        classifier_or = json_args["classifier_or"]
-    if json_args["classifier_qr"] == "None":
-        classifier_qr = None
-    else:
-        classifier_qr = json_args["classifier_qr"]
-    if json_args["cv_folds"] == "None":
-        cv_folds = None
-    else:
-        cv_folds = json_args["cv_folds"]
+    b = None if json_args["b"] == "None" else json_args["b"]
+    b_prime = None if json_args["b_prime"] == "None" else json_args["b_prime"]
+    b_double_prime = None if json_args["b_double_prime"] == "None" else json_args["b_double_prime"]
+    b_eval = None if json_args["b_eval"] == "None" else json_args["b_eval"]
+    or_classifier = None if json_args["or_classifier"] == "None" else json_args["or_classifier"]
+    qr_classifier = None if json_args["qr_classifier"] == "None" else json_args["qr_classifier"]
+    cv_folds = None if json_args["cv_folds"] == "None" else json_args["cv_folds"]
 
     acore = ACORE(model=model,
                   b=b,
                   b_prime=b_prime,
+                  b_double_prime=b_double_prime,
                   alpha=json_args["alpha"],
                   statistics=json_args["statistics"],
-                  classifier_or=classifier_or,
-                  classifier_qr=classifier_qr,
+                  or_classifier_name=or_classifier,
+                  qr_classifier_name=qr_classifier,
                   obs_sample_size=json_args["obs_sample_size"],
+                  processes=json_args["processes"],
                   debug=debug)
 
     if argument_parsed.what_to_do == 'power':
-        acore.choose_OR_clf_settings(classifier_names=eval(json_args["choose_classifiers"]),
-                                     b_train=eval(json_args["b_train"]),
+        acore.choose_or_clf_settings(classifier_names=eval(json_args["choose_classifiers"]),
+                                     b=eval(json_args["b_train"]),
                                      b_eval=b_eval,
                                      target_loss=json_args["target_loss"],
                                      cv_folds=cv_folds,
                                      write_df_path=os.path.join(argument_parsed.write_path,
                                                                 f'{argument_parsed.which_feat}_power_analysis.csv'),
                                      save_fig_path=os.path.join(argument_parsed.write_path,
-                                                                f'{argument_parsed.which_feat}_power_analysis.png'),
-                                     processes=os.cpu_count()-1)
-    elif argument_parsed.what_to_do == 'likelihood':
+                                                                f'{argument_parsed.which_feat}_power_analysis.png'))
+    elif argument_parsed.what_to_do == 'check_estimates':
         pass
     elif argument_parsed.what_to_do == 'coverage':
         pass
-    elif  argument_parsed.what_to_do == 'confidence_band':
+    elif argument_parsed.what_to_do == 'confidence_band':
         acore.confidence_band()
-        filename = f'acore_{argument_parsed.which_feat}_grid{json_args["t0_grid_granularity"]}_b{b}_bp{json_args["b_prime"]}_a{json_args["alpha"]}_clfOR-{classifier_or}_clfQR-{json_args["classifier_qr"]}.pickle'
+        filename = f'acore_{argument_parsed.which_feat}_grid{json_args["t0_grid_granularity"]}_b{b}_bp{json_args["b_prime"]}_a{json_args["alpha"]}_clfOR-{or_classifier}_clfQR-{json_args["classifier_qr"]}.pickle'
         with open(os.path.join(argument_parsed.write_path, filename), "wb") as file:
             pickle.dump(acore, file)
     else:

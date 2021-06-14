@@ -15,12 +15,12 @@ def clf_prob_value(clf, x_vec, theta_vec, d, d_obs):
     return prob_mat[:, 1]
 
 
-def train_clf(sample_size, gen_function, clf_model,
+def train_clf(gen_sample, gen_function, clf_model,
               d=1, p=0.5, clf_name='xgboost', cv_nn=5, marginal=False, nn_square_root=False):
     '''
     This function works for multiple dimensions of the theta_parameters and the generated sample.
 
-    :param sample_size: value of the number of samples to be generated to train the classifier model
+    :param gen_sample: sample used to train the OR classifier
     :param gen_function: a function to generate samples from the problem at hand
     :param clf_model: classifier model (sklearn compatible)
     :param d: the dimensionality of the parameter theta
@@ -32,11 +32,9 @@ def train_clf(sample_size, gen_function, clf_model,
     :return: Trained classifier model
     '''
 
-    gen_sample = gen_function(sample_size=sample_size, p=p, marginal=marginal)
-
     # this line below assumes sample has form (theta, label, X), where both theta and X can be multidimensional
-    #col_selected = [el for el in range(gen_sample.shape[1]) if el != d]
-    #X, y = gen_sample[:, col_selected], gen_sample[:, d]
+    # col_selected = [el for el in range(gen_sample.shape[1]) if el != d]
+    # X, y = gen_sample[:, col_selected], gen_sample[:, d]
     # TODO: make this independent of the position of columns. Or at least error-proof
     X, y = gen_sample[:, 1:], gen_sample[:, 0]  # my code puts the label first
 
@@ -64,66 +62,8 @@ def train_clf(sample_size, gen_function, clf_model,
             clf_model = gs_results.best_estimator_
     else:
         clf_model.fit(X=X, y=y)
+
     return clf_model
-
-
-def _train_clf(sample, sample_size, gen_function, clf_model,
-              d=1, p=0.5, clf_name='xgboost', cv_nn=5, marginal=False, nn_square_root=False):
-    '''
-    This function works for multiple dimensions of the theta_parameters and the generated sample.
-
-    :param sample_size: value of the number of samples to be generated to train the classifier model
-    :param gen_function: a function to generate samples from the problem at hand
-    :param clf_model: classifier model (sklearn compatible)
-    :param d: the dimensionality of the parameter theta
-    :param p: probability of Algorithm 1: generate a point from G or F_theta
-    :param clf_name: Name of the classifier used
-    :param cv_nn: Number of folds to be used in CV for nearest neighbors
-    :param marginal: Whether or not we should attempt a parametric approximation of the marginal
-    :param nn_square_root: If true, the number of neighbors for NN is chosen with the square root of the data
-    :return: Trained classifier model
-    '''
-
-    if sample is not None:
-        gen_sample = sample
-    else:
-        gen_sample = gen_function(sample_size=sample_size, p=p, marginal=marginal)
-
-    # this line below assumes sample has form (theta, label, X), where both theta and X can be multidimensional
-    #col_selected = [el for el in range(gen_sample.shape[1]) if el != d]
-    #X, y = gen_sample[:, col_selected], gen_sample[:, d]
-    # TODO: make this independent of the position of columns. Or at least error-proof
-    X, y = gen_sample[:, 1:], gen_sample[:, 0]  # my code puts the label first
-
-    if 'nn' in clf_name.lower():
-
-        if nn_square_root:
-            clf_model = KNeighborsClassifier(n_neighbors=int(np.sqrt(X.shape[0])))
-            clf_model.fit(X=X, y=y)
-
-        else:
-            grid_params = {'n_neighbors': np.array(neighbor_range)}
-            # The following lines makes sure that we are not selecting a number of neighbors which is too
-            # large with respect to the data we are going to use for CV
-            grid_params['n_neighbors'] = [x for x in grid_params['n_neighbors'] if x < (X.shape[0]*(1 - (1/cv_nn)))]
-            gs = GridSearchCV(
-                KNeighborsClassifier(),
-                grid_params,
-                verbose=0,
-                cv=cv_nn,
-                n_jobs=-1,
-                scoring='neg_log_loss',
-                iid=True
-            )
-            gs_results = gs.fit(X, y)
-            clf_model = gs_results.best_estimator_
-    else:
-        clf_model.fit(X=X, y=y)
-
-    if sample is not None:
-        return clf_model
-    else:
-        return gen_sample, clf_model
 
 
 def choose_clf_settings_subroutine(b_train,
@@ -136,8 +76,8 @@ def choose_clf_settings_subroutine(b_train,
                                    d,
                                    target_loss):
 
-    clf = _train_clf(sample=train_sample, sample_size=b_train, clf_model=clf_model,
-                     gen_function=gen_function, d=d, clf_name=clf_name)
+    clf = train_clf(gen_sample=train_sample, clf_model=clf_model,
+                    gen_function=gen_function, d=d, clf_name=clf_name)
 
     train_x, train_y = train_sample[:, 1:], train_sample[:, 0]
     train_prob_vec = clf.predict_proba(train_x)[:, 1]
@@ -265,9 +205,9 @@ def compute_statistics_single_t0(clf, obs_sample, obs_sample_size, t0, grid_para
 
 
 def _compute_statistics_single_t0(name,
-                                  clf,
+                                  clf_fit,
                                   obs_sample,
-                                  obs_sample_size,  # size of observed sample from same theta
+                                  obs_sample_size,  # size of observed sample from same theta -> TODO: ambiguous names
                                   t0, grid_param_t1,
                                   d=1, d_obs=1,
                                   n_samples=1):  # construct conf set for each (> 1 if conf band, i.e. all together)
@@ -286,7 +226,7 @@ def _compute_statistics_single_t0(name,
             np.repeat(t0, n_samples).reshape(-1, d),
             obs_sample.reshape(-1, d_obs)
         ))
-        prob_mat = clf.predict_proba(predict_mat)
+        prob_mat = clf_fit.predict_proba(predict_mat)
         prob_mat[prob_mat == 0] = 1e-15
         assert prob_mat.shape == (n_samples, 2)
 
@@ -317,7 +257,7 @@ def _compute_statistics_single_t0(name,
         assert predict_mat.shape == (n_samples * obs_sample_size * n_t1 + n_samples * obs_sample_size, d + d_obs)
 
         # Do the prediction step
-        prob_mat = clf.predict_proba(predict_mat)
+        prob_mat = clf_fit.predict_proba(predict_mat)
         prob_mat[prob_mat == 0] = 1e-15
         assert prob_mat.shape == (n_samples * obs_sample_size * n_t1 + n_samples * obs_sample_size, 2)
 

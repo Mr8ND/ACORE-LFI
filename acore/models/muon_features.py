@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 import logging
 import warnings
-from typing import Iterable, Union
+from typing import Union
 from tqdm import tqdm
 
 
@@ -208,12 +208,12 @@ class MuonFeatures:
             self.sampling_progress_bar = None
         return out
 
-    def sample_msnh(self, b_prime: int, sample_size: int, data: Union[np.ndarray, None] = None):
+    def sample_msnh(self, b_prime: int, obs_sample_size: int, data: Union[np.ndarray, None] = None):
 
         # TODO: use of label-dependent sampling will not work if obs_sample_size > 1.
         #  Will need multiple rows with same param and different obs (?)
-        # TODO: this can be done without label-dependent sampling. Simply sample B' obs from data
-        if sample_size > 1:
+        # TODO: this can be done without label-dependent sampling. Simply sample B' obs from data with p=1
+        if obs_sample_size > 1:
             raise NotImplementedError("Label-dependent sampling will not work if obs_sample_size > 1. See TODO above")
 
         logging.info("Sampling for many simple null hypothesis")
