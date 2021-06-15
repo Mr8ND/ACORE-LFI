@@ -1,3 +1,5 @@
+from multiprocessing import set_start_method
+set_start_method("spawn")
 import logging
 from datetime import datetime
 from tqdm import tqdm
@@ -615,6 +617,8 @@ class ACORE:
 
         # plot
         fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(13, 13))
+
+        # TODO: add plot of expected size and type I error dividing theta in bins
 
         # draw bisector to have a reference; give a little bit of offset at the corners (-+1)
         offset = 0.01*(self.model.true_param_high - self.model.true_param_low)
