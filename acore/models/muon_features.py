@@ -219,7 +219,7 @@ class MuonFeatures:
         logging.info("Sampling for many simple null hypothesis")
 
         if self.verbose:
-            self.sampling_progress_bar = tqdm(total=b_prime, desc='Sampling %s simulations' % b_prime)
+            self.sampling_progress_bar = tqdm(total=b_prime, desc='Sampling %s simulations' % str(b_prime))
 
         # need to sample one at a time -> label dependent sampling with label always equal to 1
         labels = np.random.binomial(n=1, p=1, size=b_prime).reshape(-1, 1)
