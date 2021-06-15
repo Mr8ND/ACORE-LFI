@@ -4,7 +4,7 @@ from tqdm import tqdm
 from typing import Union, Callable
 import warnings
 from itertools import product, repeat
-from multiprocessing import Pool, get_context
+from multiprocessing import Pool
 import os
 import argparse
 import json
@@ -312,7 +312,8 @@ class ACORE:
                        b_double_prime: Union[int, None] = None,
                        or_classifier_name: Union[str, None] = None,
                        b: Union[str, None] = None,
-                       clf_estimate_coverage_prob: str = 'logistic_regression'):
+                       clf_estimate_coverage_prob: str = 'logistic_regression',
+                       save_fig_path=None):
 
         if or_classifier_name is None:
             if self.or_classifier_name is None:
@@ -354,7 +355,7 @@ class ACORE:
         pool_args = [(z, x, y, w, k) for (((x, y), z), w, k) in zip(product(zip(sorted_b_prime, b_prime_samples),
                                                                             qr_classifier_names),
                                                                     repeat(or_clf_fit), repeat(False))]
-        with get_context("spawn").Pool(processes=self.processes) as pool:
+        with Pool(processes=self.processes) as pool:
             # list of numpy arrays of alpha quantiles for each theta (one for each combination of args)
             predicted_quantiles = pool.starmap(self.estimate_critical_value, pool_args)
 
@@ -398,6 +399,9 @@ class ACORE:
                 ax[idx].legend(loc='lower left', fontsize=15)
                 ax[idx].set_ylim([0.5, 1])
                 ax[idx].set_xlim([np.min(observed_param), np.max(observed_param)])
+
+            if save_fig_path is not None:
+                plt.savefig(save_fig_path, bbox_inches="tight")
             plt.show()
         else:
             raise NotImplementedError
@@ -740,7 +744,10 @@ if __name__ == "__main__":
     elif argument_parsed.what_to_do == 'check_estimates':
         pass
     elif argument_parsed.what_to_do == 'coverage':
-        pass
+        filename = f'{argument_parsed.which_feat}_check_coverage.png'
+        acore.check_coverage(b_prime=eval(json_args["b_prime_train"]),
+                             qr_classifier_names=eval(json_args["choose_classifiers"]),
+                             save_fig_path=os.path.join(argument_parsed.write_path, filename))
     elif argument_parsed.what_to_do == 'confidence_band':
         acore.confidence_band()
         filename = f'acore_{argument_parsed.which_feat}_grid{json_args["t0_grid_granularity"]}_b{b}_bp{json_args["b_prime"]}_a{json_args["alpha"]}_clfOR-{or_classifier}_clfQR-{json_args["classifier_qr"]}.pickle'
