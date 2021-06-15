@@ -1,12 +1,10 @@
-from multiprocessing import set_start_method
-set_start_method("spawn")
 import logging
 from datetime import datetime
 from tqdm import tqdm
 from typing import Union, Callable
 import warnings
 from itertools import product, repeat
-from multiprocessing import Pool
+from multiprocessing import Pool, get_context
 import os
 import argparse
 import json
@@ -356,7 +354,7 @@ class ACORE:
         pool_args = [(z, x, y, w, k) for (((x, y), z), w, k) in zip(product(zip(sorted_b_prime, b_prime_samples),
                                                                             qr_classifier_names),
                                                                     repeat(or_clf_fit), repeat(False))]
-        with Pool(processes=self.processes) as pool:
+        with get_context("spawn").Pool(processes=self.processes) as pool:
             # list of numpy arrays of alpha quantiles for each theta (one for each combination of args)
             predicted_quantiles = pool.starmap(self.estimate_critical_value, pool_args)
 
