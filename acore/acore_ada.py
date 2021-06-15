@@ -27,6 +27,7 @@ from utils.qr_functions import train_qr_algo
 
 # TODO: abstract some duplicated or similar code and put it in functions.py (or somewhere else)
 
+
 class ACORE:
 
     def __init__(self,
@@ -395,7 +396,7 @@ class ACORE:
 
                 # plot
                 sns.lineplot(x=observed_param.reshape(-1,), y=probabilities, ax=ax[idx], color=color_map(idx),
-                             label=f"B'={pool_args[idx][1]}, QR clf = {pool_args[idx][0]}")
+                             label=f"B'={args[idx][1]}, QR clf = {args[idx][0]}")
                 sns.lineplot(x=observed_param.reshape(-1,), y=lower, ax=ax[idx], color=color_map(idx))
                 sns.lineplot(x=observed_param.reshape(-1,), y=upper, ax=ax[idx], color=color_map(idx))
                 ax[idx].fill_between(x=observed_param.reshape(-1,), y1=lower, y2=upper, alpha=0.2, color=color_map(idx))
