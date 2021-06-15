@@ -118,15 +118,19 @@ class ACORE:
         classifiers = [classifier_dict[clf] for clf in classifier_names]
 
         if cv_folds is None:
-            with Pool(processes=self.processes) as pool:
-                train_sets = pool.map(self.model.generate_sample, b)
+            # generate b_samples by drawing the biggest one and getting the others as subsets of it
+            sorted_b = sorted(b)
+            max_b_sample = self.model.generate_sample(sample_size=sorted_b[-1])
+            train_sets = [max_b_sample[:b_, :] for b_ in sorted_b[:-1]] + [max_b_sample]
+            assert all([sample.shape[0] == sorted_b[idx] for idx, sample in enumerate(train_sets)])
+
             # evaluation set for cross-entropy loss
             eval_set = self.model.generate_sample(sample_size=b_eval,
                                                   data=np.hstack((self.model.obs_x,
                                                                   self.model.obs_param.reshape(-1, 1))))
             eval_x, eval_y = eval_set[:, 1:], eval_set[:, 0]
             # prepare args for multiprocessing
-            pool_args = zip(product(zip(b, train_sets), zip(classifiers, classifier_names)),
+            pool_args = zip(product(zip(sorted_b, train_sets), zip(classifiers, classifier_names)),
                             repeat(eval_x),
                             repeat(eval_y),
                             repeat(self.model.generate_sample),
@@ -136,16 +140,18 @@ class ACORE:
             pool_args = [(x, y, z, w, h, k, j, i, l) for ((x, y), (z, w)), h, k, j, i, l in pool_args]
         else:
             # e.g. if 5 folds and b=50k, then total sample size needed is 62500 to loop across folds
-            sample_sizes = [int(b_val*cv_folds/(cv_folds-1)) for b_val in b]
-            with Pool(processes=self.processes) as pool:
-                samples = pool.map(self.model.generate_sample, sample_sizes)
+            sample_sizes = [int(b_val*cv_folds/(cv_folds-1)) for b_val in sorted(b)]
+            max_b_sample = self.model.generate_sample(sample_size=sample_sizes[-1])
+            samples = [max_b_sample[:sample_size, :] for sample_size in sample_sizes[:-1]] + [max_b_sample]
+            assert all([sample.shape[0] == sample_sizes[idx] for idx, sample in enumerate(samples)])
+
             kfolds_generators = [KFold(n_splits=cv_folds, shuffle=True).split(sample) for sample in samples]
             pairs_args = []
             for i, fold_gen in enumerate(kfolds_generators):
                 folds_idxs = list(fold_gen)
                 for train_idx, test_idx in folds_idxs:
-                    assert b[i] == len(train_idx)
-                    pairs_args.append((b[i],  # b_train
+                    assert sorted(b)[i] == len(train_idx)
+                    pairs_args.append((sorted(b)[i],  # b_train
                                        samples[i][train_idx, :],  # train_set
                                        samples[i][test_idx, :][:, 1:],  # eval_x
                                        samples[i][test_idx, :][:, 0]))  # eval_y
@@ -352,12 +358,11 @@ class ACORE:
                     for idx, (theta, x) in enumerate(b_prime_samples)])
 
         # estimate critical values
-        pool_args = [(z, x, y, w, k) for (((x, y), z), w, k) in zip(product(zip(sorted_b_prime, b_prime_samples),
-                                                                            qr_classifier_names),
-                                                                    repeat(or_clf_fit), repeat(False))]
-        with Pool(processes=self.processes) as pool:
-            # list of numpy arrays of alpha quantiles for each theta (one for each combination of args)
-            predicted_quantiles = pool.starmap(self.estimate_critical_value, pool_args)
+        args = [(z, x, y, w, k) for (((x, y), z), w, k) in zip(product(zip(sorted_b_prime, b_prime_samples),
+                                                                       qr_classifier_names),
+                                                               repeat(or_clf_fit), repeat(False))]
+        # list of numpy arrays of alpha quantiles for each theta (one for each combination of args)
+        predicted_quantiles = [self.estimate_critical_value(*args_combination) for args_combination in args]
 
         # construct confidence *sets* for each observed x; one confidence *band* for each combination of args
         confidence_bands = [self.compute_confidence_band(tau_obs=tau_obs,
