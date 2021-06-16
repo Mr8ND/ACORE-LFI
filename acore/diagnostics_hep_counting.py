@@ -22,10 +22,10 @@ model_dict = {
 }
 
 
-def main(d_obs, run, b, b_prime, alpha, t0_val, sample_size_obs, classifier, classifier_cde, test_statistic,
-         alternative_norm, diagnostic_sample=2000, monte_carlo_samples=500, debug=False, seed=7,
-         size_marginal=1000, empirical_marginal=True, benchmark=1, nuisance_parameters=False, num_grid=11,
-         marginal=False, num_acore_grid=101):
+def main(run, b, b_prime, alpha, sample_size_obs, classifier, classifier_cde, test_statistic,
+         diagnostic_sample=2000, monte_carlo_samples=500, debug=False, seed=7,
+         empirical_marginal=True, nuisance_parameters=False, num_grid=11,
+         num_acore_grid=101):
 
     # Changing values if debugging
     b = b if not debug else 100
@@ -39,9 +39,8 @@ def main(d_obs, run, b, b_prime, alpha, t0_val, sample_size_obs, classifier, cla
     # We pass as inputs all arguments necessary for all classes, but some of them will not be picked up if they are
     # not necessary for a specific class
     model_obj = model_dict[run](
-        d_obs=d_obs, marginal=marginal, size_marginal=size_marginal, empirical_marginal=empirical_marginal,
-        true_param=t0_val, alt_mu_norm=alternative_norm, nuisance_parameters=nuisance_parameters,
-        benchmark=benchmark, num_acore_grid=num_acore_grid, num_pred_grid=num_grid
+        empirical_marginal=empirical_marginal, nuisance_parameters=nuisance_parameters,
+        num_acore_grid=num_acore_grid, num_pred_grid=num_grid
     )
 
     # Get the correct functions
@@ -53,8 +52,6 @@ def main(d_obs, run, b, b_prime, alpha, t0_val, sample_size_obs, classifier, cla
 
     # Generate a series of parameter values for INFERNO
     param_mat = gen_param_fun(sample_size=diagnostic_sample)
-    param_mat[:, 1] = 100.0
-    param_mat[:, 2] = 0.75
 
     # Generate observation from those values
     sample_mat = np.apply_along_axis(
@@ -164,16 +161,14 @@ def main(d_obs, run, b, b_prime, alpha, t0_val, sample_size_obs, classifier, cla
         'alpha': alpha,
         'diagnostic_sample': diagnostic_sample,
         'run': run,
-        'benchmark': benchmark,
         'nuisance': model_obj.nuisance_flag,
         'test_statistic': test_statistic,
         'in_confint_asymptotic': in_confint_asymptotic
     }
     out_dir = 'sims/classifier_power_multid/'
-    out_filename = 'hepcounting_b%s_diagnostic_%steststats_%sB_%sBprime_%sseed_alpha%s_sampleobs%s_t0val%s_%s_%s.pkl' % (
-        benchmark, test_statistic, b, b_prime, seed,
-        str(alpha).replace('.', '-'), sample_size_obs,
-        str(t0_val).replace('.', '-'), classifier_cde,
+    out_filename = 'hepcounting_diagnostic_%steststats_%sB_%sBprime_%sseed_alpha%s_sampleobs%s_%s_%s.pkl' % (
+        test_statistic, b, b_prime, seed,
+        str(alpha).replace('.', '-'), sample_size_obs, classifier_cde,
         datetime.strftime(datetime.today(), '%Y-%m-%d-%H-%M')
     )
     pickle.dump(out_dict, open(out_dir + out_filename, 'wb'))
@@ -183,21 +178,14 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--seed', action="store", type=int, default=7,
                         help='Random State')
-    parser.add_argument('--d_obs', action="store", type=int, default=2,
-                        help='Dimensionality of the observed data (feature space)')
     parser.add_argument('--b', action="store", type=int, default=5000,
                         help='Sample size to train the classifier for calculating odds')
     parser.add_argument('--b_prime', action="store", type=int, default=1000,
                         help='Sample size to train the quantile regression algorithm')
-    parser.add_argument('--marginal', action='store_true', default=False,
-                        help='Whether we are using a parametric approximation of the marginal or'
-                             'the baseline reference G')
     parser.add_argument('--empirical_marginal', action='store_true', default=False,
                         help='Whether we are sampling directly from the empirical marginal for G')
     parser.add_argument('--alpha', action="store", type=float, default=0.1,
                         help='Statistical confidence level')
-    parser.add_argument('--t0_val', action="store", type=float, default=5.0,
-                        help='True param value')
     parser.add_argument('--run', action="store", type=str, default='hep_counting',
                         help='Problem to run')
     parser.add_argument('--debug', action='store_true', default=False,
@@ -213,14 +201,8 @@ if __name__ == '__main__':
                         help='Classifier for quantile regression')
     parser.add_argument('--classifier', action="store", type=str, default='QDA',
                         help='Classifier for learning odds')
-    parser.add_argument('--size_marginal', action="store", type=int, default=1000,
-                        help='Sample size of the actual marginal distribution, if marginal is True.')
     parser.add_argument('--monte_carlo_samples', action="store", type=int, default=1000,
                         help='Sample size for the calculation of the OR loss.')
-    parser.add_argument('--alt_norm', action="store", type=float, default=5,
-                        help='Norm of the mean under the alternative -- to be used for toy_mvn_multid_simplehyp only.')
-    parser.add_argument('--benchmark', action="store", type=int, default=1,
-                        help='Benchmark to use for the INFERNO class.')
     parser.add_argument('--nuisance', action='store_true', default=False,
                         help='If true, uses nuisance parameters if available.')
     parser.add_argument('--diagnostic_sample', action="store", type=int, default=2000,
@@ -231,27 +213,10 @@ if __name__ == '__main__':
                         help='Number of grid points for the grid over which to evaluate ACORE maximization grid.')
     argument_parsed = parser.parse_args()
 
-    main(
-        d_obs=argument_parsed.d_obs,
-        run=argument_parsed.run,
-        marginal=argument_parsed.marginal,
-        empirical_marginal=argument_parsed.empirical_marginal,
-        b=argument_parsed.b,  # b_val,
-        b_prime=argument_parsed.b_prime,
-        alpha=argument_parsed.alpha,
-        t0_val=argument_parsed.t0_val,
-        debug=argument_parsed.debug,
-        sample_size_obs=argument_parsed.sample_size_obs,
-        seed=argument_parsed.seed,
-        test_statistic=argument_parsed.test_statistic,
-        classifier_cde=argument_parsed.class_cde,
-        size_marginal=argument_parsed.size_marginal,
-        monte_carlo_samples=argument_parsed.monte_carlo_samples,
-        alternative_norm=argument_parsed.alt_norm,
-        benchmark=argument_parsed.benchmark,
-        nuisance_parameters=argument_parsed.nuisance,
-        classifier=argument_parsed.classifier,
-        diagnostic_sample=argument_parsed.diagnostic_sample,
-        num_grid=argument_parsed.num_grid,
-        num_acore_grid=argument_parsed.num_acore_grid
-    )
+    main(run=argument_parsed.run, b=argument_parsed.b, b_prime=argument_parsed.b_prime, alpha=argument_parsed.alpha,
+         sample_size_obs=argument_parsed.sample_size_obs, classifier=argument_parsed.classifier,
+         classifier_cde=argument_parsed.class_cde, test_statistic=argument_parsed.test_statistic,
+         diagnostic_sample=argument_parsed.diagnostic_sample, monte_carlo_samples=argument_parsed.monte_carlo_samples,
+         debug=argument_parsed.debug, seed=argument_parsed.seed, empirical_marginal=argument_parsed.empirical_marginal,
+         nuisance_parameters=argument_parsed.nuisance, num_grid=argument_parsed.num_grid,
+         num_acore_grid=argument_parsed.num_acore_grid)
