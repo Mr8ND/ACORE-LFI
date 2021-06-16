@@ -326,7 +326,8 @@ class ACORE:
                        or_classifier_name: Union[str, None] = None,
                        b: Union[str, None] = None,
                        clf_estimate_coverage_prob: str = 'logistic_regression',
-                       save_fig_path=None):
+                       save_fig_path=None,
+                       return_df=False):
 
         if or_classifier_name is None:
             if self.or_classifier_name is None:
@@ -385,6 +386,7 @@ class ACORE:
         assert all([len(w_combination) == self.model.t0_grid_granularity for w_combination in w])
 
         # estimate conditional coverage
+        dfs_plot = []
         if clf_estimate_coverage_prob == "logistic_regression":
             theta = sm.add_constant(observed_param)
             fig, ax = plt.subplots(nrows=len(w), ncols=1, figsize=(10, 4*len(w)))
@@ -401,19 +403,30 @@ class ACORE:
                 lower = np.maximum(0, np.minimum(1, probabilities - std_errors * c))
 
                 # plot
-                sns.lineplot(x=observed_param.reshape(-1,), y=probabilities, ax=ax[idx], color=color_map(idx),
+                df_plot = pd.DataFrame({"observed_param": observed_param.reshape(-1,),
+                                        "probabilities": probabilities,
+                                        "lower": lower,
+                                        "upper": upper,
+                                        "args_comb": [f"B'={args[idx][1]}, QR clf = {args[idx][0]}"]*len(lower)}
+                                       ).sort_values(by="observed_param")
+                dfs_plot.append(df_plot)
+                sns.lineplot(x=df_plot.observed_param, y=df_plot.probabilities,
+                             ax=ax[idx], color=color_map(idx),
                              label=f"B'={args[idx][1]}, QR clf = {args[idx][0]}")
-                sns.lineplot(x=observed_param.reshape(-1,), y=lower, ax=ax[idx], color=color_map(idx))
-                sns.lineplot(x=observed_param.reshape(-1,), y=upper, ax=ax[idx], color=color_map(idx))
-                ax[idx].fill_between(x=observed_param.reshape(-1,), y1=lower, y2=upper, alpha=0.2, color=color_map(idx))
+                sns.lineplot(x=df_plot.observed_param, y=df_plot.lower, ax=ax[idx], color=color_map(idx))
+                sns.lineplot(x=df_plot.observed_param, y=df_plot.upper, ax=ax[idx], color=color_map(idx))
+                ax[idx].fill_between(x=df_plot.observed_param, y1=df_plot.lower, y2=df_plot.upper,
+                                     alpha=0.2, color=color_map(idx))
 
-                ax[idx].axhline(y=1 - self.alpha, color='black', linestyle='--', linewidth=2)
+                ax[idx].axhline(y=1-self.alpha, color='black', linestyle='--', linewidth=2)
                 ax[idx].legend(loc='lower left', fontsize=15)
-                ax[idx].set_ylim([0.5, 1])
-                ax[idx].set_xlim([np.min(observed_param), np.max(observed_param)])
+                ax[idx].set_ylim([np.min(df_plot.lower) - 0.1, 1])  # small offset of 0.1
+                ax[idx].set_xlim([np.min(df_plot.observed_param), np.max(df_plot.observed_param)])
 
             if save_fig_path is not None:
                 plt.savefig(save_fig_path, bbox_inches="tight")
+            if return_df:
+                return pd.concat(dfs_plot, ignore_index=True, axis=0)
             plt.show()
         else:
             raise NotImplementedError
@@ -613,9 +626,11 @@ class ACORE:
 
         # TODO: check this plots the expected thing
 
-        df_plot = pd.DataFrame({"obs_theta": self.model.obs_param,
-                                "lower": [min(conf_region) for conf_region in self.confidence_band],
-                                "upper": [max(conf_region) for conf_region in self.confidence_band]})
+        df_plot = pd.DataFrame({"obs_theta": self.model.obs_param,  # plot empty set if conf region somehow is empty
+                                "lower": [np.min(conf_region) if len(conf_region) > 0 else np.min(self.model.param_grid)
+                                          for conf_region in self.confidence_band],
+                                "upper": [np.max(conf_region) if len(conf_region) > 0 else np.min(self.model.param_grid)
+                                          for conf_region in self.confidence_band]})
 
         df_plot.loc[:, "covered"] = (df_plot.obs_theta >= df_plot.lower) & (df_plot.obs_theta <= df_plot.upper)
 
