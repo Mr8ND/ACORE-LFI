@@ -13,6 +13,8 @@ import pickle
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib as mpl
+mpl.rcParams['agg.path.chunksize'] = 10000
 import seaborn as sns
 from sklearn.metrics import log_loss
 from sklearn.model_selection import KFold
@@ -202,6 +204,10 @@ class ACORE:
                 ax[1].fill_between(x=clf_df.B, y1=clf_df.y_eval_below, y2=clf_df.y_eval_above, alpha=0.2)
             ax[0].set_title("Cross-entropy training loss")
             ax[1].set_title("Cross-entropy validation loss")
+            ax[0].set_ylim([np.min(plot_temp_df.y_train_below) - 0.05,  # +- offset for clearer viz TODO: adapt offset
+                            np.max(plot_temp_df.y_train_above) + 0.05])
+            ax[1].set_ylim([np.min(plot_temp_df.y_train_below) - 0.05,
+                            np.max(plot_temp_df.y_train_above) + 0.05])
 
         if save_fig_path is not None:
             plt.savefig(save_fig_path, bbox_inches='tight')
