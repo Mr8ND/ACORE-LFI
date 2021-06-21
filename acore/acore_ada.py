@@ -80,7 +80,6 @@ class ACORE:
         # utils
         self.verbose = verbose
         self.model.verbose = verbose
-        self.time = dict()
         self.processes = processes
 
         # temporary
@@ -205,9 +204,9 @@ class ACORE:
             ax[0].set_title("Cross-entropy training loss")
             ax[1].set_title("Cross-entropy validation loss")
             ax[0].set_ylim([np.min(plot_temp_df.y_train_below) - 0.05,  # +- offset for clearer viz TODO: adapt offset
-                            np.max(plot_temp_df.y_train_above) + 0.05])
+                            np.max([np.max(plot_temp_df.y_eval_above), np.max(plot_temp_df.y_train_above)]) + 0.05])
             ax[1].set_ylim([np.min(plot_temp_df.y_train_below) - 0.05,
-                            np.max(plot_temp_df.y_train_above) + 0.05])
+                            np.max([np.max(plot_temp_df.y_eval_above), np.max(plot_temp_df.y_train_above)]) + 0.05])
 
         if save_fig_path is not None:
             plt.savefig(save_fig_path, bbox_inches='tight')
@@ -250,13 +249,12 @@ class ACORE:
         if reuse_train_set:
             clf = train_clf(gen_sample=self._check_estimates_train_set,
                             clf_model=classifier_dict[classifier_name],
-                            gen_function=self.model.generate_sample, d=self.model.d, clf_name=classifier_name)
+                            clf_name=classifier_name)
         else:
             train_sample = self.model.generate_sample(sample_size=b)
             self._check_estimates_train_set, clf = train_clf(gen_sample=train_sample,
                                                              clf_model=classifier_dict[classifier_name],
-                                                             gen_function=self.model.generate_sample,
-                                                             d=self.model.d, clf_name=classifier_name)
+                                                             clf_name=classifier_name)
 
         # select n_eval_samples from eval_set, fix x and make theta vary
         dfs = []
@@ -323,17 +321,17 @@ class ACORE:
                        b_prime: Union[int, list],
                        qr_classifier_names: Union[str, list],
                        b_double_prime: Union[int, None] = None,
-                       or_classifier_name: Union[str, None] = None,
+                       or_classifier: Union[str, object, None] = None,
                        b: Union[str, None] = None,
                        clf_estimate_coverage_prob: str = 'logistic_regression',
                        save_fig_path=None,
                        return_df=False):
 
-        if or_classifier_name is None:
+        if or_classifier is None:
             if self.or_classifier_name is None:
                 raise ValueError("Please specify an OR classifier to use")
             else:
-                or_classifier_name = self.or_classifier_name
+                or_classifier = self.or_classifier_name
         if b is None:
             if self.b is None:
                 raise ValueError("Please specify B")
@@ -350,10 +348,10 @@ class ACORE:
             qr_classifier_names = [qr_classifier_names]
 
         # generate observed sample
-        observed_param, observed_x = self.model.sample_msnh(b_double_prime, self.obs_sample_size)
+        observed_theta, observed_x = self.model.sample_msnh(b_double_prime, self.obs_sample_size)
 
         # estimate observed statistics
-        or_clf_fit, tau_obs = self.estimate_tau(or_classifier_name=or_classifier_name,
+        or_clf_fit, tau_obs = self.estimate_tau(or_classifier=or_classifier,
                                                 b=b, observed_x=observed_x,
                                                 store_results=False)
 
@@ -369,7 +367,7 @@ class ACORE:
         args = [(z, x, y, w, k) for (((x, y), z), w, k) in zip(product(zip(sorted_b_prime, b_prime_samples),
                                                                        qr_classifier_names),
                                                                repeat(or_clf_fit), repeat(False))]
-        # list of numpy arrays of alpha quantiles for each theta (one for each combination of args)
+        # list of numpy arrays of alpha quantiles for each theta (one array for each combination of args)
         predicted_quantiles = [self.estimate_critical_value(*args_combination) for args_combination in args]
 
         # construct confidence *sets* for each observed x; one confidence *band* for each combination of args
@@ -380,15 +378,15 @@ class ACORE:
                                             desc="Computing confidence bands for each QR classifier and B prime")]
 
         # construct W vector of indicators; one vector for each combination of args
-        w = [np.array([1 if (np.min(confidence_set) <= observed_param[idx] <= np.max(confidence_set)) else 0
+        w = [np.array([1 if (np.min(confidence_set) <= observed_theta[idx] <= np.max(confidence_set)) else 0
                        for idx, confidence_set in enumerate(confidence_band)])
              for confidence_band in confidence_bands]
-        assert all([len(w_combination) == self.model.t0_grid_granularity for w_combination in w])
+        assert all([len(w_combination) == observed_theta.shape[0] for w_combination in w])
 
         # estimate conditional coverage
         dfs_plot = []
         if clf_estimate_coverage_prob == "logistic_regression":
-            theta = sm.add_constant(observed_param)
+            theta = sm.add_constant(observed_theta)
             fig, ax = plt.subplots(nrows=len(w), ncols=1, figsize=(10, 4*len(w)))
             color_map = plt.cm.get_cmap("hsv", len(w))
             for idx, w_combination in enumerate(w):
@@ -403,7 +401,7 @@ class ACORE:
                 lower = np.maximum(0, np.minimum(1, probabilities - std_errors * c))
 
                 # plot
-                df_plot = pd.DataFrame({"observed_param": observed_param.reshape(-1,),
+                df_plot = pd.DataFrame({"observed_param": observed_theta.reshape(-1,),
                                         "probabilities": probabilities,
                                         "lower": lower,
                                         "upper": upper,
@@ -432,37 +430,34 @@ class ACORE:
             raise NotImplementedError
 
     def estimate_tau(self,
-                     or_classifier_name: Union[str, None] = None,
+                     or_classifier: Union[str, object, None] = None,
                      b: Union[int, None] = None,
                      observed_x: Union[np.array, None] = None,
                      store_results: bool = True):
 
-        if or_classifier_name is None:
-            if self.or_classifier_name is None:
-                raise ValueError("Unspecified Odds Ratios Classifier and Classifier Name")
-            else:
-                or_classifier_name = self.or_classifier_name
-        if b is None:
-            if self.b is None:
-                raise ValueError("Unspecified sample size B")
-            else:
+        if isinstance(or_classifier, object):
+            clf = or_classifier
+        else:
+            if or_classifier is None:
+                if self.or_classifier_name is None:
+                    raise ValueError("Unspecified Odds Ratios Classifier")
+                or_classifier = self.or_classifier_name
+            if b is None:
+                if self.b is None:
+                    raise ValueError("Unspecified sample size B")
                 b = self.b
+            b_sample = self.model.generate_sample(sample_size=b)
+            clf = train_clf(gen_sample=b_sample,
+                            clf_model=classifier_dict[or_classifier],
+                            clf_name=or_classifier)
+            if self.verbose:
+                print('----- %s Trained' % self.or_classifier_name, flush=True)
         if observed_x is None:
             observed_x = self.model.obs_x
         else:
             assert observed_x.shape[1] == self.model.observed_dims
 
-        b_sample = self.model.generate_sample(sample_size=b)
-        start_time = datetime.now()
-        clf = train_clf(gen_sample=b_sample,
-                        clf_model=classifier_dict[or_classifier_name],
-                        gen_function=self.model.generate_sample,
-                        d=self.model.d,
-                        clf_name=self.or_classifier_name)
-
-        train_time = datetime.now()
         if self.verbose:
-            print('----- %s Trained' % self.or_classifier_name, flush=True)
             progress_bar = tqdm(total=len(self.model.param_grid), desc='Calculate observed statistics')
 
         tau_obs = []
@@ -478,7 +473,7 @@ class ACORE:
                 progress_bar.update(1)
         if self.verbose:
             progress_bar.close()
-        pred_time = datetime.now()
+
 
         # need a sequence of tau_obs (at each plausible theta_0) for each obs_x
         tau_obs = list(zip(*tau_obs))
@@ -486,8 +481,6 @@ class ACORE:
 
         if store_results:
             self.or_classifier_fit = clf
-            self.time['or_training_time'] = (train_time - start_time).total_seconds()
-            self.time['tau_prediction_time'] = (pred_time - train_time).total_seconds()
             self.tau_obs = tau_obs
         else:
             return clf, tau_obs
@@ -514,24 +507,24 @@ class ACORE:
                 raise ValueError('Classifier for Odds Ratios not trained yet')
             else:
                 or_classifier_fit = self.or_classifier_fit
-        start_time = datetime.now()
         if b_prime_sample is None:
-            theta_matrix, sample_matrix = self.model.sample_msnh(b_prime=b_prime, obs_sample_size=self.obs_sample_size)
+                theta_matrix, sample_matrix = self.model.sample_msnh(b_prime=b_prime, obs_sample_size=self.obs_sample_size)
         else:
             theta_matrix, sample_matrix = b_prime_sample
 
         # Compute the tau values for QR training
-        stats_matrix = np.array([_compute_statistics_single_t0(name=self.statistics,
-                                                               clf_fit=or_classifier_fit, d=self.model.d,
-                                                               d_obs=self.model.observed_dims,
-                                                               grid_param_t1=self.model.param_grid,
-                                                               t0=theta_0, obs_sample=sample_matrix[kk, :],
-                                                               obs_sample_size=self.obs_sample_size,
-                                                               n_samples=sample_matrix[kk, :].shape[0])
-                                 for kk, theta_0 in tqdm(enumerate(theta_matrix),
-                                                         desc='Calculate statistics for critical value')])
-        bprime_time = datetime.now()
-
+        stats_matrix = []
+        for kk, theta_0 in tqdm(enumerate(theta_matrix), desc='Calculate statistics for critical value'):
+            theta_0 = theta_0.reshape(-1, self.model.d)
+            sample = sample_matrix[kk, :].reshape(-1, self.model.observed_dims)
+            stats_matrix.append(np.array([_compute_statistics_single_t0(name=self.statistics,
+                                                                        clf_fit=or_classifier_fit, d=self.model.d,
+                                                                        d_obs=self.model.observed_dims,
+                                                                        grid_param_t1=self.model.param_grid,
+                                                                        t0=theta_0,
+                                                                        obs_sample=sample,
+                                                                        obs_sample_size = self.obs_sample_size,
+                                                                        n_samples = sample.shape[0])]))
         if self.verbose:
             print('----- Training Quantile Regression Algorithm', flush=True)
 
@@ -544,8 +537,6 @@ class ACORE:
         cutoff_time = datetime.now()
         if store_results:
             self.predicted_quantiles = predicted_quantiles
-            self.time['bprime_time'] = (bprime_time - start_time).total_seconds()
-            self.time['cutoff_time'] = (cutoff_time - bprime_time).total_seconds()
         else:
             return predicted_quantiles
 

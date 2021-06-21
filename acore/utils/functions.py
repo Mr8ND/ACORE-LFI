@@ -15,8 +15,7 @@ def clf_prob_value(clf, x_vec, theta_vec, d, d_obs):
     return prob_mat[:, 1]
 
 
-def train_clf(gen_sample, gen_function, clf_model,
-              d=1, p=0.5, clf_name='xgboost', cv_nn=5, marginal=False, nn_square_root=False):
+def train_clf(gen_sample, clf_model, clf_name, cv_nn=5, nn_square_root=False):
     '''
     This function works for multiple dimensions of the theta_parameters and the generated sample.
 
@@ -219,6 +218,8 @@ def _compute_statistics_single_t0(name,
     if d > 1:
         # still have to check the logic for this case (in theory it should similar to d=1 ...)
         raise NotImplementedError
+
+    assert obs_sample.shape[0] == (n_samples*obs_sample_size)
 
     if name == 'bff':
         # in this special case bff reduces to simple odds at t0
