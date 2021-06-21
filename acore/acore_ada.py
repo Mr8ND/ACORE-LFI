@@ -435,7 +435,7 @@ class ACORE:
                      observed_x: Union[np.array, None] = None,
                      store_results: bool = True):
 
-        if isinstance(or_classifier, object):
+        if (not isinstance(or_classifier, str)) or (or_classifier is not None):
             clf = or_classifier
         else:
             if or_classifier is None:
