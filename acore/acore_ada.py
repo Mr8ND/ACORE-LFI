@@ -453,7 +453,7 @@ class ACORE:
                             clf_model=classifier_dict[or_classifier],
                             clf_name=or_classifier)
             if self.verbose:
-                print('----- %s Trained' % self.or_classifier_name, flush=True)
+                print('----- %s Trained' % or_classifier, flush=True)
         if observed_x is None:
             observed_x = self.model.obs_x
         else:
@@ -527,8 +527,10 @@ class ACORE:
                                                                         obs_sample=sample,
                                                                         obs_sample_size = self.obs_sample_size,
                                                                         n_samples = sample.shape[0])]))
+        stats_matrix = np.array(stats_matrix)
         if self.verbose:
             print('----- Training Quantile Regression Algorithm', flush=True)
+            print(f"stats_matrix shape: {stats_matrix.shape}, \n1st el shape: {stats_matrix[0].shape}, \n2nd el shape: {stats_matrix[1].shape}")
 
         qr_classifier = classifier_cde_dict[qr_classifier_name]
         predicted_quantiles = train_qr_algo(model_obj=self.model, alpha=self.alpha,

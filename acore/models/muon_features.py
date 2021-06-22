@@ -154,7 +154,7 @@ class MuonFeatures:
         if not isinstance(true_param_idx, np.ndarray):
             true_param_idx = np.array([true_param_idx])
 
-        simulations = data[true_param_idx, self.no_param_mask]
+        simulations = data[true_param_idx, self.no_param_mask]  # use this mask to avoid using np.delete (slow!)
         if using_train_set:
             # avoid reusing same data points until we have unused available
             # TODO: replace np.delete with row masking (add a False each time a idx is sampled)
