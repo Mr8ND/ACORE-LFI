@@ -45,12 +45,12 @@ class MuonFeatures:
         elif isinstance(data, pd.DataFrame):
             self.data = data
         elif data is None:
-            if simulated_data is not None:
-                self.data = simulated_data
-            else:
+            if simulated_data is None:
                 raise ValueError("Either data or simulated_data must be specified")
+            else:
+                self.data = simulated_data  # TODO: is this needed?
         else:
-            raise ValueError(f'data must be either a filepath (str type) or a pandas DataFrame, got {type(data)}')
+            raise ValueError(f'data must be either a filepath (str type), a pandas DataFrame or None, got {type(data)}')
         
         if isinstance(param_column, int):
             assert param_dims == len([param_column])
@@ -75,7 +75,8 @@ class MuonFeatures:
                 MuonFeatures.train_obs_split(data=self.data,
                                              observed_fraction=observed_sample_fraction,
                                              param_column=param_column)
-        self.train_set_left = self.train_set
+        # probabilities for being sampled. Already drawn sims will have 0 probability until all rows have been used
+        self.left_sims_sample_prob = np.full(self.train_set.shape[0], 1/self.train_set.shape[0])
         self.d = param_dims
         self.observed_dims = observed_dims
         self.true_param_low = true_param_low
@@ -127,28 +128,32 @@ class MuonFeatures:
 
     def sample_param_values(self, sample_size: int, data: np.ndarray = None):
         if data is None:
-            if sample_size > len(self.train_set_left):
-                raise ValueError(f'Only {len(self.train_set_left)} simulations available, got {sample_size}')
-            data = self.train_set_left
+            n_sims_left = len(self.left_sims_sample_prob[self.left_sims_sample_prob != 0])
+            if sample_size > n_sims_left:
+                raise ValueError(f'Only {n_sims_left} simulations available, got {sample_size}')
+            data = self.train_set
+        else:
+            raise ValueError("fix sampling when data is not None")
 
-        logging.debug(f'sampling {sample_size} params from data of shape {data.shape}')
+        logging.debug(f'sampling {sample_size} params from data of shape {n_sims_left}')
 
         idxs = np.arange(0, data.shape[0], 1)
-        sampled_param_idxs = np.random.choice(idxs, size=sample_size)
+        sampled_param_idxs = np.random.choice(idxs, size=sample_size, p=self.left_sims_sample_prob)
         return sampled_param_idxs, data[sampled_param_idxs, self.param_column]
 
     # TODO: think about how to rewrite this more efficiently
     def sample_sim(self, sample_size: int, true_param_idx: np.ndarray, data: Union[np.ndarray, None] = None):
         if data is None:
             using_train_set = True
-            data = self.train_set_left
+            data = self.train_set
         else:
             using_train_set = False
             warnings.warn("Check this because you might sample the same observations multiple times. No delete here")
-        logging.debug(f'sampling {sample_size} simulations from data of shape {data.shape}')
 
-        if sample_size > len(data):
-            raise ValueError(f'Only {len(data)} simulations available, got {sample_size}')
+        n_sims_left = len(self.left_sims_sample_prob[self.left_sims_sample_prob != 0])
+        if sample_size > n_sims_left:
+            raise ValueError(f'Only {n_sims_left} simulations available, got {sample_size}')
+        logging.debug(f'sampling {sample_size} simulations from data of shape {n_sims_left}')
 
         # TODO: is this necessary? Think it comes from previous version of implementation
         if not isinstance(true_param_idx, np.ndarray):
@@ -157,12 +162,14 @@ class MuonFeatures:
         simulations = data[true_param_idx, self.no_param_mask]  # use this mask to avoid using np.delete (slow!)
         if using_train_set:
             # avoid reusing same data points until we have unused available
-            # TODO: replace np.delete with row masking (add a False each time a idx is sampled)
-            # TODO: not easy cause true_param_idx changes as train_set_left decreases
-            self.train_set_left = np.delete(data, true_param_idx, axis=0)
-            if len(self.train_set_left) == 0:
-                self.train_set_left = self.train_set
+            self.left_sims_sample_prob[true_param_idx] = 0
+            left_to_sample_shape = self.left_sims_sample_prob[self.left_sims_sample_prob != 0].shape[0]
+            if left_to_sample_shape == 0:
+                self.left_sims_sample_prob = np.full(self.train_set.shape[0], 1/self.train_set.shape[0])
                 logging.info('no more simulations available, training dataset re-instantiated')
+            else:
+                self.left_sims_sample_prob[self.left_sims_sample_prob != 0] = \
+                    np.full(left_to_sample_shape, 1 / left_to_sample_shape)
         return simulations
 
     def sample_reference_g(self, sample_size, data: Union[np.ndarray, None] = None):
