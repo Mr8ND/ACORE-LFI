@@ -435,17 +435,19 @@ class ACORE:
                      observed_x: Union[np.array, None] = None,
                      store_results: bool = True):
 
-        if (not isinstance(or_classifier, str)) or (or_classifier is not None):
+        if (not isinstance(or_classifier, str)) and (or_classifier is not None):
             clf = or_classifier
-        else:
+        else:  # if or_classifier is not a fitted object
             if or_classifier is None:
                 if self.or_classifier_name is None:
                     raise ValueError("Unspecified Odds Ratios Classifier")
-                or_classifier = self.or_classifier_name
+                else:
+                    or_classifier = self.or_classifier_name
             if b is None:
                 if self.b is None:
                     raise ValueError("Unspecified sample size B")
-                b = self.b
+                else:
+                    b = self.b
             b_sample = self.model.generate_sample(sample_size=b)
             clf = train_clf(gen_sample=b_sample,
                             clf_model=classifier_dict[or_classifier],
