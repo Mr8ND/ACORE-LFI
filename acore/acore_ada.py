@@ -37,7 +37,7 @@ class ACORE:
                  b: Union[int, None],
                  b_prime: Union[int, None],
                  b_double_prime: Union[int, None],
-                 alpha: float,
+                 coverage_probability: float,  # e.g. 0.9 if 90% confidence sets
                  statistics: Union[str, Callable],  # 'bff' or 'acore' for now
                  or_classifier_name: Union[str, None],
                  qr_classifier_name: Union[str, None],
@@ -68,7 +68,7 @@ class ACORE:
         self.b = b
         self.b_prime = b_prime
         self.b_double_prime = b_double_prime
-        self.alpha = alpha
+        self.coverage_probability = coverage_probability
         if isinstance(statistics, Callable):
             # TODO: allow for custom-defined statistics
             raise NotImplementedError
@@ -418,7 +418,7 @@ class ACORE:
                 ax[idx].fill_between(x=df_plot.observed_param, y1=df_plot.lower, y2=df_plot.upper,
                                      alpha=0.2, color=color_map(idx))
 
-                ax[idx].axhline(y=1-self.alpha, color='black', linestyle='--', linewidth=2)
+                ax[idx].axhline(y=self.coverage_probability, color='black', linestyle='--', linewidth=2)
                 ax[idx].legend(loc='lower left', fontsize=15)
                 ax[idx].set_ylim([np.min(df_plot.lower) - 0.1, 1])  # small offset of 0.1
                 ax[idx].set_xlim([np.min(df_plot.observed_param), np.max(df_plot.observed_param)])
@@ -540,7 +540,7 @@ class ACORE:
             print('----- Training Quantile Regression Algorithm', flush=True)
 
         qr_classifier = classifier_cde_dict[qr_classifier_name]
-        predicted_quantiles = train_qr_algo(model_obj=self.model, alpha=self.alpha,
+        predicted_quantiles = train_qr_algo(model_obj=self.model, alpha=self.coverage_probability,
                                             theta_mat=theta_matrix, stats_mat=stats_matrix,
                                             algo_name=qr_classifier[0], learner_kwargs=qr_classifier[1],
                                             pytorch_kwargs=qr_classifier[2] if len(qr_classifier) > 2 else None,
@@ -760,7 +760,7 @@ if __name__ == "__main__":
                   b=b,
                   b_prime=b_prime,
                   b_double_prime=b_double_prime,
-                  alpha=json_args["alpha"],
+                  coverage_probability=json_args["coverage_probability"],
                   statistics=json_args["statistics"],
                   or_classifier_name=or_classifier,
                   qr_classifier_name=qr_classifier,
@@ -787,7 +787,7 @@ if __name__ == "__main__":
                              save_fig_path=os.path.join(argument_parsed.write_path, filename))
     elif argument_parsed.what_to_do == 'confidence_band':
         acore.confidence_band()
-        filename = f'acore_{argument_parsed.which_feat}_grid{json_args["t0_grid_granularity"]}_b{b}_bp{json_args["b_prime"]}_a{json_args["alpha"]}_clfOR-{or_classifier}_clfQR-{json_args["classifier_qr"]}.pickle'
+        filename = f'acore_{argument_parsed.which_feat}_grid{json_args["t0_grid_granularity"]}_b{b}_bp{json_args["b_prime"]}_a{json_args["coverage_probability"]}_clfOR-{or_classifier}_clfQR-{json_args["classifier_qr"]}.pickle'
         with open(os.path.join(argument_parsed.write_path, filename), "wb") as file:
             pickle.dump(acore, file)
     else:
