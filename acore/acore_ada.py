@@ -42,6 +42,7 @@ class ACORE:
                  or_classifier_name: Union[str, None],
                  qr_classifier_name: Union[str, None],
                  obs_sample_size: int,
+                 decision_rule: str,  # one of ["less_equal", "greater_equal"]
                  seed: Union[int, None] = None,  # TODO: cascade seed down to methods involving randomness
                  debug: bool = False,
                  verbose: bool = True,
@@ -75,6 +76,7 @@ class ACORE:
             self.statistics = statistics
         self.or_classifier_name = or_classifier_name
         self.qr_classifier_name = qr_classifier_name
+        self.decision_rule = decision_rule
         self.obs_sample_size = obs_sample_size
 
         # utils
@@ -492,6 +494,7 @@ class ACORE:
                                 b_prime: Union[int, None] = None,
                                 b_prime_sample: Union[tuple, None] = None,
                                 or_classifier_fit: Union[object, None] = None,
+                                computed_statistics: Union[np.array, None] = None,
                                 store_results: bool = True):
 
         if qr_classifier_name is None:
@@ -504,7 +507,7 @@ class ACORE:
                 raise ValueError("Unspecified sample size B prime")
             else:
                 b_prime = self.b_prime
-        if or_classifier_fit is None:
+        if (or_classifier_fit is None) and (computed_statistics is None):
             if self.or_classifier_fit is None:
                 raise ValueError('Classifier for Odds Ratios not trained yet')
             else:
@@ -513,24 +516,28 @@ class ACORE:
                 theta_matrix, sample_matrix = self.model.sample_msnh(b_prime=b_prime, obs_sample_size=self.obs_sample_size)
         else:
             theta_matrix, sample_matrix = b_prime_sample
-
-        # Compute the tau values for QR training
-        stats_matrix = []
-        for kk, theta_0 in tqdm(enumerate(theta_matrix), desc='Calculate statistics for critical value'):
-            theta_0 = theta_0.reshape(-1, self.model.d)
-            sample = sample_matrix[kk, :].reshape(-1, self.model.observed_dims)
-            stats_matrix.append(np.array([_compute_statistics_single_t0(name=self.statistics,
-                                                                        clf_fit=or_classifier_fit, d=self.model.d,
-                                                                        d_obs=self.model.observed_dims,
-                                                                        grid_param_t1=self.model.param_grid,
-                                                                        t0=theta_0,
-                                                                        obs_sample=sample,
-                                                                        obs_sample_size = self.obs_sample_size,
-                                                                        n_samples = sample.shape[0])]))
-        stats_matrix = np.array(stats_matrix)
+        
+        if computed_statistics is None:
+            # Compute the tau values for QR training
+            stats_matrix = []
+            for kk, theta_0 in tqdm(enumerate(theta_matrix), desc='Calculate statistics for critical value'):
+                theta_0 = theta_0.reshape(-1, self.model.d)
+                sample = sample_matrix[kk, :].reshape(-1, self.model.observed_dims)
+                stats_matrix.append(np.array([_compute_statistics_single_t0(name=self.statistics,
+                                                                            clf_fit=or_classifier_fit, d=self.model.d,
+                                                                            d_obs=self.model.observed_dims,
+                                                                            grid_param_t1=self.model.param_grid,
+                                                                            t0=theta_0,
+                                                                            obs_sample=sample,
+                                                                            obs_sample_size = self.obs_sample_size,
+                                                                            n_samples = sample.shape[0])]))
+            stats_matrix = np.array(stats_matrix)
+        else:
+            assert computed_statistics.shape[0] == theta_matrix.shape[0]
+            stats_matrix = computed_statistics
+            
         if self.verbose:
             print('----- Training Quantile Regression Algorithm', flush=True)
-            print(f"stats_matrix shape: {stats_matrix.shape}, \n1st el shape: {stats_matrix[0].shape}, \n2nd el shape: {stats_matrix[1].shape}")
 
         qr_classifier = classifier_cde_dict[qr_classifier_name]
         predicted_quantiles = train_qr_algo(model_obj=self.model, alpha=self.alpha,
@@ -566,9 +573,17 @@ class ACORE:
         assert len(tau_obs) == len(predicted_quantiles) == len(self.model.param_grid)
 
         confidence_region = []
-        for idx, tau in enumerate(tau_obs):  # we have one (tau_observed, cutoff) for each possible theta
-            if tau > predicted_quantiles[idx]:
-                confidence_region.append(self.model.param_grid[idx])
+        if self.decision_rule == "less_equal":
+            # we have one (tau_observed, cutoff) for each possible theta
+            for idx, tau in enumerate(tau_obs):  
+                if tau <= predicted_quantiles[idx]:
+                    confidence_region.append(self.model.param_grid[idx])
+        elif self.decision_rule == "greater_equal":
+            for idx, tau in enumerate(tau_obs):  
+                if tau >= predicted_quantiles[idx]:
+                    confidence_region.append(self.model.param_grid[idx])
+        else:
+            raise NotImplementedError
 
         if confidence_band:
             if store_results:
