@@ -14,7 +14,7 @@ from scipy.special import erf
 class ToyMVNMultiDIsotropicLoader:
 
     def __init__(self, observed_dims=2, mean_instrumental=0.0, std_instrumental=4.0, low_int=-5.0, high_int=5.0,
-                 true_param=0.0, true_std=1.0, mean_prior=0.0, std_prior=2.0, uniform_grid_sample_size=1000,
+                 true_param=0.0, true_std=1.0, mean_prior=0.0, std_prior=2.0, grid_sample_size=1000,
                  out_dir='mvg_example/', prior_type='uniform', diagnostic_flag=False,
                  marginal=False, size_marginal=5000, empirical_marginal=True, **kwargs):
 
@@ -55,10 +55,19 @@ class ToyMVNMultiDIsotropicLoader:
             self.compute_marginal_reference(size_marginal)
         self.empirical_marginal = empirical_marginal
             
-        # Always sample the same number of values for maximization independent of the dimension
-        self.num_pred_grid = uniform_grid_sample_size
-        self.param_grid = np.random.uniform(
-            low=self.low_int, high=self.high_int, size=self.num_pred_grid * self.d).reshape(-1, self.d)
+        self.num_pred_grid = grid_sample_size
+        if self.d == 1:
+            self.param_grid = np.linspace(-5, 5, self.num_pred_grid)
+        elif self.d == 2:
+            a = np.linspace(-5, 5, num=self.num_pred_grid)
+            # 2-dimensional grid of (grid_sample_size X grid_sample_size) points
+            self.param_grid = np.transpose([np.tile(a, len(a)), np.repeat(a, len(a))])
+        else:
+            # easier to sample from a d-dimensional uniform for d > 2
+            self.param_grid = np.random.uniform(low=self.low_int, high=self.high_int, 
+                                                size=self.num_pred_grid * self.d).reshape(-1, self.d)
+        if self.true_param not in self.param_grid:
+                self.param_grid = np.append(self.param_grid, self.true_param.reshape(-1,self.d), axis=0)
         
         # prediction grid we care about is the null hypothesis plus all the values on the 45 degree line
         # in d dimension. We are basically looking for power in the direction outside the null hypothesis
@@ -96,7 +105,9 @@ class ToyMVNMultiDIsotropicLoader:
     def generate_sample(self, sample_size, p=0.5, **kwargs):
         theta_vec = self.sample_param_values(sample_size=sample_size)
         bern_vec = np.random.binomial(n=1, p=p, size=sample_size)
-        concat_mat = np.hstack((theta_vec.reshape(-1, self.d), bern_vec.reshape(-1, 1)))
+        concat_mat = np.hstack((bern_vec.reshape(-1, 1), 
+                                theta_vec.reshape(-1, self.d)
+                               ))
 
         if self.empirical_marginal:
             sample = np.apply_along_axis(arr=concat_mat, axis=1,
@@ -164,7 +175,7 @@ class ToyMVNMultiDIsotropicLoader:
 
     @staticmethod
     def compute_mle(x_obs):
-        return np.mean(x_obs, axis=0)  # TODO: I think this should be axis=0, it was axis=1
+        return np.mean(x_obs, axis=0)
     
     @staticmethod
     def cart2pol(x, y):  # cartesian to polar coordinates in 2D

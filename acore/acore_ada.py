@@ -467,17 +467,17 @@ class ACORE:
         tau_obs = []
         # TODO: not general; assumes observed_sample_size == 1
         for theta_0 in self.model.param_grid:
-            tau_obs.append(list(_compute_statistics_single_t0(name=self.statistics,
-                                                              clf_fit=clf, obs_sample=observed_x, t0=theta_0,
+            tau_obs.append(list(_compute_statistics_single_t0(name=self.statistics,  # TODO: check this as done for self.estimate_critical_value !!!
+                                                              clf_fit=clf, obs_sample=observed_x.reshape(-1, self.model.observed_dims), 
+                                                              t0=theta_0.reshape(-1, self.model.d),
                                                               d=self.model.d, d_obs=self.model.observed_dims,
                                                               grid_param_t1=self.model.param_grid,
                                                               obs_sample_size=self.obs_sample_size,
-                                                              n_samples=observed_x.shape[0])))
+                                                              n_samples=observed_x.reshape(-1, self.model.observed_dims).shape[0])))
             if self.verbose:
                 progress_bar.update(1)
         if self.verbose:
             progress_bar.close()
-
 
         # need a sequence of tau_obs (at each plausible theta_0) for each obs_x
         tau_obs = list(zip(*tau_obs))
