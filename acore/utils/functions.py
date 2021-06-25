@@ -215,13 +215,13 @@ def _compute_statistics_single_t0(name,
         # need to check predict_mat, obs_sample should be 3dim if n_samples/obs_sample_size > 1
         # bff implementation for now is a special case where g==marginal, obs_sample_size==1
         raise NotImplementedError
-    if d > 1:
-        # still have to check the logic for this case (in theory it should similar to d=1 ...)
-        raise NotImplementedError
 
     assert obs_sample.shape[0] == (n_samples*obs_sample_size)
 
     if name == 'bff':
+        if d > 1:
+            # still have to check the logic for this case (in theory it should similar to d=1 ...)
+            raise NotImplementedError
         # in this special case bff reduces to simple odds at t0
         predict_mat = np.hstack((
             np.repeat(t0, n_samples).reshape(-1, d),
@@ -243,10 +243,16 @@ def _compute_statistics_single_t0(name,
         # Second column: We duplicate the data n_t1 + 1 times
         n_t1 = grid_param_t1.shape[0]
 
+        if not isinstance(t0, np.array):
+            if isinstance(t0, list):
+                np.array(t0)
+            else:
+                t0 = np.array([t0])
+
         predict_mat = np.hstack((
             np.vstack((
-                np.repeat(t0, obs_sample_size*n_samples).reshape(-1, d),
-                np.tile(np.repeat(grid_param_t1, obs_sample_size).reshape(-1, d),  # this is huge ...
+                np.repeat(t0, obs_sample_size*n_samples, axis=0).reshape(-1, d),
+                np.tile(np.repeat(grid_param_t1, obs_sample_size, axis=0).reshape(-1, d),  # this is huge ...
                         (n_samples, 1))
             )),
             np.vstack((
