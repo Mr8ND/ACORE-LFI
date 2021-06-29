@@ -481,8 +481,13 @@ class ACORE:
 
         # need a sequence of tau_obs (at each plausible theta_0) for each obs_x
         tau_obs = list(zip(*tau_obs))
-        assert all([len(tau_obs_x) == self.model.t0_grid_granularity for tau_obs_x in tau_obs])
-
+        # TODO: revert back to self.model.t0_grid_granularity !!
+        assert all([len(tau_obs_x) == self.model.param_grid.shape[0] for tau_obs_x in tau_obs]), f"{[len(tau_obs_x) == self.model.param_grid.shape[0] for tau_obs_x in tau_obs]}"  
+            
+        # handle case in which we are only computing a single confidence set
+        if len(tau_obs) == 1:
+            tau_obs = tau_obs[0]
+        
         if store_results:
             self.or_classifier_fit = clf
             self.tau_obs = tau_obs
@@ -570,7 +575,7 @@ class ACORE:
                 raise ValueError('Critical values not computed yet')
             else:
                 predicted_quantiles = self.predicted_quantiles
-        assert len(tau_obs) == len(predicted_quantiles) == len(self.model.param_grid)
+        assert len(tau_obs) == len(predicted_quantiles) == len(self.model.param_grid), f"{len(tau_obs)}, {len(predicted_quantiles)}, {len(self.model.param_grid)}"
 
         confidence_region = []
         if self.decision_rule == "less_equal":

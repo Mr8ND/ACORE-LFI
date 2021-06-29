@@ -211,17 +211,17 @@ def _compute_statistics_single_t0(name,
                                   d=1, d_obs=1,
                                   n_samples=1):  # construct conf set for each (> 1 if conf band, i.e. all together)
 
-    if obs_sample_size > 1:
-        # need to check predict_mat, obs_sample should be 3dim if n_samples/obs_sample_size > 1
-        # bff implementation for now is a special case where g==marginal, obs_sample_size==1
-        raise NotImplementedError
-
     assert obs_sample.shape[0] == (n_samples*obs_sample_size)
 
     if name == 'bff':
         if d > 1:
             # still have to check the logic for this case (in theory it should similar to d=1 ...)
             raise NotImplementedError
+        if obs_sample_size > 1:
+            # need to check predict_mat, obs_sample should be 3dim if n_samples/obs_sample_size > 1
+            # bff implementation for now is a special case where g==marginal, obs_sample_size==1
+            raise NotImplementedError        
+    
         # in this special case bff reduces to simple odds at t0
         predict_mat = np.hstack((
             np.repeat(t0, n_samples).reshape(-1, d),
@@ -243,7 +243,7 @@ def _compute_statistics_single_t0(name,
         # Second column: We duplicate the data n_t1 + 1 times
         n_t1 = grid_param_t1.shape[0]
 
-        if not isinstance(t0, np.array):
+        if not isinstance(t0, np.ndarray):
             if isinstance(t0, list):
                 np.array(t0)
             else:
@@ -276,7 +276,7 @@ def _compute_statistics_single_t0(name,
         # We then extract t1_values
         odds_t1 = np.log(prob_mat[obs_sample_size*n_samples:, 1]) - np.log(prob_mat[obs_sample_size*n_samples:, 0])
         # TODO: check this shape when obs_sample_size > 1
-        assert odds_t1.shape[0] == n_samples * n_t1
+        assert odds_t1.shape[0] == n_samples * n_t1 * obs_sample_size
 
         # Calculate sum of logs for each ...
         # ... of the samples from the same theta, for which size==observed_sample_size
@@ -285,8 +285,11 @@ def _compute_statistics_single_t0(name,
 
         # ... and of the value of the t1 grid
         # TODO: should add 3rd dim and add sum over same_theta_sample if obs_sample_size > 1
-        grouped_max_sum_t1 = odds_t1.reshape(-1, n_t1).max(axis=1)
-        assert grouped_max_sum_t1.shape[0] == n_samples
+        if obs_sample_size > 1:
+            grouped_max_sum_t1 = np.max(np.array([np.sum(odds_t1[obs_sample_size * ii:(obs_sample_size * (ii + 1))]) for ii in range(n_t1)]))
+        else:
+            grouped_max_sum_t1 = odds_t1.reshape(-1, n_t1).max(axis=1)
+        #assert grouped_max_sum_t1.shape[0] == n_samples, f"{grouped_max_sum_t1.shape[0]}, {n_samples}"
 
         return grouped_sum_t0 - grouped_max_sum_t1
 
