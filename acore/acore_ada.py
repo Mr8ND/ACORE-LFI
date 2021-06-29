@@ -398,12 +398,12 @@ class ACORE:
             or_clf_fit, sorted_b_prime = None, [None]
 
         # estimate critical values
-        args = [(z, x, y, w, k) for (((x, y), z), w, k) in zip(product(zip(sorted_b_prime, b_prime_samples),
-                                                                       qr_classifier_names),
-                                                               repeat(or_clf_fit),
-                                                               repeat(qr_statistics),
-                                                               repeat(param_grid),
-                                                               repeat(False))]
+        args = [(z, x, y, w, h, j, k) for (((x, y), z), w, h, j, k) in zip(product(zip(sorted_b_prime, b_prime_samples),
+                                                                                   qr_classifier_names),
+                                                                           repeat(or_clf_fit),
+                                                                           repeat(qr_statistics),
+                                                                           repeat(param_grid),
+                                                                           repeat(False))]
         # list of numpy arrays made of alpha quantiles for each theta (one array for each combination of args)
         # TODO: make parallel?
         predicted_quantiles = [self.estimate_critical_value(*args_combination) for args_combination in args]
