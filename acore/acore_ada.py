@@ -324,73 +324,119 @@ class ACORE:
                        qr_classifier_names: Union[str, list],
                        b_double_prime: Union[int, None] = None,
                        or_classifier: Union[str, object, None] = None,
+                       known_statistics_kwargs: Union[dict, None] = None,
                        b: Union[str, None] = None,
                        clf_estimate_coverage_prob: str = 'logistic_regression',
                        save_fig_path=None,
                        return_df=False):
 
-        if or_classifier is None:
-            if self.or_classifier_name is None:
-                raise ValueError("Please specify an OR classifier to use")
-            else:
-                or_classifier = self.or_classifier_name
-        if b is None:
-            if self.b is None:
-                raise ValueError("Please specify B")
-            else:
-                b = self.b
-        if b_double_prime is None:
-            if self.b_double_prime is None:
-                raise ValueError("Please specify B double prime")
-            else:
-                b_double_prime = self.b_double_prime
-        if not isinstance(b_prime, list):
-            b_prime = [b_prime]
         if not isinstance(qr_classifier_names, list):
             qr_classifier_names = [qr_classifier_names]
 
-        # generate observed sample
-        observed_theta, observed_x = self.model.sample_msnh(b_double_prime, self.obs_sample_size)
+        if known_statistics_kwargs is None:
+            # check we have everything we need
+            if or_classifier is None:
+                if self.or_classifier_name is None:
+                    raise ValueError("Please specify an OR classifier to use")
+                else:
+                    or_classifier = self.or_classifier_name
+            if b is None:
+                if self.b is None:
+                    raise ValueError("Please specify B")
+                else:
+                    b = self.b
+            if b_double_prime is None:
+                if self.b_double_prime is None:
+                    raise ValueError("Please specify B double prime")
+                else:
+                    b_double_prime = self.b_double_prime
+            if not isinstance(b_prime, list):
+                b_prime = [b_prime]
 
-        # estimate observed statistics
-        or_clf_fit, tau_obs = self.estimate_tau(or_classifier=or_classifier,
-                                                b=b, observed_x=observed_x,
-                                                store_results=False)
+            # generate observed sample
+            observed_theta, observed_x = self.model.sample_msnh(b_double_prime, self.obs_sample_size)
 
-        # generate b_prime samples by drawing the biggest one and getting the others as subsets of it
-        sorted_b_prime = sorted(b_prime)
-        max_b_prime_sample = self.model.sample_msnh(b_prime=sorted_b_prime[-1], obs_sample_size=self.obs_sample_size)
-        b_prime_samples = [(max_b_prime_sample[0][:bprime, :], max_b_prime_sample[1][:bprime, :])
-                           for bprime in sorted_b_prime[:-1]] + [max_b_prime_sample]
-        assert all([(theta.shape[0] == sorted_b_prime[idx]) and (x.shape[0] == sorted_b_prime[idx])
-                    for idx, (theta, x) in enumerate(b_prime_samples)])
+            # temporary param_grid; use np.unique just to avoid having the same param multiple
+            # times in case some true params were already in the grid
+            param_grid = np.unique(np.append(self.model.param_grid.reshape(-1, self.model.d),
+                                             observed_theta.reshape(-1, self.model.d), axis=0),
+                                   axis=0)
+
+            # estimate observed statistics
+            or_clf_fit, tau_obs = self.estimate_tau(or_classifier=or_classifier,
+                                                    b=b, observed_x=observed_x,
+                                                    parameter_grid=param_grid,
+                                                    store_results=False)
+
+            # generate b_prime samples by drawing the biggest one and getting the others as subsets of it
+            sorted_b_prime = sorted(b_prime)
+            max_b_prime_sample = self.model.sample_msnh(b_prime=sorted_b_prime[-1],
+                                                        obs_sample_size=self.obs_sample_size)
+            b_prime_samples = [(max_b_prime_sample[0][:bprime, :], max_b_prime_sample[1][:bprime, :])
+                               for bprime in sorted_b_prime[:-1]] + [max_b_prime_sample]
+            assert all([(theta.shape[0] == sorted_b_prime[idx]) and (x.shape[0] == sorted_b_prime[idx])
+                        for idx, (theta, x) in enumerate(b_prime_samples)])
+
+            # set unused stuff to None
+            qr_statistics = None
+
+        else:
+            # check we have everything we need
+            assert "observed_statistics" in known_statistics_kwargs
+            assert "qr_statistics" in known_statistics_kwargs
+            assert "b_prime_samples" in known_statistics_kwargs
+            assert "observed_theta" in known_statistics_kwargs
+            assert "param_grid" in known_statistics_kwargs
+
+            # get what we need
+            tau_obs = known_statistics_kwargs["observed_statistics"]
+            qr_statistics = known_statistics_kwargs["qr_statistics"]
+            b_prime_samples = known_statistics_kwargs["b_prime_samples"]
+            observed_theta = known_statistics_kwargs["observed_theta"]
+            param_grid = known_statistics_kwargs["param_grid"]  # param grid used to estimate observed_statistics
+
+            # set unused stuff to None
+            or_clf_fit, sorted_b_prime = None, [None]
 
         # estimate critical values
         args = [(z, x, y, w, k) for (((x, y), z), w, k) in zip(product(zip(sorted_b_prime, b_prime_samples),
                                                                        qr_classifier_names),
-                                                               repeat(or_clf_fit), repeat(False))]
-        # list of numpy arrays of alpha quantiles for each theta (one array for each combination of args)
+                                                               repeat(or_clf_fit),
+                                                               repeat(qr_statistics),
+                                                               repeat(param_grid),
+                                                               repeat(False))]
+        # list of numpy arrays made of alpha quantiles for each theta (one array for each combination of args)
+        # TODO: make parallel?
         predicted_quantiles = [self.estimate_critical_value(*args_combination) for args_combination in args]
 
-        # construct confidence *sets* for each observed x; one confidence *band* for each combination of args
-        confidence_bands = [self.compute_confidence_band(tau_obs=tau_obs,
-                                                         predicted_quantiles=predicted_quantiles[idx],
-                                                         store_results=False)
-                            for idx in tqdm(range(len(predicted_quantiles)),
-                                            desc="Computing confidence bands for each QR classifier and B prime")]
-
         # construct W vector of indicators; one vector for each combination of args
-        w = [np.array([1 if (np.min(confidence_set) <= observed_theta[idx] <= np.max(confidence_set)) else 0
-                       for idx, confidence_set in enumerate(confidence_band)])
-             for confidence_band in confidence_bands]
+        # TODO: this can be done more efficiently by vectorizing
+        # TODO: what to do when theta is high dimensional ?
+        w = []
+        for idx_args in tqdm(range(len(predicted_quantiles)),  # args combination level
+                             desc="Checking coverage across the parameter space"):
+            w_combination = np.zeros(shape=observed_theta.shape[0], dtype=int)
+            for idx_obs_x, tau_obs_x in enumerate(tau_obs):  # multiple observations level
+                # TODO: we can stop as soon as we find the true param, do not iterate over subsequent values
+                for idx_tau, tau in enumerate(tau_obs_x):  # theta grid level
+                    # check if we are covering the true parameter for the corresponding observation
+                    if all(np.abs(param_grid[idx_tau] - observed_theta[idx_obs_x]) <= 1e-6):
+                        if self.decision_rule == "less_equal":
+                            if tau <= predicted_quantiles[idx_args][idx_tau]:
+                                w_combination[idx_obs_x] = 1
+                        elif self.decision_rule == "greater_equal":
+                            if tau >= predicted_quantiles[idx_args][idx_tau]:
+                                w_combination[idx_obs_x] = 1
+            w.append(w_combination)
         assert all([len(w_combination) == observed_theta.shape[0] for w_combination in w])
 
         # estimate conditional coverage
         dfs_plot = []
         if clf_estimate_coverage_prob == "logistic_regression":
             theta = sm.add_constant(observed_theta)
-            fig, ax = plt.subplots(nrows=len(w), ncols=1, figsize=(10, 4*len(w)))
-            color_map = plt.cm.get_cmap("hsv", len(w))
+            if self.model.d == 1:
+                fig, ax = plt.subplots(nrows=len(w), ncols=1, figsize=(10, 4*len(w)))
+                color_map = plt.cm.get_cmap("hsv", len(w))
             for idx, w_combination in enumerate(w):
                 log_reg = sm.Logit(w_combination, theta).fit(full_output=False)
                 probabilities = log_reg.predict(theta)
@@ -398,36 +444,54 @@ class ACORE:
                 cov_matrix = log_reg.cov_params()
                 gradient = (probabilities * (1 - probabilities) * theta.T).T  # matrix of gradients for each obs
                 std_errors = np.array([np.sqrt(np.dot(np.dot(g, cov_matrix), g)) for g in gradient])
+                assert len(std_errors) == len(probabilities)
                 c = 1  # multiplier for confidence interval
                 upper = np.maximum(0, np.minimum(1, probabilities + std_errors * c))
                 lower = np.maximum(0, np.minimum(1, probabilities - std_errors * c))
+                assert len(upper) == len(lower) == len(probabilities)
 
-                # plot
-                df_plot = pd.DataFrame({"observed_param": observed_theta.reshape(-1,),
-                                        "probabilities": probabilities,
-                                        "lower": lower,
-                                        "upper": upper,
-                                        "args_comb": [f"B'={args[idx][1]}, QR clf = {args[idx][0]}"]*len(lower)}
-                                       ).sort_values(by="observed_param")
-                dfs_plot.append(df_plot)
-                sns.lineplot(x=df_plot.observed_param, y=df_plot.probabilities,
-                             ax=ax[idx], color=color_map(idx),
-                             label=f"B'={args[idx][1]}, QR clf = {args[idx][0]}")
-                sns.lineplot(x=df_plot.observed_param, y=df_plot.lower, ax=ax[idx], color=color_map(idx))
-                sns.lineplot(x=df_plot.observed_param, y=df_plot.upper, ax=ax[idx], color=color_map(idx))
-                ax[idx].fill_between(x=df_plot.observed_param, y1=df_plot.lower, y2=df_plot.upper,
-                                     alpha=0.2, color=color_map(idx))
+                if self.model.d == 1:
+                    # plot
+                    df_plot = pd.DataFrame({"observed_param": observed_theta.reshape(-1, self.model.d),
+                                            "probabilities": probabilities,
+                                            "lower": lower,
+                                            "upper": upper,
+                                            "args_comb": [f"B'={args[idx][1]}, QR clf = {args[idx][0]}"]*len(lower)}
+                                           ).sort_values(by="observed_param")
+                    dfs_plot.append(df_plot)
+                    sns.lineplot(x=df_plot.observed_param, y=df_plot.probabilities,
+                                 ax=ax[idx], color=color_map(idx),
+                                 label=f"B'={args[idx][1]}, QR clf = {args[idx][0]}")
+                    sns.lineplot(x=df_plot.observed_param, y=df_plot.lower, ax=ax[idx], color=color_map(idx))
+                    sns.lineplot(x=df_plot.observed_param, y=df_plot.upper, ax=ax[idx], color=color_map(idx))
+                    ax[idx].fill_between(x=df_plot.observed_param, y1=df_plot.lower, y2=df_plot.upper,
+                                         alpha=0.2, color=color_map(idx))
 
-                ax[idx].axhline(y=self.coverage_probability, color='black', linestyle='--', linewidth=2)
-                ax[idx].legend(loc='lower left', fontsize=15)
-                ax[idx].set_ylim([np.min(df_plot.lower) - 0.1, 1])  # small offset of 0.1
-                ax[idx].set_xlim([np.min(df_plot.observed_param), np.max(df_plot.observed_param)])
+                    ax[idx].axhline(y=self.coverage_probability, color='black', linestyle='--', linewidth=2)
+                    ax[idx].legend(loc='lower left', fontsize=15)
+                    ax[idx].set_ylim([np.min(df_plot.lower) - 0.1, 1])  # small offset of 0.1
+                    ax[idx].set_xlim([np.min(df_plot.observed_param), np.max(df_plot.observed_param)])
+                else:
+                    proportion_UC = np.sum(upper < self.coverage_probability) / len(upper)
+                    proportion_OC = np.sum(lower > self.coverage_probability) / len(lower)
+
+                    dfs_plot.append(
+                        pd.DataFrame({"args_comb": [f"B'={args[idx][1]}, QR clf = {args[idx][0]}"]*3,
+                                      "coverage":  ["Undercoverage", "Correct Coverage", "Overcoverage"],
+                                      "proportion": [proportion_UC, 1-(proportion_OC+proportion_UC), proportion_OC]})
+                    )
+
+            if self.model.d > 1:
+                df_plot = pd.concat(dfs_plot, ignore_index=True, axis=0)
+                fig, ax = plt.subplots(1, 1, figsize=(7*len(w), 10))
+                sns.barplot(data=df_plot, x="args_comb", y="proportion", hue="coverage", ci=None, ax=ax)
+
+            plt.show()
 
             if save_fig_path is not None:
                 plt.savefig(save_fig_path, bbox_inches="tight")
             if return_df:
                 return pd.concat(dfs_plot, ignore_index=True, axis=0)
-            plt.show()
         else:
             raise NotImplementedError
 
@@ -435,6 +499,7 @@ class ACORE:
                      or_classifier: Union[str, object, None] = None,
                      b: Union[int, None] = None,
                      observed_x: Union[np.array, None] = None,
+                     parameter_grid: Union[np.array, None] = None,
                      store_results: bool = True):
 
         if (not isinstance(or_classifier, str)) and (or_classifier is not None):
@@ -460,20 +525,27 @@ class ACORE:
             observed_x = self.model.obs_x
         else:
             assert observed_x.shape[1] == self.model.observed_dims
+        if parameter_grid is None:
+            parameter_grid = self.model.param_grid
+        parameter_grid_length = len(parameter_grid)
 
         if self.verbose:
-            progress_bar = tqdm(total=len(self.model.param_grid), desc='Calculate observed statistics')
+            progress_bar = tqdm(total=len(parameter_grid), desc='Calculate observed statistics')
 
         tau_obs = []
         # TODO: not general; assumes observed_sample_size == 1
-        for theta_0 in self.model.param_grid:
-            tau_obs.append(list(_compute_statistics_single_t0(name=self.statistics,  # TODO: check this as done for self.estimate_critical_value !!!
-                                                              clf_fit=clf, obs_sample=observed_x.reshape(-1, self.model.observed_dims), 
-                                                              t0=theta_0.reshape(-1, self.model.d),
-                                                              d=self.model.d, d_obs=self.model.observed_dims,
-                                                              grid_param_t1=self.model.param_grid,
-                                                              obs_sample_size=self.obs_sample_size,
-                                                              n_samples=observed_x.reshape(-1, self.model.observed_dims).shape[0])))
+        for theta_0 in parameter_grid:
+            # TODO: check this as done for self.estimate_critical_value !!!
+            tau_obs.append(list(
+                _compute_statistics_single_t0(name=self.statistics,
+                                              clf_fit=clf,
+                                              obs_sample=observed_x.reshape(-1, self.model.observed_dims),
+                                              t0=theta_0.reshape(-1, self.model.d),
+                                              d=self.model.d, d_obs=self.model.observed_dims,
+                                              grid_param_t1=parameter_grid,
+                                              obs_sample_size=self.obs_sample_size,
+                                              n_samples=observed_x.reshape(-1, self.model.observed_dims).shape[0])
+            ))
             if self.verbose:
                 progress_bar.update(1)
         if self.verbose:
@@ -481,12 +553,8 @@ class ACORE:
 
         # need a sequence of tau_obs (at each plausible theta_0) for each obs_x
         tau_obs = list(zip(*tau_obs))
-        # TODO: revert back to self.model.t0_grid_granularity !!
-        assert all([len(tau_obs_x) == self.model.param_grid.shape[0] for tau_obs_x in tau_obs]), f"{[len(tau_obs_x) == self.model.param_grid.shape[0] for tau_obs_x in tau_obs]}"  
-            
-        # handle case in which we are only computing a single confidence set
-        if len(tau_obs) == 1:
-            tau_obs = tau_obs[0]
+        assert all([len(tau_obs_x) == parameter_grid_length for tau_obs_x in tau_obs]), \
+            f"{[len(tau_obs_x) == parameter_grid_length for tau_obs_x in tau_obs]}"
         
         if store_results:
             self.or_classifier_fit = clf
@@ -499,7 +567,8 @@ class ACORE:
                                 b_prime: Union[int, None] = None,
                                 b_prime_sample: Union[tuple, None] = None,
                                 or_classifier_fit: Union[object, None] = None,
-                                computed_statistics: Union[np.array, None] = None,
+                                computed_qr_statistics: Union[np.array, None] = None,
+                                parameter_grid: Union[np.array, None] = None,
                                 store_results: bool = True):
 
         if qr_classifier_name is None:
@@ -512,7 +581,7 @@ class ACORE:
                 raise ValueError("Unspecified sample size B prime")
             else:
                 b_prime = self.b_prime
-        if (or_classifier_fit is None) and (computed_statistics is None):
+        if (or_classifier_fit is None) and (computed_qr_statistics is None):
             if self.or_classifier_fit is None:
                 raise ValueError('Classifier for Odds Ratios not trained yet')
             else:
@@ -521,8 +590,10 @@ class ACORE:
                 theta_matrix, sample_matrix = self.model.sample_msnh(b_prime=b_prime, obs_sample_size=self.obs_sample_size)
         else:
             theta_matrix, sample_matrix = b_prime_sample
+        if parameter_grid is None:
+            parameter_grid = self.model.param_grid
         
-        if computed_statistics is None:
+        if computed_qr_statistics is None:
             # Compute the tau values for QR training
             stats_matrix = []
             for kk, theta_0 in tqdm(enumerate(theta_matrix), desc='Calculate statistics for critical value'):
@@ -531,26 +602,24 @@ class ACORE:
                 stats_matrix.append(np.array([_compute_statistics_single_t0(name=self.statistics,
                                                                             clf_fit=or_classifier_fit, d=self.model.d,
                                                                             d_obs=self.model.observed_dims,
-                                                                            grid_param_t1=self.model.param_grid,
+                                                                            grid_param_t1=parameter_grid,
                                                                             t0=theta_0,
                                                                             obs_sample=sample,
                                                                             obs_sample_size = self.obs_sample_size,
                                                                             n_samples = sample.shape[0])]))
-            stats_matrix = np.array(stats_matrix)
+            computed_qr_statistics = np.array(stats_matrix)
         else:
-            assert computed_statistics.shape[0] == theta_matrix.shape[0]
-            stats_matrix = computed_statistics
+            assert computed_qr_statistics.shape[0] == theta_matrix.shape[0]
             
         if self.verbose:
             print('----- Training Quantile Regression Algorithm', flush=True)
 
         qr_classifier = classifier_cde_dict[qr_classifier_name]
         predicted_quantiles = train_qr_algo(model_obj=self.model, alpha=self.coverage_probability,
-                                            theta_mat=theta_matrix, stats_mat=stats_matrix,
+                                            theta_mat=theta_matrix, stats_mat=computed_qr_statistics,
                                             algo_name=qr_classifier[0], learner_kwargs=qr_classifier[1],
                                             pytorch_kwargs=qr_classifier[2] if len(qr_classifier) > 2 else None,
-                                            prediction_grid=self.model.param_grid)
-        cutoff_time = datetime.now()
+                                            prediction_grid=parameter_grid)
         if store_results:
             self.predicted_quantiles = predicted_quantiles
         else:

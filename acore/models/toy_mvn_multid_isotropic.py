@@ -55,17 +55,17 @@ class ToyMVNMultiDIsotropicLoader:
             self.compute_marginal_reference(size_marginal)
         self.empirical_marginal = empirical_marginal
             
-        self.num_pred_grid = grid_sample_size
+        self.t0_grid_granularity = grid_sample_size
         if self.d == 1:
-            self.param_grid = np.linspace(-5, 5, self.num_pred_grid)
+            self.param_grid = np.linspace(-5, 5, self.t0_grid_granularity)
         elif self.d == 2:
-            a = np.linspace(-5, 5, num=self.num_pred_grid)
+            a = np.linspace(-5, 5, num=self.t0_grid_granularity)
             # 2-dimensional grid of (grid_sample_size X grid_sample_size) points
             self.param_grid = np.transpose([np.tile(a, len(a)), np.repeat(a, len(a))])
         else:
             # easier to sample from a d-dimensional uniform for d > 2
             self.param_grid = np.random.uniform(low=self.low_int, high=self.high_int, 
-                                                size=self.num_pred_grid * self.d).reshape(-1, self.d)
+                                                size=self.t0_grid_granularity * self.d).reshape(-1, self.d)
         if self.true_param not in self.param_grid:
                 self.param_grid = np.append(self.param_grid, self.true_param.reshape(-1,self.d), axis=0)
         
