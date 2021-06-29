@@ -437,6 +437,7 @@ class ACORE:
 
         # estimate conditional coverage
         dfs_plot = []
+        dfs_barplot = []
         if clf_estimate_coverage_prob == "logistic_regression":
             theta = sm.add_constant(observed_theta)
             if self.model.d == 1:
@@ -476,27 +477,28 @@ class ACORE:
                     ax[idx].legend(loc='lower left', fontsize=15)
                     ax[idx].set_ylim([np.min(df_plot.lower) - 0.1, 1])  # small offset of 0.1
                     ax[idx].set_xlim([np.min(df_plot.observed_param), np.max(df_plot.observed_param)])
-                else:
-                    proportion_UC = np.sum(upper < self.coverage_probability) / len(upper)
-                    proportion_OC = np.sum(lower > self.coverage_probability) / len(lower)
 
-                    dfs_plot.append(
-                        pd.DataFrame({"args_comb": [f"B'={args[idx][1]}, QR clf = {args[idx][0]}"]*3,
-                                      "coverage":  ["Undercoverage", "Correct Coverage", "Overcoverage"],
-                                      "proportion": [proportion_UC, 1-(proportion_OC+proportion_UC), proportion_OC]})
-                    )
+                proportion_UC = np.sum(upper < self.coverage_probability) / len(upper)
+                proportion_OC = np.sum(lower > self.coverage_probability) / len(lower)
+                dfs_barplot.append(
+                    pd.DataFrame({"args_comb": [f"B'={args[idx][1]}, QR clf = {args[idx][0]}"]*3,
+                                  "coverage":  ["Undercoverage", "Correct Coverage", "Overcoverage"],
+                                  "proportion": [proportion_UC, 1-(proportion_OC+proportion_UC), proportion_OC]})
+                )
+            if save_fig_path is not None:
+                plt.savefig(os.path.join(save_fig_path, f"whole_parameter_space.png"), bbox_inches="tight")
+            plt.show()  # show other plots
 
-            if self.model.d > 1:
-                df_plot = pd.concat(dfs_plot, ignore_index=True, axis=0)
-                fig, ax = plt.subplots(1, 1, figsize=(7*len(w), 10))
-                sns.barplot(data=df_plot, x="args_comb", y="proportion", hue="coverage", ci=None, ax=ax)
-
+            # barplot
+            df_barplot = pd.concat(dfs_barplot, ignore_index=True, axis=0)
+            fig, ax = plt.subplots(1, 1, figsize=(7*len(w), 10))
+            sns.barplot(data=df_barplot, x="args_comb", y="proportion", hue="coverage", ci=None, ax=ax)
+            if save_fig_path is not None:
+                plt.savefig(os.path.join(save_fig_path, f"proportions.png"), bbox_inches="tight")
             plt.show()
 
-            if save_fig_path is not None:
-                plt.savefig(save_fig_path, bbox_inches="tight")
             if return_df:
-                return pd.concat(dfs_plot, ignore_index=True, axis=0)
+                return pd.concat(dfs_plot, ignore_index=True, axis=0), df_barplot
         else:
             raise NotImplementedError
 
