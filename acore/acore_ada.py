@@ -42,7 +42,7 @@ class ACORE:
                  or_classifier_name: Union[str, None],
                  qr_classifier_name: Union[str, None],
                  obs_sample_size: int,
-                 decision_rule: str,  # one of ["less_equal", "greater_equal"]
+                 decision_rule: str,  # one of ["less_equal", "less", "greater_equal", "greater"]
                  seed: Union[int, None] = None,  # TODO: cascade seed down to methods involving randomness
                  debug: bool = False,
                  verbose: bool = True,
@@ -379,7 +379,6 @@ class ACORE:
 
             # set unused stuff to None
             qr_statistics = None
-
         else:
             # check we have everything we need
             assert "observed_statistics" in known_statistics_kwargs
@@ -424,8 +423,14 @@ class ACORE:
                         if self.decision_rule == "less_equal":
                             if tau <= predicted_quantiles[idx_args][idx_tau]:
                                 w_combination[idx_obs_x] = 1
+                        elif self.decision_rule == "less":
+                            if tau < predicted_quantiles[idx_args][idx_tau]:
+                                w_combination[idx_obs_x] = 1
                         elif self.decision_rule == "greater_equal":
                             if tau >= predicted_quantiles[idx_args][idx_tau]:
+                                w_combination[idx_obs_x] = 1
+                        elif self.decision_rule == "greater":
+                            if tau > predicted_quantiles[idx_args][idx_tau]:
                                 w_combination[idx_obs_x] = 1
             w.append(w_combination)
         assert all([len(w_combination) == observed_theta.shape[0] for w_combination in w])
@@ -652,9 +657,17 @@ class ACORE:
             for idx, tau in enumerate(tau_obs):  
                 if tau <= predicted_quantiles[idx]:
                     confidence_region.append(self.model.param_grid[idx])
+        elif self.decision_rule == "less":
+            for idx, tau in enumerate(tau_obs):
+                if tau < predicted_quantiles[idx]:
+                    confidence_region.append(self.model.param_grid[idx])
         elif self.decision_rule == "greater_equal":
             for idx, tau in enumerate(tau_obs):  
                 if tau >= predicted_quantiles[idx]:
+                    confidence_region.append(self.model.param_grid[idx])
+        elif self.decision_rule == "greater":
+            for idx, tau in enumerate(tau_obs):
+                if tau > predicted_quantiles[idx]:
                     confidence_region.append(self.model.param_grid[idx])
         else:
             raise NotImplementedError
