@@ -104,8 +104,6 @@ class ACORE:
                                write_df_path: Union[str, None] = None,
                                save_fig_path: Union[str, None] = None):
 
-        # TODO: samples should be "nested" in order to not waste too much data
-
         if not isinstance(b, list):
             b = [b]
         if not isinstance(classifier_names, list):
@@ -336,7 +334,7 @@ class ACORE:
     def check_coverage(self,
                        qr_classifier_names: Union[str, list],
                        b_prime: Union[int, list, None] = None,
-                       b_double_prime: Union[int, np.array, None] = None,
+                       b_double_prime: Union[int, tuple, None] = None,
                        or_classifier: Union[str, object, None] = None,
                        known_statistics_kwargs: Union[dict, None] = None,
                        b: Union[str, None] = None,
@@ -364,14 +362,14 @@ class ACORE:
                     raise ValueError("Please specify B double prime")
                 else:
                     b_double_prime = self.b_double_prime
-            if not isinstance(b_prime, list):
-                b_prime = [b_prime]
-            
             if isinstance(b_double_prime, int):
                 # generate observed samples for which to construct confidence sets
-                observed_theta, observed_x = self.model.generate_observed_sample(n_samples=b_double_prime, obs_sample_size=self.obs_sample_size)
+                observed_theta, observed_x = self.model.generate_observed_sample(n_samples=b_double_prime,
+                                                                                 obs_sample_size=self.obs_sample_size)
             else:
                 observed_theta, observed_x = b_double_prime
+            if not isinstance(b_prime, list):
+                b_prime = [b_prime]
 
             # temporary param_grid; use np.unique just to avoid having the same param multiple
             # times in case some true params were already in the grid
@@ -426,8 +424,7 @@ class ACORE:
         # list of numpy arrays made of alpha quantiles for each theta (one array for each combination of args)
         # TODO: make parallel?
         predicted_quantiles = [self.estimate_critical_value(*args_combination) for args_combination in tqdm(args, desc="Estimating cutoffs")]
-        
-        #"""
+
         w = []
         # construct w vector of indicators; one vector for each combination of args
         for idx_args in tqdm(range(len(predicted_quantiles)),  # args combination level
@@ -468,37 +465,7 @@ class ACORE:
             w_combination = check_matrix[:, -1].reshape(len(observed_theta), len(param_grid)).sum(axis=1)
             assert len(w_combination) == len(observed_theta)
             w.append(w_combination)
-        #"""
-        
-        """  OLD IMPLEMENTATION
-        # construct W vector of indicators; one vector for each combination of args
-        # TODO: this can be done more efficiently by vectorizing
-        # TODO: what to do when theta is high dimensional ? This probably becomes too slow
-        w = []
-        for idx_args in tqdm(range(len(predicted_quantiles)),  # args combination level
-                             desc="Checking coverage across the parameter space"):
-            w_combination = np.zeros(shape=observed_theta.shape[0], dtype=int)
-            for idx_obs_x, tau_obs_x in enumerate(tau_obs):  # multiple observations level
-                # TODO: we can stop as soon as we find the true param, do not iterate over subsequent values
-                for idx_tau, tau in enumerate(tau_obs_x):  # theta grid level
-                    # check if we are covering the true parameter for the corresponding observation
-                    if all(np.abs(param_grid[idx_tau] - observed_theta[idx_obs_x]) <= 1e-6):
-                        if self.decision_rule == "less_equal":
-                            if tau <= predicted_quantiles[idx_args][idx_tau]:
-                                w_combination[idx_obs_x] = 1
-                        elif self.decision_rule == "less":
-                            if tau < predicted_quantiles[idx_args][idx_tau]:
-                                w_combination[idx_obs_x] = 1
-                        elif self.decision_rule == "greater_equal":
-                            if tau >= predicted_quantiles[idx_args][idx_tau]:
-                                w_combination[idx_obs_x] = 1
-                        elif self.decision_rule == "greater":
-                            if tau > predicted_quantiles[idx_args][idx_tau]:
-                                w_combination[idx_obs_x] = 1
-            w.append(w_combination)
-        assert all([len(w_combination) == observed_theta.shape[0] for w_combination in w])
-        """
-        
+
         # estimate conditional coverage
         dfs_plot = []
         dfs_barplot = []

@@ -8,7 +8,6 @@ sys.path.append('..')
 from scipy.stats import multivariate_normal, uniform, norm
 from scipy.stats import binom
 from scipy.optimize import Bounds
-from itertools import product
 from scipy.special import erf
 
 
@@ -37,7 +36,7 @@ class ToyMVG:
         if prior_type == 'uniform':
             self.prior_distribution = uniform(loc=self.low_int, scale=(self.high_int - self.low_int))
         elif prior_type == 'normal':
-            self.prior_distribution = norm(loc=mean_prior, scale=std_prior ** 2)
+            self.prior_distribution = norm(loc=normal_mean_prior, scale=normal_std_prior ** 2)
         else:
             raise ValueError('The variable prior_type needs to be either uniform or normal.'
                              ' Currently %s' % prior_type)
@@ -56,16 +55,18 @@ class ToyMVG:
                                                 size=grid_sample_size * self.d).reshape(-1, self.d)
             self.t0_grid_granularity = grid_sample_size
             
-        if self.true_param not in self.param_grid:
-            self.param_grid = np.append(self.param_grid.reshape(-1,self.d), self.true_param.reshape(-1,self.d), axis=0)
-            self.t0_grid_granularity += 1
+        #if self.true_param not in self.param_grid:
+        #    self.param_grid = np.append(self.param_grid.reshape(-1, self.d),
+        #                                self.true_param.reshape(-1,self.d), axis=0)
+        #    self.t0_grid_granularity += 1
         
         if not empirical_marginal:
             raise NotImplementedError("We are only using empirical marginal for now.")
         self.empirical_marginal = True
     
     def sample_sim(self, sample_size, true_param):
-        return multivariate_normal(mean=true_param, cov=self.true_cov).rvs(sample_size).reshape(sample_size, self.observed_dims)
+        return multivariate_normal(mean=true_param,
+                                   cov=self.true_cov).rvs(sample_size).reshape(sample_size, self.observed_dims)
 
     def sample_param_values(self, sample_size):
         unique_theta = self.prior_distribution.rvs(size=sample_size * self.d)
@@ -74,10 +75,10 @@ class ToyMVG:
     def sample_param_values_qr(self, sample_size):
         # enlarge support to make sure observed sample is not on the boundaries
         if self.prior_type == "uniform":
-            qr_prior_distribution = uniform(loc=self.true_param[0] - self.param_grid_width, scale=(2*self.param_grid_width))
+            qr_prior_distribution = uniform(loc=self.true_param[0] - self.param_grid_width,
+                                            scale=(2*self.param_grid_width))
         else:
             raise NotImplementedError
-        
         unique_theta = qr_prior_distribution.rvs(size=sample_size * self.d)
         return unique_theta.reshape(sample_size, self.d)
     
@@ -90,9 +91,10 @@ class ToyMVG:
     def generate_sample(self, sample_size, p=0.5, **kwargs):
         theta_vec = self.sample_param_values(sample_size=sample_size)
         bern_vec = np.random.binomial(n=1, p=p, size=sample_size)
-        concat_mat = np.hstack((bern_vec.reshape(-1, 1), 
-                                theta_vec.reshape(-1, self.d)
-                               ))
+        concat_mat = np.hstack((
+            bern_vec.reshape(-1, 1),
+            theta_vec.reshape(-1, self.d)
+        ))
 
         sample = np.apply_along_axis(arr=concat_mat, axis=1,
                                      func1d=lambda row: self.sample_sim(sample_size=1, 
@@ -133,8 +135,7 @@ class ToyMVG:
     def _compute_exact_lr_simplevcomp(self, t0, mle, obs_sample_size):
         return (-1)*(obs_sample_size/2)*(np.linalg.norm((mle - t0).reshape(-1, self.d), ord=2, axis=1)**2)
                 
-      
-    
+
 """                
 class ToyMVNMultiDIsotropicLoader:
 
