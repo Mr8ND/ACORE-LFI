@@ -137,11 +137,9 @@ class ACORE:
             pool_args = zip(product(zip(sorted_b, train_sets), zip(classifiers, classifier_names)),
                             repeat(eval_x),
                             repeat(eval_y),
-                            repeat(self.model.generate_sample),
-                            repeat(self.model.d),
                             repeat(target_loss))
             # unpack inner tuples
-            pool_args = [(x, y, z, w, h, k, j, i, l) for ((x, y), (z, w)), h, k, j, i, l in pool_args]
+            pool_args = [(x, y, z, w, h, k, l) for ((x, y), (z, w)), h, k, l in pool_args]
         else:
             # e.g. if 5 folds and b=50k, then total sample size needed is 62500 to loop across folds
             sample_sizes = [int(b_val*cv_folds/(cv_folds-1)) for b_val in sorted(b)]
@@ -161,11 +159,9 @@ class ACORE:
                                        samples[i][test_idx, :][:, 0]))  # eval_y
 
             pool_args = zip(product(pairs_args, zip(classifiers, classifier_names)),
-                            repeat(self.model.generate_sample),
-                            repeat(self.model.d),
                             repeat(target_loss))
             # move 3rd and 4th args to respect order in choose_clf_settings_subroutine
-            pool_args = [(x, y, h, k, z, w, j, i, l) for ((x, y, z, w), (h, k)), j, i, l in pool_args]
+            pool_args = [(x, y, h, k, z, w, l) for ((x, y, z, w), (h, k)), l in pool_args]
 
         with Pool(processes=self.processes) as pool:
             results_df = pd.DataFrame(pool.starmap(choose_clf_settings_subroutine, pool_args),
@@ -231,7 +227,9 @@ class ACORE:
                         reuse_sample_idxs: Union[bool, list] = False,
                         save_pickle_path=None,
                         save_fig_path=None):
-
+        
+        # TODO: refactor and fix this one
+        
         assert (what_to_check in ['log-likelihood', 'acore', 'log-odds'])
         assert n_eval_samples == 6, "make plotting more general for any n_eval_samples"  # TODO
         if reuse_sample_idxs is not False:
@@ -288,15 +286,21 @@ class ACORE:
             else:  # what_to_check == 'acore':
                 estimates = []
                 t1_mask = np.full(self.model.t0_grid_granularity, True)
-                for i, t0 in tqdm(enumerate(self.model.param_grid), desc='Computing acore statistics'):
+                for i, t0 in tqdm(enumerate(self.model.param_grid), desc='Computing acore statistics', position=0, leave=True):
                     t1_mask[i] = False
                     odds_t0 = np.log(est_prob_vec[i, 1]) - np.log(est_prob_vec[i, 0])
                     odds_t1 = np.log(est_prob_vec[t1_mask, 1]) - np.log(est_prob_vec[t1_mask, 0])
                     assert odds_t1.shape[0] == (self.model.t0_grid_granularity - 1)
                     estimates.append(odds_t0 / np.max(odds_t1))
                     t1_mask[i] = True
-            dfs.append(pd.DataFrame({"theta": self.model.param_grid, f"{what_to_check}": estimates}))
-
+            if self.model.d == 1:
+                dfs.append(pd.DataFrame({"theta": self.model.param_grid.reshape(-1,), f"{what_to_check}": estimates}))
+            else:
+                squared_distance = np.linalg.norm(self.model.param_grid.reshape(-1, self.model.d) - eval_X[sample_idx, :self.model.d].reshape(-1, self.model.d), ord=2, axis=1)**2
+                dfs.append(pd.DataFrame({"squared_distance": squared_distance, f"{what_to_check}": estimates}).sort_values(by="squared_distance"))
+        
+        print([i for i in sample_idxs])
+        
         if save_pickle_path is not None:
             with open(os.path.join(save_pickle_path, f"./{what_to_check}_dfs.pickle"), "wb") as f:
                 pickle.dump(dfs, f)
@@ -305,24 +309,34 @@ class ACORE:
 
         # plot
         fig, ax = plt.subplots(2, 3, figsize=figsize)
-        for i in range(2):
-            for j in range(3):
-                sns.lineplot(data=dfs.pop(), x="theta", y=f"{what_to_check}", ax=ax[i][j])
-                idx = sample_idxs.pop()
-                ax[i][j].axvline(x=eval_X[idx, :self.model.d],
-                                 c='red', label=f'theta = {eval_X[idx, :self.model.d]}')
-                ax[i][j].legend()
-                label = 'simulator F' if eval_y[idx] == 1 else 'reference G'
-                ax[i][j].set_title(f'Sample from {label}')
-
+        if self.model.d == 1:
+            for i in range(2):
+                for j in range(3):
+                    sns.lineplot(data=dfs.pop(), x="theta", y=f"{what_to_check}", ax=ax[i][j])
+                    idx = sample_idxs.pop()
+                    ax[i][j].axvline(x=eval_X[idx, :self.model.d],
+                                     c='red', label=f'theta = {eval_X[idx, :self.model.d]}')
+                    ax[i][j].legend()
+                    label = 'simulator F' if eval_y[idx] == 1 else 'reference G'
+                    ax[i][j].set_title(f'Sample from {label}')
+        else:
+            for i in range(2):
+                for j in range(3):
+                    idx = sample_idxs.pop()
+                    sns.scatterplot(data=dfs.pop(), x="squared_distance", y=f"{what_to_check}", ax=ax[i][j])
+                    ax[i][j].axvline(x=0, c='red', label=f'theta = {eval_X[idx, :self.model.d]}')
+                    ax[i][j].legend()
+                    label = 'simulator F' if eval_y[idx] == 1 else 'reference G'
+                    ax[i][j].set_title(f'Sample from {label}')
+                    
         if save_fig_path is not None:
             plt.savefig(os.path.join(save_fig_path, f'./{what_to_check}.png'), bbox_inches='tight')
         plt.show()
 
     def check_coverage(self,
-                       b_prime: Union[int, list],
                        qr_classifier_names: Union[str, list],
-                       b_double_prime: Union[int, None] = None,
+                       b_prime: Union[int, list, None] = None,
+                       b_double_prime: Union[int, np.array, None] = None,
                        or_classifier: Union[str, object, None] = None,
                        known_statistics_kwargs: Union[dict, None] = None,
                        b: Union[str, None] = None,
@@ -352,12 +366,16 @@ class ACORE:
                     b_double_prime = self.b_double_prime
             if not isinstance(b_prime, list):
                 b_prime = [b_prime]
-
-            # generate observed sample
-            observed_theta, observed_x = self.model.sample_msnh(b_double_prime, self.obs_sample_size)
+            
+            if isinstance(b_double_prime, int):
+                # generate observed samples for which to construct confidence sets
+                observed_theta, observed_x = self.model.generate_observed_sample(n_samples=b_double_prime, obs_sample_size=self.obs_sample_size)
+            else:
+                observed_theta, observed_x = b_double_prime
 
             # temporary param_grid; use np.unique just to avoid having the same param multiple
             # times in case some true params were already in the grid
+            # TODO: if B'' is very large then computing the observed statistics takes too much time
             param_grid = np.unique(np.append(self.model.param_grid.reshape(-1, self.model.d),
                                              observed_theta.reshape(-1, self.model.d), axis=0),
                                    axis=0)
@@ -378,12 +396,13 @@ class ACORE:
                         for idx, (theta, x) in enumerate(b_prime_samples)])
 
             # set unused stuff to None
-            qr_statistics = None
+            qr_statistics = [None]*len(b_prime)
         else:
             # check we have everything we need
             assert "observed_statistics" in known_statistics_kwargs
             assert "qr_statistics" in known_statistics_kwargs
             assert "b_prime_samples" in known_statistics_kwargs
+            assert "sorted_b_prime" in known_statistics_kwargs
             assert "observed_theta" in known_statistics_kwargs
             assert "param_grid" in known_statistics_kwargs
 
@@ -391,26 +410,70 @@ class ACORE:
             tau_obs = known_statistics_kwargs["observed_statistics"]
             qr_statistics = known_statistics_kwargs["qr_statistics"]
             b_prime_samples = known_statistics_kwargs["b_prime_samples"]
+            sorted_b_prime = known_statistics_kwargs["sorted_b_prime"]
             observed_theta = known_statistics_kwargs["observed_theta"]
             param_grid = known_statistics_kwargs["param_grid"]  # param grid used to estimate observed_statistics
 
             # set unused stuff to None
-            or_clf_fit, sorted_b_prime = None, [None]
+            or_clf_fit = None
 
         # estimate critical values
-        args = [(z, x, y, w, h, j, k) for (((x, y), z), w, h, j, k) in zip(product(zip(sorted_b_prime, b_prime_samples),
+        args = [(z, x, y, h, w, k, j) for (((x, y, w), z), h, k, j) in zip(product(zip(sorted_b_prime, b_prime_samples, qr_statistics),
                                                                                    qr_classifier_names),
                                                                            repeat(or_clf_fit),
-                                                                           repeat(qr_statistics),
                                                                            repeat(param_grid),
                                                                            repeat(False))]
         # list of numpy arrays made of alpha quantiles for each theta (one array for each combination of args)
         # TODO: make parallel?
-        predicted_quantiles = [self.estimate_critical_value(*args_combination) for args_combination in args]
-
+        predicted_quantiles = [self.estimate_critical_value(*args_combination) for args_combination in tqdm(args, desc="Estimating cutoffs")]
+        
+        #"""
+        w = []
+        # construct w vector of indicators; one vector for each combination of args
+        for idx_args in tqdm(range(len(predicted_quantiles)),  # args combination level
+                             desc="Checking coverage across the parameter space"):
+            # matrix to check coverage in a fast way using vectors
+            check_matrix = np.hstack((
+                # one observed stat for each value in param grid, repeated for each different observed sample
+                np.array(tau_obs).reshape(len(param_grid)*len(observed_theta), 1),
+                # repeat the cutoffs for each observed sample
+                np.tile(predicted_quantiles[idx_args], len(observed_theta)).reshape(len(param_grid)*len(observed_theta), 1),
+                # repeat the param grid for each observed sample
+                np.tile(param_grid.reshape(-1, self.model.d), [len(observed_theta), 1]).reshape(len(param_grid)*len(observed_theta), self.model.d),
+                # repeat the same true (observed) theta within each corresponding sample
+                np.repeat(observed_theta.reshape(-1, self.model.d), len(param_grid), axis=0).reshape(len(param_grid)*len(observed_theta), self.model.d),
+                # repeat vector of zeros for each observed sample. We will put a 1 where param_grid == true_theta if covered. 
+                # Then reshape into (n_samples, n_params_grid) and sum over axis 1. If we are covering we will have a 1, otherwise not. 
+                np.repeat(np.zeros(shape=len(observed_theta)), repeats=len(param_grid)).reshape(len(param_grid)*len(observed_theta), 1)
+            ))
+            assert check_matrix.shape == (len(param_grid)*len(observed_theta), 1+1+self.model.d+self.model.d+1)
+            
+            # if in acceptance region
+            if self.decision_rule == "less_equal":
+                mask_acceptance_region = (check_matrix[:, 0] <= check_matrix[:, 1])
+            elif self.decision_rule == "less":
+                mask_acceptance_region = (check_matrix[:, 0] < check_matrix[:, 1])
+            elif self.decision_rule == "greater_equal":
+                mask_acceptance_region = (check_matrix[:, 0] >= check_matrix[:, 1])
+            elif self.decision_rule == "greater":
+                mask_acceptance_region = (check_matrix[:, 0] > check_matrix[:, 1])
+            
+            # AND if is true theta
+            mask_true_theta = (np.abs(check_matrix[:, 2:2+self.model.d] - check_matrix[:, 2+self.model.d:2+self.model.d+self.model.d]) <= 1e-9).all(axis=1)
+            
+            # then we are covering!
+            check_matrix[mask_acceptance_region & mask_true_theta, -1] = 1
+            
+            # sum over param_grid: there will be a single 1, and only if we are covering the true theta
+            w_combination = check_matrix[:, -1].reshape(len(observed_theta), len(param_grid)).sum(axis=1)
+            assert len(w_combination) == len(observed_theta)
+            w.append(w_combination)
+        #"""
+        
+        """  OLD IMPLEMENTATION
         # construct W vector of indicators; one vector for each combination of args
         # TODO: this can be done more efficiently by vectorizing
-        # TODO: what to do when theta is high dimensional ?
+        # TODO: what to do when theta is high dimensional ? This probably becomes too slow
         w = []
         for idx_args in tqdm(range(len(predicted_quantiles)),  # args combination level
                              desc="Checking coverage across the parameter space"):
@@ -434,49 +497,59 @@ class ACORE:
                                 w_combination[idx_obs_x] = 1
             w.append(w_combination)
         assert all([len(w_combination) == observed_theta.shape[0] for w_combination in w])
-
+        """
+        
         # estimate conditional coverage
         dfs_plot = []
         dfs_barplot = []
         if clf_estimate_coverage_prob == "logistic_regression":
             theta = sm.add_constant(observed_theta)
             if self.model.d == 1:
-                fig, ax = plt.subplots(nrows=len(w), ncols=1, figsize=(10, 4*len(w)))
+                n_cols = 2
+                n_rows = (len(w) + 1) // n_cols      
+                fig = plt.figure(figsize=(20, 4*n_rows))
                 color_map = plt.cm.get_cmap("hsv", len(w))
             for idx, w_combination in enumerate(w):
-                log_reg = sm.Logit(w_combination, theta).fit(full_output=False)
-                probabilities = log_reg.predict(theta)
-                # estimate confidence interval for predicted probabilities -> Delta method
-                cov_matrix = log_reg.cov_params()
-                gradient = (probabilities * (1 - probabilities) * theta.T).T  # matrix of gradients for each obs
-                std_errors = np.array([np.sqrt(np.dot(np.dot(g, cov_matrix), g)) for g in gradient])
-                assert len(std_errors) == len(probabilities)
-                c = 1  # multiplier for confidence interval
-                upper = np.maximum(0, np.minimum(1, probabilities + std_errors * c))
-                lower = np.maximum(0, np.minimum(1, probabilities - std_errors * c))
-                assert len(upper) == len(lower) == len(probabilities)
+                try:
+                    log_reg = sm.Logit(w_combination, theta).fit(full_output=False)
+                    probabilities = log_reg.predict(theta)
+                    # estimate confidence interval for predicted probabilities -> Delta method
+                    cov_matrix = log_reg.cov_params()
+                    gradient = (probabilities * (1 - probabilities) * theta.T).T  # matrix of gradients for each obs
+                    std_errors = np.array([np.sqrt(np.dot(np.dot(g, cov_matrix), g)) for g in gradient])
+                    assert len(std_errors) == len(probabilities)
+                    c = 1  # multiplier for confidence interval
+                    upper = np.maximum(0, np.minimum(1, probabilities + std_errors * c))
+                    lower = np.maximum(0, np.minimum(1, probabilities - std_errors * c))
+                    assert len(upper) == len(lower) == len(probabilities)
+                except:
+                    print(f"Perfect separation occurred, skipping B'={args[idx][1]}, QR clf={args[idx][0]}")
+                    continue
 
                 if self.model.d == 1:
                     # plot
-                    df_plot = pd.DataFrame({"observed_param": observed_theta.reshape(-1, self.model.d),
+                    df_plot = pd.DataFrame({"observed_param": observed_theta.reshape(-1,),
                                             "probabilities": probabilities,
                                             "lower": lower,
                                             "upper": upper,
                                             "args_comb": [f"B'={args[idx][1]}, QR clf = {args[idx][0]}"]*len(lower)}
                                            ).sort_values(by="observed_param")
                     dfs_plot.append(df_plot)
+                    ax = plt.subplot(n_rows, n_cols, idx+1)
                     sns.lineplot(x=df_plot.observed_param, y=df_plot.probabilities,
-                                 ax=ax[idx], color=color_map(idx),
+                                 ax=ax, color=color_map(idx),
                                  label=f"B'={args[idx][1]}, QR clf = {args[idx][0]}")
-                    sns.lineplot(x=df_plot.observed_param, y=df_plot.lower, ax=ax[idx], color=color_map(idx))
-                    sns.lineplot(x=df_plot.observed_param, y=df_plot.upper, ax=ax[idx], color=color_map(idx))
-                    ax[idx].fill_between(x=df_plot.observed_param, y1=df_plot.lower, y2=df_plot.upper,
-                                         alpha=0.2, color=color_map(idx))
+                    sns.lineplot(x=df_plot.observed_param, y=df_plot.lower, ax=ax, color=color_map(idx))
+                    sns.lineplot(x=df_plot.observed_param, y=df_plot.upper, ax=ax, color=color_map(idx))
+                    ax.fill_between(x=df_plot.observed_param, y1=df_plot.lower, y2=df_plot.upper,
+                                    alpha=0.2, color=color_map(idx))
 
-                    ax[idx].axhline(y=self.coverage_probability, color='black', linestyle='--', linewidth=2)
-                    ax[idx].legend(loc='lower left', fontsize=15)
-                    ax[idx].set_ylim([np.min(df_plot.lower) - 0.1, 1])  # small offset of 0.1
-                    ax[idx].set_xlim([np.min(df_plot.observed_param), np.max(df_plot.observed_param)])
+                    ax.axhline(y=self.coverage_probability, color='black', linestyle='--', linewidth=2)
+                    ax.legend(loc='lower left', fontsize=15)
+                    ax.set_xlabel(r"$\Theta$", fontsize=15)
+                    ax.set_ylabel("Coverage probability", fontsize=15)
+                    ax.set_ylim([np.min(df_plot.lower) - 0.1, 1])  # small offset of 0.1
+                    ax.set_xlim([np.min(df_plot.observed_param), np.max(df_plot.observed_param)])
 
                 proportion_UC = np.sum(upper < self.coverage_probability) / len(upper)
                 proportion_OC = np.sum(lower > self.coverage_probability) / len(lower)
@@ -493,6 +566,11 @@ class ACORE:
             df_barplot = pd.concat(dfs_barplot, ignore_index=True, axis=0)
             fig, ax = plt.subplots(1, 1, figsize=(7*len(w), 10))
             sns.barplot(data=df_barplot, x="args_comb", y="proportion", hue="coverage", ci=None, ax=ax)
+            ax.tick_params(labelsize=17)
+            ax.set_xlabel("(B', Quantile Regressor) combination", fontsize=25)
+            ax.set_ylabel("Proportion", fontsize=25)
+            ax.set_title("Estimated coverage across parameter space", fontdict={"fontsize":25})
+            plt.legend(fontsize="large")
             if save_fig_path is not None:
                 plt.savefig(os.path.join(save_fig_path, f"proportions.png"), bbox_inches="tight")
             plt.show()
@@ -541,7 +619,7 @@ class ACORE:
 
         tau_obs = []
         # TODO: not general; assumes observed_sample_size == 1
-        for theta_0 in parameter_grid:
+        for theta_0 in parameter_grid.reshape(-1, self.model.d):
             # TODO: check this as done for self.estimate_critical_value !!!
             tau_obs.append(list(
                 _compute_statistics_single_t0(name=self.statistics,
@@ -583,7 +661,7 @@ class ACORE:
                 raise ValueError("Unspecified Odds Ratios Classifier and Classifier Name")
             else:
                 qr_classifier_name = self.qr_classifier_name
-        if b_prime is None:
+        if (b_prime is None) and (computed_qr_statistics is None):
             if self.b_prime is None:
                 raise ValueError("Unspecified sample size B prime")
             else:
@@ -651,8 +729,10 @@ class ACORE:
                 raise ValueError('Critical values not computed yet')
             else:
                 predicted_quantiles = self.predicted_quantiles
+        if (self.obs_sample_size == 1) and (len(tau_obs) == 1):
+            tau_obs = tau_obs[0]
         assert len(tau_obs) == len(predicted_quantiles) == len(self.model.param_grid), f"{len(tau_obs)}, {len(predicted_quantiles)}, {len(self.model.param_grid)}"
-
+        
         confidence_region = []
         if self.decision_rule == "less_equal":
             # we have one (tau_observed, cutoff) for each possible theta

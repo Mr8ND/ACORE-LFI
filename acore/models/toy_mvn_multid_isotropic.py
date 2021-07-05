@@ -6,11 +6,136 @@ import sys
 sys.path.append('..')
 
 from scipy.stats import multivariate_normal, uniform, norm
+from scipy.stats import binom
 from scipy.optimize import Bounds
 from itertools import product
 from scipy.special import erf
 
 
+class ToyMVG:
+    
+    def __init__(self, 
+                 observed_dims=2, 
+                 true_param=0.0, true_std=1.0, 
+                 param_grid_width=10, grid_sample_size=1000,
+                 prior_type='uniform', normal_mean_prior=0.0, normal_std_prior=2.0,
+                 empirical_marginal=True):
+        
+        self.d = observed_dims
+        self.observed_dims = observed_dims
+        
+        # without loss of generality, we only consider points with equal coordinates, for simplicity
+        self.true_param = np.repeat(true_param, self.d)
+        self.param_grid_width = param_grid_width
+        self.low_int = true_param - (param_grid_width/2)
+        self.high_int = true_param + (param_grid_width/2)
+        assert (self.high_int - self.low_int) == param_grid_width
+        
+        self.true_cov = true_std * np.eye(observed_dims)
+
+        self.prior_type = prior_type
+        if prior_type == 'uniform':
+            self.prior_distribution = uniform(loc=self.low_int, scale=(self.high_int - self.low_int))
+        elif prior_type == 'normal':
+            self.prior_distribution = norm(loc=mean_prior, scale=std_prior ** 2)
+        else:
+            raise ValueError('The variable prior_type needs to be either uniform or normal.'
+                             ' Currently %s' % prior_type)
+            
+        if self.d == 1:
+            self.param_grid = np.linspace(self.low_int, self.high_int, num=grid_sample_size)
+            self.t0_grid_granularity = grid_sample_size
+        elif self.d == 2: 
+            a = np.linspace(self.low_int, self.high_int, num=grid_sample_size)
+            # 2-dimensional grid of (grid_sample_size X grid_sample_size) points
+            self.param_grid = np.transpose([np.tile(a, len(a)), np.repeat(a, len(a))])
+            self.t0_grid_granularity = grid_sample_size**2
+        else:
+            # easier to sample from a d-dimensional uniform for d > 2
+            self.param_grid = np.random.uniform(low=self.low_int, high=self.high_int, 
+                                                size=grid_sample_size * self.d).reshape(-1, self.d)
+            self.t0_grid_granularity = grid_sample_size
+            
+        if self.true_param not in self.param_grid:
+            self.param_grid = np.append(self.param_grid.reshape(-1,self.d), self.true_param.reshape(-1,self.d), axis=0)
+            self.t0_grid_granularity += 1
+        
+        if not empirical_marginal:
+            raise NotImplementedError("We are only using empirical marginal for now.")
+        self.empirical_marginal = True
+    
+    def sample_sim(self, sample_size, true_param):
+        return multivariate_normal(mean=true_param, cov=self.true_cov).rvs(sample_size).reshape(sample_size, self.observed_dims)
+
+    def sample_param_values(self, sample_size):
+        unique_theta = self.prior_distribution.rvs(size=sample_size * self.d)
+        return np.clip(unique_theta.reshape(sample_size, self.d), a_min=self.low_int, a_max=self.high_int)
+    
+    def sample_param_values_qr(self, sample_size):
+        # enlarge support to make sure observed sample is not on the boundaries
+        if self.prior_type == "uniform":
+            qr_prior_distribution = uniform(loc=self.true_param[0] - self.param_grid_width, scale=(2*self.param_grid_width))
+        else:
+            raise NotImplementedError
+        
+        unique_theta = qr_prior_distribution.rvs(size=sample_size * self.d)
+        return unique_theta.reshape(sample_size, self.d)
+    
+    def sample_empirical_marginal(self, sample_size):
+        theta_vec_marg = self.sample_param_values(sample_size=sample_size)
+        return np.apply_along_axis(arr=theta_vec_marg.reshape(-1, self.d), axis=1,
+                                   func1d=lambda row: self.sample_sim(
+                                   sample_size=1, true_param=row)).reshape(-1, self.observed_dims)
+    
+    def generate_sample(self, sample_size, p=0.5, **kwargs):
+        theta_vec = self.sample_param_values(sample_size=sample_size)
+        bern_vec = np.random.binomial(n=1, p=p, size=sample_size)
+        concat_mat = np.hstack((bern_vec.reshape(-1, 1), 
+                                theta_vec.reshape(-1, self.d)
+                               ))
+
+        sample = np.apply_along_axis(arr=concat_mat, axis=1,
+                                     func1d=lambda row: self.sample_sim(sample_size=1, 
+                                                                        true_param=row[1:1+self.d]) 
+                                     if row[0] else self.sample_empirical_marginal(sample_size=1))
+        
+        return np.hstack((concat_mat, sample.reshape(sample_size, self.observed_dims)))
+
+    def sample_msnh(self, b_prime, obs_sample_size):
+        theta_mat = self.sample_param_values_qr(sample_size=b_prime).reshape(-1, self.d)
+        assert theta_mat.shape == (b_prime, self.d)
+
+        sample_mat = np.apply_along_axis(arr=theta_mat, axis=1,
+                                         func1d=lambda row: self.sample_sim(sample_size=obs_sample_size, 
+                                                                            true_param=row[:self.d]))
+        return theta_mat, sample_mat.reshape(b_prime, obs_sample_size, self.observed_dims)
+    
+    def generate_observed_sample(self, n_samples, obs_sample_size):
+        theta_mat = self.sample_param_values(sample_size=n_samples).reshape(-1, self.d)
+        assert theta_mat.shape == (n_samples, self.d)
+
+        sample_mat = np.apply_along_axis(arr=theta_mat, axis=1,
+                                         func1d=lambda row: self.sample_sim(sample_size=obs_sample_size, 
+                                                                            true_param=row[:self.d]))
+        return theta_mat, sample_mat.reshape(n_samples, obs_sample_size, self.observed_dims)
+    
+    @staticmethod
+    def compute_mle(x_obs):
+        return np.mean(x_obs, axis=0)
+    
+    @staticmethod
+    def clopper_pearson_interval(n, x, alpha):
+        theta_grid = np.linspace(0, 1, 1000)
+        left = np.min([p for p in theta_grid if binom.cdf(x, n, p) > alpha/2])
+        right = np.max([p for p in theta_grid if (1-binom.cdf(x, n, p)) > alpha/2])
+        return left, right
+    
+    def _compute_exact_lr_simplevcomp(self, t0, mle, obs_sample_size):
+        return (-1)*(obs_sample_size/2)*(np.linalg.norm((mle - t0).reshape(-1, self.d), ord=2, axis=1)**2)
+                
+      
+    
+"""                
 class ToyMVNMultiDIsotropicLoader:
 
     def __init__(self, observed_dims=2, mean_instrumental=0.0, std_instrumental=4.0, low_int=-5.0, high_int=5.0,
@@ -55,17 +180,17 @@ class ToyMVNMultiDIsotropicLoader:
             self.compute_marginal_reference(size_marginal)
         self.empirical_marginal = empirical_marginal
             
-        self.t0_grid_granularity = grid_sample_size
+        self.num_pred_grid = grid_sample_size
         if self.d == 1:
-            self.param_grid = np.linspace(-5, 5, self.t0_grid_granularity)
-        elif self.d == 2:
-            a = np.linspace(-5, 5, num=self.t0_grid_granularity)
+            self.param_grid = np.linspace(self.true_param[0]-5, self.true_param[0]+5, self.num_pred_grid)
+        elif self.d == 2:  # TODO: this assumes true_param = (x,y) with x=y
+            a = np.linspace(self.true_param[0]-5, self.true_param[0]+5, num=self.num_pred_grid)
             # 2-dimensional grid of (grid_sample_size X grid_sample_size) points
             self.param_grid = np.transpose([np.tile(a, len(a)), np.repeat(a, len(a))])
         else:
             # easier to sample from a d-dimensional uniform for d > 2
             self.param_grid = np.random.uniform(low=self.low_int, high=self.high_int, 
-                                                size=self.t0_grid_granularity * self.d).reshape(-1, self.d)
+                                                size=self.num_pred_grid * self.d).reshape(-1, self.d)
         if self.true_param not in self.param_grid:
                 self.param_grid = np.append(self.param_grid, self.true_param.reshape(-1,self.d), axis=0)
         
@@ -189,7 +314,7 @@ class ToyMVNMultiDIsotropicLoader:
         return ll_gmm_t0 - ll_gmm_t1
     
     def _compute_exact_lr_simplevcomp(self, t0, mle, obs_sample_size):
-        return (-1)*(obs_sample_size/2)*(np.linalg.norm(mle - t0, ord=2)**2)
+        return (-1)*(obs_sample_size/2)*(np.linalg.norm((mle - t0).reshape(-1, self.d), ord=2, axis=1)**2)
 
     def calculate_nuisance_parameters_over_grid(self, *args, **kwargs):
         raise NotImplementedError('No nuisance parameter for this class.')
@@ -249,3 +374,4 @@ class ClfOddsExact:
                                            theta_vec=row[:self.d], x_vec=row[self.d:]
                                         ))
         return np.hstack((np.ones(prob_mat.shape[0]).reshape(-1, 1), prob_mat.reshape(-1, 1)))
+"""

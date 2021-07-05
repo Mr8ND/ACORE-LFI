@@ -71,12 +71,10 @@ def choose_clf_settings_subroutine(b_train,
                                    clf_name,
                                    eval_x,
                                    eval_y,
-                                   gen_function,
-                                   d,
                                    target_loss):
 
     clf = train_clf(gen_sample=train_sample, clf_model=clf_model,
-                    gen_function=gen_function, d=d, clf_name=clf_name)
+                    clf_name=clf_name)
 
     train_x, train_y = train_sample[:, 1:], train_sample[:, 0]
     train_prob_vec = clf.predict_proba(train_x)[:, 1]
@@ -214,9 +212,6 @@ def _compute_statistics_single_t0(name,
     assert obs_sample.shape[0] == (n_samples*obs_sample_size)
 
     if name == 'bff':
-        if d > 1:
-            # still have to check the logic for this case (in theory it should similar to d=1 ...)
-            raise NotImplementedError
         if obs_sample_size > 1:
             # need to check predict_mat, obs_sample should be 3dim if n_samples/obs_sample_size > 1
             # bff implementation for now is a special case where g==marginal, obs_sample_size==1
@@ -224,7 +219,7 @@ def _compute_statistics_single_t0(name,
     
         # in this special case bff reduces to simple odds at t0
         predict_mat = np.hstack((
-            np.repeat(t0, n_samples).reshape(-1, d),
+            np.repeat(t0.reshape(-1, d), n_samples, axis=0).reshape(-1, d),
             obs_sample.reshape(-1, d_obs)
         ))
         prob_mat = clf_fit.predict_proba(predict_mat)
