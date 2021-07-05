@@ -17,7 +17,10 @@ class ToyWaldoMVG(ToyMVG):
                          param_grid_width, grid_sample_size,
                          prior_type, normal_mean_prior, normal_std_prior,
                          empirical_marginal)
-
+    
+    def sample_empirical_marginal(self, sample_size):
+        raise NotImplementedError("Empirical marginal is not needed for Waldo. We are not estimating the likelihood.")
+    
     def generate_sample(self, sample_size, **kwargs):
         theta = self.sample_param_values(sample_size=sample_size)
         assert theta.shape == (sample_size, self.d)
