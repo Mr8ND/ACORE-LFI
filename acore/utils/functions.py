@@ -4,6 +4,7 @@ import warnings
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.model_selection import GridSearchCV
 
+# TODO: refactor everything...
 
 neighbor_range = [1, 2, 3, 4, 5, 10, 15, 20, 25] + [50 * x for x in range(1, 21)] + [500 * x for x in range(3, 6)]
 
@@ -84,6 +85,27 @@ def choose_clf_settings_subroutine(b_train,
     eval_loss = target_loss(y_true=eval_y, y_pred=eval_prob_vec)
 
     return [clf_name, b_train, train_loss, eval_loss]
+
+
+def stat_algo_analysis_subroutine(b_train,
+                                  train_sample,
+                                  algorithm,
+                                  algorithm_name,
+                                  eval_x,
+                                  eval_y,
+                                  target_loss):
+
+    fitted_algo = train_clf(gen_sample=train_sample, clf_model=algorithm,
+                            clf_name=algorithm_name)
+
+    train_x, train_y = train_sample[:, 1:], train_sample[:, 0]
+    train_predictions = fitted_algo.predict(train_x)
+    train_loss = target_loss(y_true=train_y, y_pred=train_predictions)
+
+    eval_predictions = fitted_algo.predict(eval_x)
+    eval_loss = target_loss(y_true=eval_y, y_pred=eval_predictions)
+
+    return [fitted_algo, b_train, train_loss, eval_loss]
 
 
 def compute_odds(clf, obs_data, theta_val, clf_name='xgboost'):
