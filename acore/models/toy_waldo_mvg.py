@@ -27,5 +27,5 @@ class ToyWaldoMVG(ToyMVG):
         sample = np.apply_along_axis(arr=theta, axis=1,
                                      func1d=lambda row: self.sample_sim(sample_size=1,
                                                                         true_param=row[:self.d]))
-        assert sample.shape == (sample_size, self.observed_dims)
-        return np.hstack((theta, sample))
+        
+        return np.hstack((theta, sample.reshape(sample_size, self.observed_dims)))

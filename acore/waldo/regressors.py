@@ -17,6 +17,8 @@ regressor_dict = {
     'xgb_d10_n500': XGBRegressor(n_estimators=500, max_depth=10),
     'xgb_d10_n1000': XGBRegressor(n_estimators=1000, max_depth=10),
 
-    'mlp1i': MLPRegressor(hidden_layer_sizes=(32, 16),
-                          activation='identity', alpha=0, max_iter=25000, solver="adam")
+    'mlp1t': MLPRegressor(hidden_layer_sizes=(32, 16),
+                          activation='tanh', alpha=0, max_iter=25000, solver="adam"),
+    'mlp1r': MLPRegressor(hidden_layer_sizes=(32, 16),
+                          activation='relu', alpha=0, max_iter=25000, solver="adam")
 }

@@ -81,14 +81,14 @@ class FrequentistLFI:
         self.confidence_region = None
         self.confidence_band = None  # for multiple observed values
 
-    def statistics_algorithm_analysis(self,
-                                      algorithm_names: Union[str, list],
-                                      b: Union[int, list],
-                                      b_eval: Union[int, None],  # to evaluate loss. None if doing cross validation
-                                      target_loss: Union[str, Callable],
-                                      cv_folds: Union[int, None] = 5,
-                                      write_df_path: Union[str, None] = None,
-                                      save_fig_path: Union[str, None] = None):
+    def analyze_statistics_algorithm(self,
+                                     algorithm_names: Union[str, list],
+                                     b: Union[int, list],
+                                     target_loss: Union[str, Callable],
+                                     b_eval: Union[int, None] = None,  # to evaluate loss. None if doing cross validation
+                                     cv_folds: Union[int, None] = 5,
+                                     write_df_path: Union[str, None] = None,
+                                     save_fig_path: Union[str, None] = None):
 
         if not isinstance(b, list):
             b = [b]
@@ -189,7 +189,7 @@ class FrequentistLFI:
                          x="B", y="eval_loss_mean", hue="algo_name",
                          markers=True, style="algo_name", ax=ax[1])
             for algo_name in algorithm_names:
-                algo_df = plot_temp_df.loc[plot_temp_df.clf_name == algo_name, :]
+                algo_df = plot_temp_df.loc[plot_temp_df.algo_name == algo_name, :]
                 ax[0].fill_between(x=algo_df.B, y1=algo_df.y_train_below, y2=algo_df.y_train_above, alpha=0.2)
                 ax[1].fill_between(x=algo_df.B, y1=algo_df.y_eval_below, y2=algo_df.y_eval_above, alpha=0.2)
             ax[0].set_ylabel(f"Cross-validated {loss_name} loss")

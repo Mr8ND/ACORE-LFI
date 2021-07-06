@@ -105,7 +105,7 @@ def stat_algo_analysis_subroutine(b_train,
     eval_predictions = fitted_algo.predict(eval_x)
     eval_loss = target_loss(y_true=eval_y, y_pred=eval_predictions)
 
-    return [fitted_algo, b_train, train_loss, eval_loss]
+    return [algorithm_name, b_train, train_loss, eval_loss]
 
 
 def compute_odds(clf, obs_data, theta_val, clf_name='xgboost'):
