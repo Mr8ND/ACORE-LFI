@@ -3,6 +3,7 @@ import logging
 from typing import Union, Callable
 from itertools import product, repeat
 from multiprocessing import Pool
+from tqdm import tqdm
 
 import numpy as np
 import pandas as pd
@@ -12,10 +13,11 @@ from sklearn.model_selection import KFold
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-from models.base import BaseModel
 from or_classifiers.complete_list import classifier_dict
-from utils.functions import stat_algo_analysis_subroutine
 from waldo.regressors import regressor_dict
+from qr_algorithms.complete_list import classifier_cde_dict
+from utils.functions import train_clf, stat_algo_analysis_subroutine, _compute_statistics_single_t0
+from utils.qr_functions import train_qr_algo
 
 # TODO: this main class
 
@@ -29,10 +31,11 @@ class FrequentistLFI:
                  b_double_prime: Union[int, None],
                  coverage_probability: float,  # e.g. 0.9 if 90% confidence sets
                  statistics: Union[str, Callable],  # 'bff', 'acore' or 'waldo' for now
-                 statistics_algorithm_estimator: Union[str, None],
+                 statistics_algorithm: Union[str, None],
                  quantile_regressor: Union[str, None],
                  obs_sample_size: int,
                  decision_rule: str,  # one of ["less_equal", "less", "greater_equal", "greater"]
+                 waldo_se_estimate: Union[str, None] = None,
                  seed: Union[int, None] = None,
                  debug: bool = False,
                  verbose: bool = True,
@@ -54,6 +57,7 @@ class FrequentistLFI:
         # core
         self.model = model
         self.b = b
+        self.b_sample = None
         self.b_prime = b_prime
         self.b_double_prime = b_double_prime
         self.coverage_probability = coverage_probability
@@ -62,7 +66,12 @@ class FrequentistLFI:
             raise NotImplementedError
         else:
             self.statistics = statistics
-        self.statistics_algorithm_estimator = statistics_algorithm_estimator
+        if statistics == "waldo":
+            self.statistics_algorithms_dict = regressor_dict
+        else:
+            self.statistics_algorithms_dict = classifier_dict
+        self.waldo_se_estimate = waldo_se_estimate
+        self.statistics_algorithm = statistics_algorithm
         self.quantile_regressor = quantile_regressor
         self.decision_rule = decision_rule
         self.obs_sample_size = obs_sample_size
@@ -74,7 +83,7 @@ class FrequentistLFI:
         self.seed = seed  # TODO: cascade seed down to methods involving randomness
 
         # results
-        self.fit_statistics_estimator = None
+        self.fit_statistics_algorithm = None
         self.fit_quantile_regressor = None
         self.estimated_statistics = None
         self.estimated_cutoffs = None
@@ -106,13 +115,8 @@ class FrequentistLFI:
         else:
             raise ValueError(f"{target_loss} not currently supported")
 
-        if self.statistics == "waldo":
-            algorithms_dict = regressor_dict
-        else:
-            algorithms_dict = classifier_dict
-
         # convert names to algorithm objects
-        algorithms = [algorithms_dict[algo] for algo in algorithm_names]
+        algorithms = [self.statistics_algorithms_dict[algo] for algo in algorithm_names]
 
         if cv_folds is None:
             # generate b_samples by drawing the biggest one and getting the others as subsets of it
@@ -208,3 +212,212 @@ class FrequentistLFI:
         if write_df_path is not None:
             results_df.to_csv(write_df_path, index=False)
         return results_df
+
+    def estimate_tau(self,
+                     algorithm: Union[str, object, None] = None,
+                     b: Union[int, None] = None,
+                     observed_x: Union[np.array, None] = None,
+                     parameter_grid: Union[np.array, None] = None,
+                     store_results: bool = True):
+
+        if (not isinstance(algorithm, str)) and (algorithm is not None):
+            # TODO: need to have the algo name as well !!!
+            raise NotImplementedError
+        else:  # if or_classifier is not a fitted object
+            if algorithm is None:
+                if self.statistics_algorithm is None:
+                    raise ValueError("Unspecified algorithm to estimate the test statistics")
+                else:
+                    algorithm = self.statistics_algorithm
+            if b is None:
+                if self.b is None:
+                    raise ValueError("Unspecified sample size B")
+                else:
+                    b = self.b
+            b_sample = self.model.generate_sample(sample_size=b)
+            self.b_sample = b_sample
+            algorithm_fit = train_clf(gen_sample=b_sample,
+                                      clf_model=self.statistics_algorithms_dict[algorithm],
+                                      clf_name=algorithm)
+            if self.verbose:
+                print('----- %s Trained' % algorithm, flush=True)
+        if observed_x is None:
+            observed_x = self.model.obs_x
+        else:
+            assert observed_x.shape[1] == self.model.observed_dims
+        if parameter_grid is None:
+            parameter_grid = self.model.param_grid
+        parameter_grid_length = len(parameter_grid)
+
+        if self.verbose:
+            progress_bar = tqdm(total=len(parameter_grid), desc='Compute observed statistics')
+
+        estimated_statistics = []
+        # TODO: not general; assumes observed_sample_size == 1
+        for theta_0 in parameter_grid.reshape(-1, self.model.d):
+            estimated_statistics.append(list(
+                _compute_statistics_single_t0(name=self.statistics,
+                                              clf_fit=algorithm_fit,
+                                              obs_sample=observed_x.reshape(-1, self.model.observed_dims),
+                                              t0=theta_0.reshape(-1, self.model.d),
+                                              d=self.model.d, d_obs=self.model.observed_dims,
+                                              grid_param_t1=parameter_grid,
+                                              obs_sample_size=self.obs_sample_size,
+                                              n_samples=observed_x.reshape(-1, self.model.observed_dims).shape[0],
+                                              waldo_se_estimate=self.waldo_se_estimate,
+                                              x_train=b_sample[:, self.model.d:],
+                                              y_train=b_sample[:, :self.model.d],
+                                              statistics_algorithm=self.statistics_algorithms_dict[algorithm],
+                                              bootstrap_iter=1000)
+            ))
+            if self.verbose:
+                progress_bar.update(1)
+        if self.verbose:
+            progress_bar.close()
+
+        # need a sequence of tau_obs (at each plausible theta_0) for each obs_x
+        estimated_statistics = list(zip(*estimated_statistics))
+        assert all([len(tau_obs_x) == parameter_grid_length for tau_obs_x in estimated_statistics]), \
+            f"{[len(tau_obs_x) == parameter_grid_length for tau_obs_x in estimated_statistics]}"
+
+        if store_results:
+            self.fit_statistics_algorithm = algorithm_fit
+            self.estimated_statistics = estimated_statistics
+        else:
+            return algorithm_fit, estimated_statistics
+
+    def estimate_critical_value(self,
+                                quantile_regressor: Union[str, None] = None,
+                                b_prime: Union[int, None] = None,
+                                b_prime_sample: Union[tuple, None] = None,
+                                fit_statistics_algorithm: Union[object, None] = None,
+                                computed_qr_statistics: Union[np.array, None] = None,
+                                parameter_grid: Union[np.array, None] = None,
+                                store_results: bool = True):
+
+        if quantile_regressor is None:
+            if self.quantile_regressor is None:
+                raise ValueError("Unspecified Quantile Regressor to estimate cutoffs")
+            else:
+                quantile_regressor = self.quantile_regressor
+        if (b_prime is None) and (computed_qr_statistics is None):
+            if self.b_prime is None:
+                raise ValueError("Unspecified sample size B prime")
+            else:
+                b_prime = self.b_prime
+        if (fit_statistics_algorithm is None) and (computed_qr_statistics is None):
+            if self.fit_statistics_algorithm is None:
+                raise ValueError('Algorithm to estimate test statistics not trained yet')
+            else:
+                fit_statistics_algorithm = self.fit_statistics_algorithm
+                b_sample = self.b_sample
+        else:
+            raise NotImplementedError("Need to pass b_sample and algo name as well")
+        if b_prime_sample is None:
+            theta_matrix, sample_matrix = self.model.sample_msnh(b_prime=b_prime, obs_sample_size=self.obs_sample_size)
+        else:
+            theta_matrix, sample_matrix = b_prime_sample
+        if parameter_grid is None:
+            parameter_grid = self.model.param_grid
+
+        if computed_qr_statistics is None:
+            # Compute the tau values for QR training
+            stats_matrix = []
+            for kk, theta_0 in tqdm(enumerate(theta_matrix), desc='Compute statistics for critical value'):
+                theta_0 = theta_0.reshape(-1, self.model.d)
+                sample = sample_matrix[kk, :].reshape(-1, self.model.observed_dims)
+                stats_matrix.append(np.array([_compute_statistics_single_t0(name=self.statistics,
+                                                                            clf_fit=fit_statistics_algorithm,
+                                                                            d=self.model.d,
+                                                                            d_obs=self.model.observed_dims,
+                                                                            grid_param_t1=parameter_grid,
+                                                                            t0=theta_0,
+                                                                            obs_sample=sample,
+                                                                            obs_sample_size=self.obs_sample_size,
+                                                                            n_samples=sample.shape[0],
+                                                                            waldo_se_estimate=self.waldo_se_estimate,
+                                                                            x_train=b_sample[:, self.model.d:],
+                                                                            y_train=b_sample[:, :self.model.d],
+                                                                            statistics_algorithm=self.statistics_algorithms_dict[self.statistics_algorithm],
+                                                                            bootstrap_iter=1000
+                                                                            )]))
+            computed_qr_statistics = np.array(stats_matrix)
+        else:
+            assert computed_qr_statistics.shape[0] == theta_matrix.shape[0]
+
+        if self.verbose:
+            print('----- Training Quantile Regression Algorithm', flush=True)
+
+        quantile_regressor = classifier_cde_dict[quantile_regressor]
+        if self.statistics == "waldo":
+            # e.g., if 90% CI, then waldo needs 95% quantile because of absolute value in test statistics
+            alpha = self.coverage_probability + ((1-self.coverage_probability)/2)
+        else:
+            alpha = self.coverage_probability
+        estimated_cutoffs = train_qr_algo(model_obj=self.model, alpha=alpha,
+                                          theta_mat=theta_matrix, stats_mat=computed_qr_statistics,
+                                          algo_name=quantile_regressor[0], learner_kwargs=quantile_regressor[1],
+                                          pytorch_kwargs=quantile_regressor[2] if len(quantile_regressor) > 2 else None,
+                                          prediction_grid=parameter_grid)
+        if store_results:
+            self.estimated_cutoffs = estimated_cutoffs
+        else:
+            return estimated_cutoffs
+
+    def compute_confidence_region(self,
+                                  estimated_statistics: Union[list, None] = None,
+                                  estimated_cutoffs: Union[np.array, None] = None,
+                                  confidence_band: bool = False,
+                                  store_results: bool = True):
+
+        if self.verbose and not confidence_band:
+            print('----- Creating Confidence Region', flush=True)
+
+        if estimated_statistics is None:
+            if self.estimated_statistics is None:
+                raise ValueError('Estimated test statistics not computed yet')
+            else:
+                estimated_statistics = self.estimated_statistics
+        if estimated_cutoffs is None:
+            if self.estimated_cutoffs is None:
+                raise ValueError('Estimated cutoffs not computed yet')
+            else:
+                estimated_cutoffs = self.estimated_cutoffs
+        if (self.obs_sample_size == 1) and (len(estimated_statistics) == 1):
+            estimated_statistics = estimated_statistics[0]
+        # , f"{len(estimated_statistics)}, {len(estimated_cutoffs)}, {len(self.model.param_grid)}"
+        assert len(estimated_statistics) == len(estimated_cutoffs) == len(self.model.param_grid)
+
+        confidence_region = []
+        if self.decision_rule == "less_equal":
+            # we have one (tau_observed, cutoff) for each possible theta
+            for idx, tau in enumerate(estimated_statistics):
+                if tau <= estimated_cutoffs[idx]:
+                    confidence_region.append(self.model.param_grid[idx])
+        elif self.decision_rule == "less":
+            for idx, tau in enumerate(estimated_statistics):
+                if tau < estimated_cutoffs[idx]:
+                    confidence_region.append(self.model.param_grid[idx])
+        elif self.decision_rule == "greater_equal":
+            for idx, tau in enumerate(estimated_statistics):
+                if tau >= estimated_cutoffs[idx]:
+                    confidence_region.append(self.model.param_grid[idx])
+        elif self.decision_rule == "greater":
+            for idx, tau in enumerate(estimated_statistics):
+                if tau > estimated_cutoffs[idx]:
+                    confidence_region.append(self.model.param_grid[idx])
+        else:
+            raise NotImplementedError
+
+        if confidence_band:
+            if store_results:
+                if self.confidence_band is None:
+                    self.confidence_band = []
+                self.confidence_band.append(confidence_region)
+            else:
+                return confidence_region
+        else:
+            if store_results:
+                self.confidence_region = confidence_region
+            else:
+                return confidence_region

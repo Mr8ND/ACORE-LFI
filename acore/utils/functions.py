@@ -3,6 +3,7 @@ import sys
 import warnings
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.model_selection import GridSearchCV
+from sklearn.metrics import mean_squared_error
 
 # TODO: refactor everything...
 
@@ -229,7 +230,12 @@ def _compute_statistics_single_t0(name,
                                   obs_sample_size,  # size of observed sample from same theta -> TODO: ambiguous names
                                   t0, grid_param_t1,
                                   d=1, d_obs=1,
-                                  n_samples=1):  # construct conf set for each (> 1 if conf band, i.e. all together)
+                                  n_samples=1,  # construct conf set for each (> 1 if conf band, i.e. all together)
+                                  waldo_se_estimate=None,
+                                  x_train=None,
+                                  y_train=None,
+                                  statistics_algorithm=None,
+                                  bootstrap_iter=1000):
 
     assert obs_sample.shape[0] == (n_samples*obs_sample_size)
 
@@ -310,6 +316,39 @@ def _compute_statistics_single_t0(name,
 
         return grouped_sum_t0 - grouped_max_sum_t1
 
+    elif name == "waldo":
+
+        if d > 1:
+            raise NotImplementedError
+
+        predictions = clf_fit.predict(obs_sample)
+        if waldo_se_estimate == "linear_reg":
+            train_mse = mean_squared_error(y_true=y_train,
+                                           y_pred=clf_fit.predict(x_train))
+            prediction_cov_matrix = train_mse*(obs_sample @ np.linalg.inv(x_train.T @ x_train) @ obs_sample.T)
+            waldo_se_estimate = np.sqrt(np.diag(prediction_cov_matrix))
+            assert all(waldo_se_estimate >= 0)
+        elif waldo_se_estimate == "bootstrap":
+            prediction_mat = []
+            train_sample_idx = np.arange(0, x_train.shape[0], 1)
+            for b in range(bootstrap_iter):
+                b_idx = np.random.choice(train_sample_idx, size=x_train.shape[0], replace=True)
+                x_train_b = x_train[b_idx, :]
+                y_train_b = y_train[b_idx, :]
+                algo_b = statistics_algorithm
+                algo_b.fit(X=x_train_b, y=y_train_b)
+                prediction_mat.append(algo_b.predict(X=obs_sample))
+            prediction_mat = np.array(predictions).T
+            assert prediction_mat.shape == (predictions, bootstrap_iter)
+            mean_pred = np.mean(prediction_mat, axis=1).reshape(-1, d)
+            waldo_se_estimate = (1/(bootstrap_iter-1))*np.sum((prediction_mat - mean_pred)**2, axis=1)
+        else:
+            # TODO: maybe should accept vector of se estimates?
+            raise NotImplementedError
+        assert len(predictions) == len(waldo_se_estimate)
+        waldo_statistics = np.abs(predictions - t0) / waldo_se_estimate
+        assert len(waldo_statistics) == predictions
+        return waldo_statistics
     else:
         raise NotImplementedError
 
