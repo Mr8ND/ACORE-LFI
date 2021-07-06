@@ -347,7 +347,7 @@ def _compute_statistics_single_t0(name,
             raise NotImplementedError
         assert len(predictions) == len(waldo_se_estimate)
         waldo_statistics = np.abs(predictions - t0) / waldo_se_estimate
-        assert len(waldo_statistics) == predictions
+        assert len(waldo_statistics.reshape(-1, 1)) == len(predictions)
         return waldo_statistics
     else:
         raise NotImplementedError

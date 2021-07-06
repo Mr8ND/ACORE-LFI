@@ -1,4 +1,5 @@
 classifier_cde_dict = {
+    'linear': ('linear', None),  # None is just for consistency of the interface with other models
     'xgb_d3_n100': ('xgb', {'max_depth': 3, 'n_estimators': 100}),
     'xgb_d3_n500': ('xgb', {'max_depth': 3, 'n_estimators': 500}),
     'xgb_d3_n250': ('xgb', {'max_depth': 3, 'n_estimators': 250}),
