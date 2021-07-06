@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import log_loss, mean_squared_error
 from sklearn.model_selection import KFold
+import statsmodels.api as sm
 
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -212,6 +213,230 @@ class FrequentistLFI:
         if write_df_path is not None:
             results_df.to_csv(write_df_path, index=False)
         return results_df
+
+    def check_coverage(self,
+                       quantile_regressors: Union[str, list],
+                       b_prime: Union[int, list, None] = None,
+                       b_double_prime: Union[int, tuple, None] = None,
+                       statistics_algorithm: Union[str, object, None] = None,
+                       known_statistics_kwargs: Union[dict, None] = None,
+                       b: Union[str, None] = None,
+                       clf_estimate_coverage_prob: str = 'logistic_regression',
+                       save_fig_path=None,
+                       return_df=False):
+
+        if not isinstance(quantile_regressors, list):
+            quantile_regressors = [quantile_regressors]
+
+        if known_statistics_kwargs is None:
+            # check we have everything we need
+            if statistics_algorithm is None:
+                if self.statistics_algorithm is None:
+                    raise ValueError("Please specify an OR classifier to use")
+                else:
+                    statistics_algorithm = self.statistics_algorithm
+            if b is None:
+                if self.b is None:
+                    raise ValueError("Please specify B")
+                else:
+                    b = self.b
+            if b_double_prime is None:
+                if self.b_double_prime is None:
+                    raise ValueError("Please specify B double prime")
+                else:
+                    b_double_prime = self.b_double_prime
+            if not isinstance(b_prime, list):
+                b_prime = [b_prime]
+
+            if isinstance(b_double_prime, int):
+                # generate observed samples for which to construct confidence sets
+                observed_theta, observed_x = self.model.generate_observed_sample(n_samples=b_double_prime,
+                                                                                 obs_sample_size=self.obs_sample_size)
+            else:
+                observed_theta, observed_x = b_double_prime
+
+            # temporary param_grid; use np.unique just to avoid having the same param multiple
+            # times in case some true params were already in the grid
+            # TODO: if B'' is very large then computing the observed statistics takes too much time
+            param_grid = np.unique(np.append(self.model.param_grid.reshape(-1, self.model.d),
+                                             observed_theta.reshape(-1, self.model.d), axis=0),
+                                   axis=0)
+
+            # estimate observed statistics
+            or_clf_fit, tau_obs = self.estimate_tau(algorithm=statistics_algorithm,
+                                                    b=b, observed_x=observed_x,
+                                                    parameter_grid=param_grid,
+                                                    store_results=False)
+
+            # generate b_prime samples by drawing the biggest one and getting the others as subsets of it
+            sorted_b_prime = sorted(b_prime)
+            max_b_prime_sample = self.model.sample_msnh(b_prime=sorted_b_prime[-1],
+                                                        obs_sample_size=self.obs_sample_size)
+            b_prime_samples = [(max_b_prime_sample[0][:bprime, :], max_b_prime_sample[1][:bprime, :])
+                               for bprime in sorted_b_prime[:-1]] + [max_b_prime_sample]
+            assert all([(theta.shape[0] == sorted_b_prime[idx]) and (x.shape[0] == sorted_b_prime[idx])
+                        for idx, (theta, x) in enumerate(b_prime_samples)])
+
+            # set unused stuff to None
+            qr_statistics = [None] * len(b_prime)
+        else:
+            # check we have everything we need
+            assert "observed_statistics" in known_statistics_kwargs
+            assert "qr_statistics" in known_statistics_kwargs
+            assert "b_prime_samples" in known_statistics_kwargs
+            assert "sorted_b_prime" in known_statistics_kwargs
+            assert "observed_theta" in known_statistics_kwargs
+            assert "param_grid" in known_statistics_kwargs
+
+            # get what we need
+            tau_obs = known_statistics_kwargs["observed_statistics"]
+            qr_statistics = known_statistics_kwargs["qr_statistics"]
+            b_prime_samples = known_statistics_kwargs["b_prime_samples"]
+            sorted_b_prime = known_statistics_kwargs["sorted_b_prime"]
+            observed_theta = known_statistics_kwargs["observed_theta"]
+            param_grid = known_statistics_kwargs["param_grid"]  # param grid used to estimate observed_statistics
+
+            # set unused stuff to None
+            or_clf_fit = None
+
+        # estimate critical values
+        args = [(z, x, y, h, w, k, j) for (((x, y, w), z), h, k, j) in zip(product(zip(sorted_b_prime, b_prime_samples, qr_statistics),
+                                                                                   quantile_regressors),
+                                                                           repeat(or_clf_fit),
+                                                                           repeat(param_grid),
+                                                                           repeat(False))]
+        # list of numpy arrays made of alpha quantiles for each theta (one array for each combination of args)
+        # TODO: make parallel?
+        predicted_quantiles = [self.estimate_critical_value(*args_combination) for args_combination in tqdm(args, desc="Estimating cutoffs")]
+
+        w = []
+        # construct w vector of indicators; one vector for each combination of args
+        for idx_args in tqdm(range(len(predicted_quantiles)),  # args combination level
+                             desc="Checking coverage across the parameter space"):
+            # matrix to check coverage in a fast way using vectors
+            check_matrix = np.hstack((
+                # one observed stat for each value in param grid, repeated for each different observed sample
+                np.array(tau_obs).reshape(len(param_grid) * len(observed_theta), 1),
+                # repeat the cutoffs for each observed sample
+                np.tile(predicted_quantiles[idx_args], len(observed_theta)).reshape(
+                    len(param_grid) * len(observed_theta), 1),
+                # repeat the param grid for each observed sample
+                np.tile(param_grid.reshape(-1, self.model.d), [len(observed_theta), 1]).reshape(
+                    len(param_grid) * len(observed_theta), self.model.d),
+                # repeat the same true (observed) theta within each corresponding sample
+                np.repeat(observed_theta.reshape(-1, self.model.d), len(param_grid), axis=0).reshape(
+                    len(param_grid) * len(observed_theta), self.model.d),
+                # repeat vector of zeros for each observed sample. We will put a 1 where param_grid == true_theta if covered.
+                # Then reshape into (n_samples, n_params_grid) and sum over axis 1. If we are covering we will have a 1, otherwise not.
+                np.repeat(np.zeros(shape=len(observed_theta)), repeats=len(param_grid)).reshape(
+                    len(param_grid) * len(observed_theta), 1)
+            ))
+            assert check_matrix.shape == (
+            len(param_grid) * len(observed_theta), 1 + 1 + self.model.d + self.model.d + 1)
+
+            # if in acceptance region
+            if self.decision_rule == "less_equal":
+                mask_acceptance_region = (check_matrix[:, 0] <= check_matrix[:, 1])
+            elif self.decision_rule == "less":
+                mask_acceptance_region = (check_matrix[:, 0] < check_matrix[:, 1])
+            elif self.decision_rule == "greater_equal":
+                mask_acceptance_region = (check_matrix[:, 0] >= check_matrix[:, 1])
+            elif self.decision_rule == "greater":
+                mask_acceptance_region = (check_matrix[:, 0] > check_matrix[:, 1])
+
+            # AND if is true theta
+            mask_true_theta = (np.abs(check_matrix[:, 2:2 + self.model.d] - check_matrix[:,
+                                                                            2 + self.model.d:2 + self.model.d + self.model.d]) <= 1e-9).all(
+                axis=1)
+
+            # then we are covering!
+            check_matrix[mask_acceptance_region & mask_true_theta, -1] = 1
+
+            # sum over param_grid: there will be a single 1, and only if we are covering the true theta
+            w_combination = check_matrix[:, -1].reshape(len(observed_theta), len(param_grid)).sum(axis=1)
+            assert len(w_combination) == len(observed_theta)
+            w.append(w_combination)
+
+        # estimate conditional coverage
+        dfs_plot = []
+        dfs_barplot = []
+        if clf_estimate_coverage_prob == "logistic_regression":
+            theta = sm.add_constant(observed_theta)
+            if self.model.d == 1:
+                n_cols = 2
+                n_rows = (len(w) + 1) // n_cols
+                fig = plt.figure(figsize=(20, 4 * n_rows))
+                color_map = plt.cm.get_cmap("hsv", len(w))
+            for idx, w_combination in enumerate(w):
+                try:
+                    log_reg = sm.Logit(w_combination, theta).fit(full_output=False)
+                    probabilities = log_reg.predict(theta)
+                    # estimate confidence interval for predicted probabilities -> Delta method
+                    cov_matrix = log_reg.cov_params()
+                    gradient = (probabilities * (1 - probabilities) * theta.T).T  # matrix of gradients for each obs
+                    std_errors = np.array([np.sqrt(np.dot(np.dot(g, cov_matrix), g)) for g in gradient])
+                    assert len(std_errors) == len(probabilities)
+                    c = 1  # multiplier for confidence interval
+                    upper = np.maximum(0, np.minimum(1, probabilities + std_errors * c))
+                    lower = np.maximum(0, np.minimum(1, probabilities - std_errors * c))
+                    assert len(upper) == len(lower) == len(probabilities)
+                except:
+                    print(f"Perfect separation occurred, skipping B'={args[idx][1]}, QR clf={args[idx][0]}")
+                    continue
+
+                if self.model.d == 1:
+                    # plot
+                    df_plot = pd.DataFrame({"observed_param": observed_theta.reshape(-1, ),
+                                            "probabilities": probabilities,
+                                            "lower": lower,
+                                            "upper": upper,
+                                            "args_comb": [f"B'={args[idx][1]}, QR clf = {args[idx][0]}"] * len(lower)}
+                                           ).sort_values(by="observed_param")
+                    dfs_plot.append(df_plot)
+                    ax = plt.subplot(n_rows, n_cols, idx + 1)
+                    sns.lineplot(x=df_plot.observed_param, y=df_plot.probabilities,
+                                 ax=ax, color=color_map(idx),
+                                 label=f"B'={args[idx][1]}, QR clf = {args[idx][0]}")
+                    sns.lineplot(x=df_plot.observed_param, y=df_plot.lower, ax=ax, color=color_map(idx))
+                    sns.lineplot(x=df_plot.observed_param, y=df_plot.upper, ax=ax, color=color_map(idx))
+                    ax.fill_between(x=df_plot.observed_param, y1=df_plot.lower, y2=df_plot.upper,
+                                    alpha=0.2, color=color_map(idx))
+
+                    ax.axhline(y=self.coverage_probability, color='black', linestyle='--', linewidth=2)
+                    ax.legend(loc='lower left', fontsize=15)
+                    ax.set_xlabel(r"$\Theta$", fontsize=15)
+                    ax.set_ylabel("Coverage probability", fontsize=15)
+                    ax.set_ylim([np.min(df_plot.lower) - 0.1, 1])  # small offset of 0.1
+                    ax.set_xlim([np.min(df_plot.observed_param), np.max(df_plot.observed_param)])
+
+                proportion_UC = np.sum(upper < self.coverage_probability) / len(upper)
+                proportion_OC = np.sum(lower > self.coverage_probability) / len(lower)
+                dfs_barplot.append(
+                    pd.DataFrame({"args_comb": [f"B'={args[idx][1]}, QR clf = {args[idx][0]}"] * 3,
+                                  "coverage": ["Undercoverage", "Correct Coverage", "Overcoverage"],
+                                  "proportion": [proportion_UC, 1 - (proportion_OC + proportion_UC), proportion_OC]})
+                )
+            if save_fig_path is not None:
+                plt.savefig(os.path.join(save_fig_path, f"whole_parameter_space.png"), bbox_inches="tight")
+            plt.show()  # show other plots
+
+            # barplot
+            df_barplot = pd.concat(dfs_barplot, ignore_index=True, axis=0)
+            fig, ax = plt.subplots(1, 1, figsize=(7 * len(w), 10))
+            sns.barplot(data=df_barplot, x="args_comb", y="proportion", hue="coverage", ci=None, ax=ax)
+            ax.tick_params(labelsize=17)
+            ax.set_xlabel("(B', Quantile Regressor) combination", fontsize=25)
+            ax.set_ylabel("Proportion", fontsize=25)
+            ax.set_title("Estimated coverage across parameter space", fontdict={"fontsize": 25})
+            plt.legend(fontsize="large")
+            if save_fig_path is not None:
+                plt.savefig(os.path.join(save_fig_path, f"proportions.png"), bbox_inches="tight")
+            plt.show()
+
+            if return_df:
+                return pd.concat(dfs_plot, ignore_index=True, axis=0), df_barplot
+        else:
+            raise NotImplementedError
 
     def estimate_tau(self,
                      algorithm: Union[str, object, None] = None,
