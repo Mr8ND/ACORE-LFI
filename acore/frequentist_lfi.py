@@ -537,7 +537,8 @@ class FrequentistLFI:
                 fit_statistics_algorithm = self.fit_statistics_algorithm
                 b_sample = self.b_sample
         else:
-            raise NotImplementedError("Need to pass b_sample and algo name as well")
+            b_sample = self.b_sample
+            
         if b_prime_sample is None:
             theta_matrix, sample_matrix = self.model.sample_msnh(b_prime=b_prime, obs_sample_size=self.obs_sample_size)
         else:
