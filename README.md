@@ -1,2 +1,2 @@
 # ACORE-LFI
-Approximate Computation via Odds Ratio Estimation in Likelihood Free Inference
+Approximate Computation via Odds Ratio Estimation in Likelihood Free Inference 
