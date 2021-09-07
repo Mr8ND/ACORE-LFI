@@ -221,6 +221,9 @@ class ACORE:
                         b_eval: int,
                         p_eval_set=1,  # 1 -> all eval samples from F; 0 -> all eval samples from G
                         n_eval_samples=6,
+                        what_to_plot="scatter",
+                        exact_estimate_comparison: Union[Callable, None] = None,
+                        normalize=False,
                         figsize=(30, 15),
                         reuse_train_set=True,
                         reuse_eval_set=True,
@@ -230,108 +233,208 @@ class ACORE:
         
         # TODO: refactor and fix this one
         
-        assert (what_to_check in ['log-likelihood', 'acore', 'log-odds'])
+        assert (what_to_check in ['log-likelihood', 'acore', 'odds', 'bff', 'odds_paper_fig'])
         assert n_eval_samples == 6, "make plotting more general for any n_eval_samples"  # TODO
-        if reuse_sample_idxs is not False:
-            assert n_eval_samples == len(reuse_sample_idxs)
-
-        if reuse_eval_set:
+        
+        if what_to_check == "odds_paper_fig":
             eval_set = self._check_estimates_eval_set
-        else:
-            # evaluation set to check estimates at some observations
-            eval_set = self.model.generate_sample(sample_size=b_eval,
-                                                  p=p_eval_set,
-                                                  data=np.hstack((self.model.obs_x,
-                                                                  self.model.obs_param.reshape(-1, 1))))
-            self._check_estimates_eval_set = eval_set
-        eval_X, eval_y = eval_set[:, 1:], eval_set[:, 0]
-
-        if reuse_train_set:
-            clf = train_clf(gen_sample=self._check_estimates_train_set,
-                            clf_model=classifier_dict[classifier_name],
-                            clf_name=classifier_name)
-        else:
-            train_sample = self.model.generate_sample(sample_size=b)
-            self._check_estimates_train_set, clf = train_clf(gen_sample=train_sample,
-                                                             clf_model=classifier_dict[classifier_name],
-                                                             clf_name=classifier_name)
-
-        # select n_eval_samples from eval_set, fix x and make theta vary
-        dfs = []
-        sample_idxs = []
-        for i in tqdm(range(n_eval_samples)):
-            if reuse_sample_idxs is False:
-                sample_idx = np.random.randint(0, eval_X.shape[0], 1)
-            else:
-                sample_idx = reuse_sample_idxs[i]
-            sample = eval_X[sample_idx, self.model.d:].reshape(-1, self.model.observed_dims)
-            sample_vary_theta = np.hstack((
-                self.model.param_grid.reshape(-1, self.model.d),
-                np.tile(sample, self.model.t0_grid_granularity).reshape(-1, self.model.observed_dims)
-            ))
-            assert sample_vary_theta.shape == (self.model.t0_grid_granularity,
-                                               self.model.observed_dims + self.model.d)
-
-            sample_idxs.append(sample_idx)
-            est_prob_vec = clf.predict_proba(sample_vary_theta)
-
-            if what_to_check == 'log-likelihood':
-                if p_eval_set == 0:
-                    p_eval_set = 1e-15
-                # log-likelihood
-                estimates = np.log(est_prob_vec[:, 1] / p_eval_set)
-            elif what_to_check == 'log-odds':
+            eval_theta_X, eval_y = eval_set[:, 1:], eval_set[:, 0]
+            fig, ax = plt.subplots(1, 1, figsize=(7,7))
+            exact_estimates = self.model.compute_exact_odds(theta_vec=eval_theta_X[:, 0], x_vec=eval_theta_X[:, 1], p=0.5)
+            exact_estimates = exact_estimates/np.sum(exact_estimates)
+            color_map = ["blue", "green", "yellow", "red"]
+            for idx, train_set in enumerate(self._check_estimates_train_set):
+                print(f"Training for b={train_set.shape[0]}")
+                clf = train_clf(gen_sample=train_set,
+                                clf_model=classifier_dict[classifier_name],
+                                clf_name=classifier_name)
+                est_prob_vec = clf.predict_proba(eval_theta_X)
                 est_prob_vec[est_prob_vec[:, 0] == 0, 0] = 1e-15
-                estimates = np.log(est_prob_vec[:, 1] / est_prob_vec[:, 0])
-            else:  # what_to_check == 'acore':
-                estimates = []
-                t1_mask = np.full(self.model.t0_grid_granularity, True)
-                for i, t0 in tqdm(enumerate(self.model.param_grid), desc='Computing acore statistics', position=0, leave=True):
-                    t1_mask[i] = False
-                    odds_t0 = np.log(est_prob_vec[i, 1]) - np.log(est_prob_vec[i, 0])
-                    odds_t1 = np.log(est_prob_vec[t1_mask, 1]) - np.log(est_prob_vec[t1_mask, 0])
-                    assert odds_t1.shape[0] == (self.model.t0_grid_granularity - 1)
-                    estimates.append(odds_t0 / np.max(odds_t1))
-                    t1_mask[i] = True
-            if self.model.d == 1:
-                dfs.append(pd.DataFrame({"theta": self.model.param_grid.reshape(-1,), f"{what_to_check}": estimates}))
-            else:
-                squared_distance = np.linalg.norm(self.model.param_grid.reshape(-1, self.model.d) - eval_X[sample_idx, :self.model.d].reshape(-1, self.model.d), ord=2, axis=1)**2
-                dfs.append(pd.DataFrame({"squared_distance": squared_distance, f"{what_to_check}": estimates}).sort_values(by="squared_distance"))
-        
-        print([i for i in sample_idxs])
-        
-        if save_pickle_path is not None:
-            with open(os.path.join(save_pickle_path, f"./{what_to_check}_dfs.pickle"), "wb") as f:
-                pickle.dump(dfs, f)
-            with open(os.path.join(save_pickle_path, f"./{what_to_check}_sample_idxs.pickle"), "wb") as f:
-                pickle.dump(sample_idxs, f)
-
-        # plot
-        fig, ax = plt.subplots(2, 3, figsize=figsize)
-        if self.model.d == 1:
-            for i in range(2):
-                for j in range(3):
-                    sns.lineplot(data=dfs.pop(), x="theta", y=f"{what_to_check}", ax=ax[i][j])
-                    idx = sample_idxs.pop()
-                    ax[i][j].axvline(x=eval_X[idx, :self.model.d],
-                                     c='red', label=f'theta = {eval_X[idx, :self.model.d]}')
-                    ax[i][j].legend()
-                    label = 'simulator F' if eval_y[idx] == 1 else 'reference G'
-                    ax[i][j].set_title(f'Sample from {label}')
+                estimates = est_prob_vec[:, 1] / est_prob_vec[:, 0]
+                estimates = estimates/np.sum(estimates)
+                ax.scatter(x=exact_estimates, y=estimates, color=color_map[idx], label=f"B={train_set.shape[0]}")
+            #sns.lineplot(x=[1e-22, 1e2], y=[1e-22, 1e2], ax=ax, color="black", style=True, dashes=[(2,2)])
+            min_xy, max_xy = min(np.min(estimates), np.min(exact_estimates)), max(np.max(estimates), np.max(exact_estimates))
+            sns.lineplot(x=[min_xy, max_xy], y=[min_xy, max_xy], 
+                         ax=ax, color="black", style=True, dashes=[(2,2)])
+            ax.legend()
+            ax.set_xlabel("True odds")
+            ax.set_ylabel("Estimated odds")
+            ax.set_xscale("log")
+            ax.set_yscale("log")
+            ax.set_title(f"{classifier_name}: estimated odds vs true odds (d={self.model.d}, n={self.obs_sample_size})")
+            #plt.xlim(left=1e-22, right=1e2)
+            #plt.ylim(bottom=1e-22, top=1e2)
+            #ax.set_xlim(left=np.min(exact_estimates) - 0.0001, right=np.max(exact_estimates) + 0.0001)
+            #ax.set_ylim(bottom=np.min(exact_estimates) - 0.0001, top=np.max(exact_estimates) + 0.0001)
+            plt.show()
+                
         else:
-            for i in range(2):
-                for j in range(3):
-                    idx = sample_idxs.pop()
-                    sns.scatterplot(data=dfs.pop(), x="squared_distance", y=f"{what_to_check}", ax=ax[i][j])
-                    ax[i][j].axvline(x=0, c='red', label=f'theta = {eval_X[idx, :self.model.d]}')
-                    ax[i][j].legend()
-                    label = 'simulator F' if eval_y[idx] == 1 else 'reference G'
-                    ax[i][j].set_title(f'Sample from {label}')
-                    
-        if save_fig_path is not None:
-            plt.savefig(os.path.join(save_fig_path, f'./{what_to_check}.png'), bbox_inches='tight')
-        plt.show()
+            if reuse_sample_idxs is not False:
+                assert n_eval_samples == len(reuse_sample_idxs)
+            if (what_to_plot == "scatter") and (exact_estimate_comparison is None):
+                raise ValueError("Scatterplot is only to compare estimates to true quantities")
+
+            if reuse_eval_set:
+                eval_set = self._check_estimates_eval_set
+            else:
+                # evaluation set to check estimates at some observations
+                eval_set = self.model.generate_sample(sample_size=b_eval,
+                                                      p=p_eval_set,
+                                                      data=np.hstack((self.model.obs_x,
+                                                                      self.model.obs_param.reshape(-1, 1))))
+                self._check_estimates_eval_set = eval_set
+            eval_theta_X, eval_y = eval_set[:, 1:], eval_set[:, 0]
+
+            if reuse_train_set:
+                clf = train_clf(gen_sample=self._check_estimates_train_set,
+                                clf_model=classifier_dict[classifier_name],
+                                clf_name=classifier_name)
+            else:
+                train_sample = self.model.generate_sample(sample_size=b)
+                self._check_estimates_train_set, clf = train_clf(gen_sample=train_sample,
+                                                                 clf_model=classifier_dict[classifier_name],
+                                                                 clf_name=classifier_name)
+
+            # select n_eval_samples from eval_set, fix x and make theta vary
+            dfs = []
+            sample_idxs = []
+            for i in tqdm(range(n_eval_samples)):
+                if reuse_sample_idxs is False:
+                    sample_idx = np.random.randint(0, eval_theta_X.shape[0], 1)
+                else:
+                    sample_idx = reuse_sample_idxs[i]
+                sample = eval_theta_X[sample_idx, self.model.d:].reshape(-1, self.model.observed_dims)
+                sample_vary_theta = np.hstack((
+                    self.model.param_grid.reshape(-1, self.model.d),
+                    np.tile(sample, self.model.t0_grid_granularity).reshape(-1, self.model.observed_dims)
+                ))
+                assert sample_vary_theta.shape == (self.model.t0_grid_granularity,
+                                                   self.model.observed_dims + self.model.d)
+
+                sample_idxs.append(sample_idx)
+                est_prob_vec = clf.predict_proba(sample_vary_theta)
+
+                # TODO: this should use compute_statistics function
+                if what_to_check == 'log-likelihood':
+                    if p_eval_set == 0:
+                        p_eval_set = 1e-15
+                    estimates = est_prob_vec[:, 1] / p_eval_set
+                    if exact_estimate_comparison is not None:
+                        # TODO: parameters for exact_estimate_comparison might not be always the same: abstract!
+                        exact_estimates = [exact_estimate_comparison(x=row[self.model.d:], mu=row[:self.model.d], obs_sample_size=self.obs_sample_size) for row in sample_vary_theta]
+                        assert len(exact_estimates) == len(sample_vary_theta)
+                    if normalize:
+                        estimates = estimates/np.sum(estimates)
+                        exact_estimates = exact_estimates/np.sum(exact_estimates)
+                    estimates = np.log(estimates)
+                    exact_estimates = np.log(exact_estimates)
+                elif what_to_check == 'odds':
+                    est_prob_vec[est_prob_vec[:, 0] == 0, 0] = 1e-15
+                    estimates = est_prob_vec[:, 1] / est_prob_vec[:, 0]
+                    if exact_estimate_comparison is not None:
+                        #exact_estimates = [exact_estimate_comparison(x=row[self.model.d:], mu=row[:self.model.d], obs_sample_size=self.obs_sample_size) for row in sample_vary_theta]
+                        exact_estimates = exact_estimate_comparison(theta_vec=sample_vary_theta[:, :self.model.d], x_vec=sample_vary_theta[:, self.model.d:], p=0.5)
+                        assert len(exact_estimates) == len(sample_vary_theta)
+                    if normalize:
+                        estimates = estimates/np.sum(estimates)
+                        exact_estimates = exact_estimates/np.sum(exact_estimates)
+                    estimates = estimates
+                    exact_estimates = exact_estimates
+                elif what_to_check == 'acore':
+                    estimates = []
+                    t1_mask = np.full(self.model.t0_grid_granularity, True)
+                    for i, t0 in tqdm(enumerate(self.model.param_grid), desc='Computing acore statistics', position=0, leave=True):
+                        t1_mask[i] = False
+                        odds_t0 = np.log(est_prob_vec[i, 1]) - np.log(est_prob_vec[i, 0])
+                        odds_t1 = np.log(est_prob_vec[t1_mask, 1]) - np.log(est_prob_vec[t1_mask, 0])
+                        assert odds_t1.shape[0] == (self.model.t0_grid_granularity - 1)
+                        estimates.append(odds_t0 / np.max(odds_t1))
+                        t1_mask[i] = True
+                    if exact_estimate_comparison is not None:
+                        exact_estimates = [exact_estimate_comparison(x=row[self.model.d:], mu=row[:self.model.d], obs_sample_size=self.obs_sample_size) for row in sample_vary_theta]
+                        assert len(exact_estimates) == len(sample_vary_theta)
+                elif what_to_check == 'bff':
+                    est_prob_vec[est_prob_vec[:, 0] == 0, 0] = 1e-15
+                    estimates = est_prob_vec[:, 1] / est_prob_vec[:, 0]
+                    if exact_estimate_comparison is not None:
+                        exact_estimates = [exact_estimate_comparison(x=row[self.model.d:], mu=row[:self.model.d], obs_sample_size=self.obs_sample_size) for row in sample_vary_theta]
+                        assert len(exact_estimates) == len(sample_vary_theta)
+                else:
+                    raise NotImplementedError
+
+                if self.model.d == 1:
+                    df = pd.DataFrame({"theta": self.model.param_grid.reshape(-1,), 
+                                       f"{what_to_check}": estimates})
+                    if exact_estimate_comparison is not None:
+                        df.loc[:, f"exact_{what_to_check}"] = exact_estimates
+                    dfs.append(df)
+                else:
+                    squared_distance = np.linalg.norm(self.model.param_grid.reshape(-1, self.model.d) - eval_theta_X[sample_idx, :self.model.d].reshape(-1, self.model.d), ord=2, axis=1)**2
+                    df = pd.DataFrame({"squared_distance": squared_distance, f"{what_to_check}": estimates})
+                    if exact_estimate_comparison is not None:
+                        df.loc[:, f"exact_{what_to_check}"] = exact_estimates
+                    dfs.append(df.sort_values(by="squared_distance"))
+
+            if not reuse_sample_idxs:
+                print([i[0] for i in sample_idxs])
+            else:
+                print([i for i in sample_idxs])
+
+            if save_pickle_path is not None:
+                with open(os.path.join(save_pickle_path, f"./{what_to_check}_dfs.pickle"), "wb") as f:
+                    pickle.dump(dfs, f)
+                with open(os.path.join(save_pickle_path, f"./{what_to_check}_sample_idxs.pickle"), "wb") as f:
+                    pickle.dump(sample_idxs, f)
+
+            # plot
+            fig, ax = plt.subplots(2, 3, figsize=figsize)
+            if self.model.d == 1:
+                for i in range(2):
+                    for j in range(3):
+                        idx = sample_idxs.pop()
+                        df_idx = dfs.pop()
+                        if what_to_plot == "scatter":
+                            sns.scatterplot(data=df_idx, x=f"exact_{what_to_check}", y=f"{what_to_check}", ax=ax[i][j], color="darkcyan")
+                            sns.lineplot(data=df_idx, x=f"exact_{what_to_check}", y=f"exact_{what_to_check}", ax=ax[i][j], color="crimson", style=True, dashes=[(2,2)])
+                            if what_to_check == "acore":
+                                ax[i][j].set_xlabel("True LR")
+                                ax[i][j].set_ylabel(f"Estimated LR via ACORE")
+                            elif what_to_check == "bff":
+                                ax[i][j].set_xlabel("True BF")
+                                ax[i][j].set_ylabel(f"Estimated BF via BFF")
+                            else:
+                                ax[i][j].set_xlabel(f"True {what_to_check}")
+                                ax[i][j].set_ylabel(f"Estimated {what_to_check}")
+                        else:
+                            sns.lineplot(data=df_idx, x="theta", y=f"{what_to_check}", ax=ax[i][j], color="darkcyan", label=f"Estimated {what_to_check}")
+                            if exact_estimate_comparison is not None:
+                                sns.lineplot(data=df_idx, x="theta", y=f"exact_{what_to_check}", ax=ax[i][j], color="saddlebrown", label=f"EXACT {what_to_check}")
+                            ax[i][j].axvline(x=eval_theta_X[idx, :self.model.d],
+                                             color='crimson', label=f'theta = {eval_theta_X[idx, :self.model.d]}')
+                            ax[i][j].legend()
+                            ax[i][j].set_xlabel(r"$\theta$")
+                            ax[i][j].set_ylabel(f"{what_to_check}")
+                        title = 'simulator F' if eval_y[idx] == 1 else 'reference G'
+                        ax[i][j].set_title(f'Sample from {title}, x={eval_theta_X[idx, self.model.d:]}, eval_idx={idx}')
+            else:
+                for i in range(2):
+                    for j in range(3):
+                        idx = sample_idxs.pop()
+                        df_idx = dfs.pop()
+                        sns.scatterplot(data=df_idx, x="squared_distance", y=f"{what_to_check}", ax=ax[i][j], color="darkcyan", label=f"Estimated {what_to_check}")
+                        if exact_estimate_comparison is not None:
+                            sns.lineplot(data=df_idx, x="squared_distance", y=f"exact_{what_to_check}", ax=ax[i][j], color="saddlebrown", label=f"EXACT {what_to_check}")
+                        ax[i][j].axvline(x=0, color='crimson', label=f'theta = {eval_theta_X[idx, :self.model.d]}')
+                        ax[i][j].legend()
+                        label = 'simulator F' if eval_y[idx] == 1 else 'reference G'
+                        ax[i][j].set_title(f'Sample from {label}, x={eval_theta_X[idx, self.model.d:]}, eval_idx={idx}')
+                        x[i][j].set_xlabel(r"$\theta$")
+                        ax[i][j].set_ylabel(f"{what_to_check}$")
+
+            if save_fig_path is not None:
+                plt.savefig(os.path.join(save_fig_path, f'./{what_to_check}.png'), bbox_inches='tight')
+            plt.show()
 
     def check_coverage(self,
                        qr_classifier_names: Union[str, list],
@@ -681,7 +784,9 @@ class ACORE:
         if computed_qr_statistics is None:
             # Compute the tau values for QR training
             stats_matrix = []
-            for kk, theta_0 in tqdm(enumerate(theta_matrix), desc='Calculate statistics for critical value'):
+            if self.verbose:
+                print("----- Calculate statistics for critical value", flush=True)
+            for kk, theta_0 in enumerate(theta_matrix):
                 theta_0 = theta_0.reshape(-1, self.model.d)
                 sample = sample_matrix[kk, :].reshape(-1, self.model.observed_dims)
                 stats_matrix.append(np.array([_compute_statistics_single_t0(name=self.statistics,

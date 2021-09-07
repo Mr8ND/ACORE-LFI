@@ -104,7 +104,7 @@ class ToyMVG:
         return np.hstack((concat_mat, sample.reshape(sample_size, self.observed_dims)))
 
     def sample_msnh(self, b_prime, obs_sample_size):
-        theta_mat = self.sample_param_values_qr(sample_size=b_prime).reshape(-1, self.d)
+        theta_mat = self.sample_param_values(sample_size=b_prime).reshape(-1, self.d)
         assert theta_mat.shape == (b_prime, self.d)
 
         sample_mat = np.apply_along_axis(arr=theta_mat, axis=1,
@@ -112,8 +112,9 @@ class ToyMVG:
                                                                             true_param=row[:self.d]))
         return theta_mat, sample_mat.reshape(b_prime, obs_sample_size, self.observed_dims)
     
-    def generate_observed_sample(self, n_samples, obs_sample_size):
-        theta_mat = self.sample_param_values(sample_size=n_samples).reshape(-1, self.d)
+    def generate_observed_sample(self, n_samples, obs_sample_size, theta_mat=None):
+        if theta_mat is None:
+            theta_mat = self.sample_param_values(sample_size=n_samples).reshape(-1, self.d)
         assert theta_mat.shape == (n_samples, self.d)
 
         sample_mat = np.apply_along_axis(arr=theta_mat, axis=1,
@@ -134,7 +135,104 @@ class ToyMVG:
     
     def _compute_exact_lr_simplevcomp(self, t0, mle, obs_sample_size):
         return (-1)*(obs_sample_size/2)*(np.linalg.norm((mle - t0).reshape(-1, self.d), ord=2, axis=1)**2)
-                
+    
+    def _compute_multivariate_normal_pdf(self, x, mu, cov=None, obs_sample_size=1):
+        if cov is None:
+            cov=np.eye(self.d)/obs_sample_size
+        return multivariate_normal(mean=mu, cov=cov).pdf(x)
+    
+    def _compute_marginal_pdf(self, x_obs):
+        '''
+        In this calculation we are assuming that the covariance matrix is diagonal with all entries being equal, so
+        we only consider the first element for every point.
+        '''
+        density = 0.5 * (erf((self.high_int - x_obs) / (np.sqrt(2) * self.true_cov[0, 0])) -
+                         erf((self.low_int - x_obs) / (np.sqrt(2) * self.true_cov[0, 0])))
+        return np.prod(density)
+    
+    def compute_exact_odds(self, theta_vec, x_vec, p=0.5):
+        x_vec = x_vec.reshape(-1, self.observed_dims)
+        theta_vec = theta_vec.reshape(-1, self.d)
+
+        f_val = np.array([self._compute_multivariate_normal_pdf(
+            x=x, mu=theta_vec[ii, :]) for ii, x in enumerate(x_vec)]).reshape(-1, )
+
+        if self.empirical_marginal:
+            g_val = np.array([self._compute_marginal_pdf(x_obs=x_obs) for x_obs in x_vec]).reshape(-1, )
+        else:
+            g_val = self.g_distribution.pdf(x=x_vec).reshape(-1, )
+        return (f_val * p) / (g_val * (1 - p))
+    
+    def _compute_marginal_bf_denominator(self, x_obs, mu, prior_type='uniform', obs_sample_size=1):
+        '''
+        In this calculation we are assuming that the covariance matrix is the Identity matrix.
+        '''
+        if prior_type == 'uniform':
+            unif_distr = (1 / ((mu + (self.param_grid_width/2)) - (mu - (self.param_grid_width/2)))) ** self.observed_dims
+            density = 0.5 * (erf(((mu + (self.param_grid_width/2)) - x_obs)/np.sqrt(2*obs_sample_size)) - erf(((mu - (self.param_grid_width/2)) - x_obs)/np.sqrt(2*obs_sample_size)))
+            assert len(density) == self.observed_dims
+            denominator = unif_distr * np.prod(density)
+        else:
+            raise ValueError("The prior type needs to be 'uniform'. Currently %s" % self.prior_type)
+        return denominator
+    
+    def _compute_marginal_bf_denominator_old(self, x_obs, prior_type='uniform'):
+        '''
+        In this calculation we are assuming that the covariance matrix is diagonal with all entries being equal, so
+        we only consider the first element for every point.
+        '''
+        if prior_type == 'uniform':
+            unif_distr = (1 / (self.high_int - self.low_int)) ** self.observed_dims
+            density = 0.5 * unif_distr * (erf((self.high_int - x_obs) / (np.sqrt(2) * self.true_cov[0, 0])) -
+                             erf((self.low_int - x_obs) / (np.sqrt(2) * self.true_cov[0, 0])))
+        else:
+            raise ValueError("The prior type needs to be 'uniform'. Currently %s" % self.prior_type)
+        return np.prod(density)
+
+    def compute_exact_bayes_factor_with_marginal(self, x, mu, cov=None, obs_sample_size=1):
+        '''
+        In this calculation we are assuming that the covariance matrix is the Identity matrix.
+        '''
+        if self.prior_type == 'uniform':
+            x_vec = x.reshape(-1, self.observed_dims)
+            theta_vec = mu.reshape(-1, self.d)
+            
+            f_val = np.array([self._compute_multivariate_normal_pdf(
+                x=x_val, mu=theta_vec[ii, :], cov=cov, obs_sample_size=obs_sample_size) for ii, x_val in enumerate(x_vec)]).reshape(-1, )
+            g_val = np.array([self._compute_marginal_bf_denominator(x_val, mu, prior_type='uniform', obs_sample_size=obs_sample_size) for x_val in x_vec]
+                             ).reshape(-1, )
+        else:
+            raise ValueError("The prior type needs to be 'uniform'. Currently %s" % self.prior_type)
+        return f_val / g_val   
+    
+    def compute_exact_bayes_factor_with_marginal_old(self, x, mu, cov=None, obs_sample_size=1):
+        '''
+        In this calculation we are assuming that the covariance matrix is the Identity matrix.
+        '''
+        if self.prior_type == 'uniform':
+            x_vec = x.reshape(-1, self.observed_dims)
+            theta_vec = mu.reshape(-1, self.d)
+            
+            f_val = np.array([self._compute_multivariate_normal_pdf(
+                x=x_val, mu=theta_vec[ii, :], cov=cov, obs_sample_size=obs_sample_size) for ii, x_val in enumerate(x_vec)]).reshape(-1, )
+            g_val = np.array([self._compute_marginal_bf_denominator_old(x_obs=x_val, prior_type='uniform') for x_val in x_vec]
+                             ).reshape(-1, )
+        else:
+            raise ValueError("The prior type needs to be 'uniform'. Currently %s" % self.prior_type)
+        return f_val / g_val  
+
+    
+    
+def manually_compute_normal_pdf(x, mean, cov, d):
+    
+    x = x.reshape(1, d)
+    mean = mean.reshape(1, d)
+    cov = cov.reshape(d, d)
+    
+    normalization_const = ((2*np.pi)**(-d/2))*(np.linalg.det(cov)**(-1/2))
+    return (normalization_const * np.exp((-1/2)*((x-mean) @ np.linalg.inv(cov) @ (x-mean).T))).item()    
+    
+
 
 """                
 class ToyMVNMultiDIsotropicLoader:

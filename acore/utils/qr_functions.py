@@ -5,7 +5,7 @@ import sys
 sys.path.append("..")
 
 from sklearn.ensemble import GradientBoostingRegressor
-from skgarden import RandomForestQuantileRegressor
+#from skgarden import RandomForestQuantileRegressor
 from statsmodels.api import QuantReg
 from functools import partial
 from utils.pytorch_functions import q_model, Learner, QuantileLoss, q_model_3l
@@ -17,10 +17,11 @@ def train_qr_algo(model_obj, theta_mat, stats_mat, algo_name, learner_kwargs, py
         model = GradientBoostingRegressor(loss='quantile', alpha=alpha, **learner_kwargs)
         model.fit(theta_mat.reshape(-1, model_obj.d), stats_mat.reshape(-1, ))
         pred_vec = model.predict(prediction_grid.reshape(-1, model_obj.d))
-    elif algo_name == 'rf':
-        model = RandomForestQuantileRegressor(**learner_kwargs)
-        model.fit(theta_mat.reshape(-1, model_obj.d), stats_mat.reshape(-1, ))
-        pred_vec = model.predict(prediction_grid.reshape(-1, model_obj.d), quantile=alpha * 100)
+    # TODO: fix dependency of skgarden on old version of sklearn
+    #elif algo_name == 'rf':
+    #    model = RandomForestQuantileRegressor(**learner_kwargs)
+    #    model.fit(theta_mat.reshape(-1, model_obj.d), stats_mat.reshape(-1, ))
+    #    pred_vec = model.predict(prediction_grid.reshape(-1, model_obj.d), quantile=alpha * 100)
     elif algo_name == 'lgb':
         model = lgb.LGBMRegressor(objective='quantile', alpha=alpha, **learner_kwargs)
         model.fit(theta_mat.reshape(-1, model_obj.d), stats_mat.reshape(-1, ))
